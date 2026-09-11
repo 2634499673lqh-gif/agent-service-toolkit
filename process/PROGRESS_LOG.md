@@ -2,6 +2,51 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T013: Request Correlation ID
+
+Status: DONE — ready for GPT-6 Astra review
+
+What changed:
+- Added a single FastAPI HTTP middleware that generates a fresh UUID4 per request, stores it in `request.state.request_id`, and echoes the same value in the `X-Request-ID` response header.
+- Deliberately ignores client-supplied `X-Request-ID` values so correlation IDs cannot be spoofed; no structured logging, redaction, distributed tracing, Task IDs, or trace records were added.
+- Added focused regression tests for generation, request-state propagation, response consistency, fresh IDs, and existing `/health` behavior.
+- Documented the request lifecycle and the T014 boundary in `docs/ARCHITECTURE.md`.
+
+Files changed:
+- `src/service/service.py`
+- `src/service/utils.py`
+- `tests/service/test_service.py`
+- `docs/ARCHITECTURE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_service.py -q` → PASS (16 passed, 6 existing warnings).
+- `uv run pytest` → first run: 189 passed, 4 skipped, 14 environment fixture errors because the host temp root was not writable; rerun with repository-local `TEMP`/`TMP` → PASS (203 passed, 4 skipped, 19 existing warnings).
+- `uv run ruff format --check src/service/service.py src/service/utils.py tests/service/test_service.py` → PASS.
+- `uv run ruff check src/service/service.py src/service/utils.py tests/service/test_service.py` → PASS.
+- `uv run pyrefly check` → PASS (0 errors; 11 known suppressions).
+- `uv run pymarkdown scan docs/ARCHITECTURE.md` → PASS.
+- `git diff --check` → PASS.
+
+Architecture/security notes:
+- Existing endpoint payloads, LangGraph persistence, Settings, fake-model behavior, SQLite/PostgreSQL baseline, and startup lifecycle remain unchanged.
+- The only additive transport surface is the `X-Request-ID` response header; request IDs are ephemeral middleware metadata and are not persisted.
+- No client-provided correlation value is trusted. Structured logging and secret redaction remain T014 scope.
+
+Known limitations:
+- The default host pytest temp root is permission-restricted; full regression requires a writable `TEMP`/`TMP` directory in this environment.
+- This task does not propagate IDs into structured logs or TaskPilot trace entities; those are intentionally deferred.
+
+Learner notes:
+- Problem solved: every HTTP request now has one stable identifier available throughout its FastAPI lifecycle and visible to the caller.
+- Read these files: `src/service/service.py`, `src/service/utils.py`, `tests/service/test_service.py`, `docs/ARCHITECTURE.md`.
+- Key concept: middleware is the narrow transport boundary for request-scoped metadata; it should not become a task or distributed-tracing store.
+- Small exercise: call `/health` twice with and without `X-Request-ID` and compare the UUID response headers.
+- Ignore for now: log formatting/redaction, TaskRun/AgentRun IDs, persistence, and metrics.
+
+Recommended next task:
+- T014 — Structured logging and redaction. Do not begin it as part of T013.
+
 ### 2026-09-11 — T012: Settings Validation
 
 Status: DONE

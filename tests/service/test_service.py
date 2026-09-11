@@ -1,14 +1,69 @@
 import json
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import langsmith
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Interrupt, StateSnapshot
+from starlette.requests import Request
+from starlette.responses import Response
 
 from agents.agents import Agent
 from schema import ChatHistory, ChatMessage, ServiceMetadata
 from schema.models import AnthropicModelName, OpenAIModelName
+from service.service import request_id_middleware
+from service.utils import REQUEST_ID_HEADER, get_request_id
+
+
+def test_request_id_is_generated_for_existing_endpoint(test_client) -> None:
+    response = test_client.get("/health")
+
+    assert response.status_code == 200
+    request_id = response.headers[REQUEST_ID_HEADER]
+    UUID(request_id)
+
+
+@pytest.mark.asyncio
+async def test_request_id_propagates_through_request_state_and_response() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/health",
+            "raw_path": b"/health",
+            "query_string": b"",
+            "headers": [],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+        }
+    )
+    seen: dict[str, str] = {}
+
+    async def call_next(next_request: Request) -> Response:
+        seen["request_id"] = get_request_id(next_request)
+        return Response(status_code=204)
+
+    response = await request_id_middleware(request, call_next)
+
+    assert seen["request_id"] == get_request_id(request)
+    assert response.headers[REQUEST_ID_HEADER] == seen["request_id"]
+    UUID(seen["request_id"])
+
+
+def test_request_id_is_fresh_and_client_header_is_not_trusted(test_client) -> None:
+    client_value = "client-supplied-id"
+    first = test_client.get("/health", headers={REQUEST_ID_HEADER: client_value})
+    second = test_client.get("/health")
+
+    first_id = first.headers[REQUEST_ID_HEADER]
+    second_id = second.headers[REQUEST_ID_HEADER]
+    assert first_id != client_value
+    assert first_id != second_id
+    UUID(first_id)
+    UUID(second_id)
 
 
 def test_invoke(test_client, mock_agent) -> None:

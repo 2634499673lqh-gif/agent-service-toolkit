@@ -29,6 +29,16 @@ flowchart LR
 4. The graph executes. For the default `research-assistant`, the path is input safeguard -> model -> optional `ToolNode` -> model -> end.
 5. A checkpointer persists graph state by `thread_id`; `/history` and `/threads` read it. This is conversation persistence, not TaskPilot task/run/step storage.
 
+### Request correlation
+
+The FastAPI app installs one HTTP middleware for the complete request lifecycle. It
+generates a fresh UUID4, stores it on `request.state.request_id` for downstream
+handlers, and returns the same value in the `X-Request-ID` response header. Client
+supplied `X-Request-ID` values are intentionally ignored, so callers cannot spoof a
+server correlation value. This is request-scoped transport metadata only; it does
+not create TaskPilot trace, run, task, or tool records. Structured logging and
+redaction are deferred to T014.
+
 `AUTH_SECRET` is a single optional shared bearer secret. It protects the router when set, but does not establish an authenticated user, organization, role, or tenant. `user_id` is request data and `/threads` documents that it is caller asserted; it must not be mistaken for TaskPilot authorization.
 
 ## Reusable upstream capabilities
@@ -68,7 +78,7 @@ flowchart LR
 
 ## Architecture delta and Phase 1 boundary
 
-The smallest safe path is additive: preserve the upstream service, LangGraph, checkpointer adapters, Streamlit app and upstream reference files. Phase 1 should only make local development reproducible and establish conventions: audit `.env.example`, document verified commands, add a request correlation ID with secret-safe structured logging, and decide/verify a migration baseline for future TaskPilot tables. Do not add users, Task/TaskRun/TaskStep, Planner/Executor/Verifier, Redis/Kafka/Kubernetes, or a new frontend in Phase 1.
+The smallest safe path is additive: preserve the upstream service, LangGraph, checkpointer adapters, Streamlit app and upstream reference files. Phase 1 should only make local development reproducible and establish conventions: audit `.env.example`, document verified commands, add request correlation middleware, add secret-safe structured logging in T014, and decide/verify a migration baseline for future TaskPilot tables. Do not add users, Task/TaskRun/TaskStep, Planner/Executor/Verifier, Redis/Kafka/Kubernetes, or a new frontend in Phase 1.
 
 ### Known unknowns
 

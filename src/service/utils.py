@@ -1,7 +1,8 @@
 from collections.abc import Mapping
 from typing import Any, cast
+from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from langchain_core.messages import (
     AIMessage,
     BaseMessage,
@@ -14,6 +15,21 @@ from langchain_core.messages import (
 
 from core import settings
 from schema import ChatMessage
+
+REQUEST_ID_HEADER = "X-Request-ID"
+
+
+def generate_request_id() -> str:
+    """Generate a fresh request correlation ID for one HTTP request."""
+    return str(uuid4())
+
+
+def get_request_id(request: Request) -> str:
+    """Return the request ID assigned by the request middleware."""
+    request_id = getattr(request.state, "request_id", None)
+    if not isinstance(request_id, str):
+        raise RuntimeError("Request ID middleware has not initialized this request")
+    return request_id
 
 
 def ensure_model_available(model: Any) -> None:
