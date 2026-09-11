@@ -2,6 +2,43 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T012: Settings Validation
+
+Status: DONE
+
+What changed:
+- Added instance-safe provider catalogue construction and fail-fast cross-field validation to the existing Pydantic `Settings` model.
+- Validated only the selected persistence backend: SQLite remains the default local fallback; PostgreSQL and MongoDB validate their required connection fields, with optional MongoDB authentication kept available.
+- Added opt-in validation for partial OpenAI-compatible/Azure/Ollama configuration and enabled tracing credentials, while preserving `USE_FAKE_MODEL=true` and local Ollama fallback behavior.
+- Added field bounds for server/database ports and PostgreSQL pool sizes, plus regression tests for valid fallbacks and invalid configurations.
+
+Files changed:
+- `src/core/settings.py`
+- `tests/core/test_settings.py`
+- `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/core/test_settings.py -q` → PASS (32 passed; one host pytest-cache warning).
+- `uv run ruff format src/core/settings.py tests/core/test_settings.py` → PASS.
+- `uv run ruff check src/core/settings.py tests/core/test_settings.py` → PASS.
+- `uv run pytest` → PASS (199 passed, 4 skipped, 19 warnings) after setting `TMP`/`TEMP` to a repository-local writable directory; the default host temp root is not writable in this environment.
+- `git diff --check` → PASS (only Git's normal LF/CRLF advisory for the two Markdown files).
+
+Known limitations:
+- Postgres/Mongo validation checks configuration shape only; connectivity and LangGraph `setup()` remain runtime concerns owned by existing adapters.
+- No provider framework, TaskPilot business settings, migration, checkpoint ownership, or public API was changed.
+
+Learner notes:
+- Problem solved: invalid selected-backend or partially opted-in settings now fail at startup with setting names, without turning supported local fallbacks into mandatory configuration.
+- Read these files: `src/core/settings.py`, `tests/core/test_settings.py`, `src/memory/postgres.py`, `src/memory/mongodb.py`, `docs/DEVELOPER_GUIDE.md`.
+- Key concept: configuration validation should be conditional on an enabled feature; optional integrations must not break the SQLite/fake-model development path.
+- Small exercise: instantiate `Settings(USE_FAKE_MODEL=True, DATABASE_TYPE="postgres", _env_file=None)` and inspect the missing-field error, then add only the five Postgres fields and compare the result.
+- Ignore for now: TaskPilot identity/task settings, migrations, and provider redesign.
+
+Recommended next task:
+- T013 — Request correlation ID. Do not start T014–T016 in this task.
+
 ### 2026-09-11 — T011: Environment Template Audit
 
 Status: DONE

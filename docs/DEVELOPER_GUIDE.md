@@ -16,6 +16,22 @@ uv sync --frozen
 
 `Settings` requires an LLM provider credential/configuration or `USE_FAKE_MODEL=true`; the fake model is appropriate for ordinary deterministic tests.
 
+### Settings validation rules
+
+Configuration is validated when `Settings` is created. The selected persistence
+backend controls which database fields are required: SQLite keeps its local
+`checkpoints.db` fallback and does not require PostgreSQL or MongoDB values;
+PostgreSQL requires its host, port, database, user and password plus valid pool
+bounds; MongoDB requires host, port and database, while authentication remains
+optional but must be supplied as a complete user/password/auth-source set.
+
+Provider and tracing settings are opt-in. A partially configured
+OpenAI-compatible or Azure provider, an Ollama endpoint without a model, or
+enabled LangChain/Langfuse tracing without its credentials fails fast. An
+Ollama model may still use the library's local default endpoint, and
+`USE_FAKE_MODEL=true` remains a valid no-network development fallback. Error
+messages identify missing setting names only; secret values are never emitted.
+
 ### Environment template and secret safety
 
 `.env.example` is the non-secret inventory for the current upstream runtime. It mirrors the fields in `src/core/settings.py` and the small set of client/integration variables read directly by the existing code (for example `AGENT_URL`, `AWS_KB_ID`, and voice-provider settings). Empty values are intentional placeholders; defaults are shown only for non-sensitive settings.
