@@ -45,6 +45,7 @@ from schema import (
     UserThreadsInput,
 )
 from service.agui import router as agui_router
+from service.logging import configure_logging, reset_request_id, set_request_id
 from service.threads import list_user_threads
 from service.utils import (
     REQUEST_ID_HEADER,
@@ -84,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Configurable lifespan that initializes the appropriate database checkpointer, store,
     and agents with async loading - for example for starting up MCP clients.
     """
+    configure_logging(settings)
     try:
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
@@ -136,9 +138,33 @@ async def request_id_middleware(
     """
     request_id = generate_request_id()
     request.state.request_id = request_id
-    response = await call_next(request)
-    response.headers[REQUEST_ID_HEADER] = request_id
-    return response
+    context_token = set_request_id(request_id)
+    configure_logging(settings)
+    logger.info(
+        "request.started",
+        extra={"event": "request.started", "method": request.method, "path": request.url.path},
+    )
+    try:
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        logger.info(
+            "request.completed",
+            extra={
+                "event": "request.completed",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            },
+        )
+        return response
+    except Exception:
+        logger.exception(
+            "request.failed",
+            extra={"event": "request.failed", "method": request.method, "path": request.url.path},
+        )
+        raise
+    finally:
+        reset_request_id(context_token)
 
 
 router = APIRouter(dependencies=[Depends(verify_bearer)])

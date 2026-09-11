@@ -2,6 +2,61 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T014: Structured Logging and Secret Redaction
+
+Status: DONE — ready for Strong Review
+
+Baseline:
+- Branch: `phase-1-foundation`
+- HEAD before changes: `3101058 fix(settings): validate conditional provider and backend configuration`
+- Working tree before changes: clean.
+
+What changed:
+- Added a small stdlib-only structured logging helper under `src/service/logging.py`.
+- Existing root handlers now emit JSON records with UTC timestamp, level, logger, message, request ID, and safe request metadata.
+- Reused T013's generated request ID by binding it to an async-safe `contextvars` context in the existing middleware; the context is reset in `finally` to prevent request crossover.
+- Added `request.started`, `request.completed`, and `request.failed` lifecycle events without changing HTTP/SSE payloads or exception semantics.
+- Added recursive key-based redaction for nested mappings/lists, common Authorization/Bearer and key-value forms, credential-bearing URLs, registered Settings secrets, and exception text.
+- Added real service regression tests for structured request correlation, request-context cleanup, nested redaction, bearer/DSN redaction, configured secrets, and exception messages.
+
+Files changed:
+- `src/service/logging.py`
+- `src/service/service.py`
+- `tests/service/test_logging.py`
+- `docs/DEVELOPER_GUIDE.md`
+- `docs/TROUBLESHOOTING.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service -q` → PASS (73 passed, 19 warnings) with repository-local writable `TMP`/`TEMP`.
+- `uv run pytest` → PASS (206 passed, 4 skipped, 19 warnings) with repository-local writable `TMP`/`TEMP`.
+- `uv run ruff check --output-format concise` → PASS.
+- `uv run pyrefly check` → PASS (0 errors; 11 known suppressions).
+- `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md` → PASS.
+- `git diff --check` → PASS; only normal Git LF/CRLF advisories for Markdown files.
+
+Architecture/security notes:
+- Existing Python stdlib logging remains the logging system; no new dependency or logging framework was added.
+- Request IDs are correlation metadata only and remain ephemeral; no tracing, persistence, TaskPilot IDs, metrics, or audit tables were introduced.
+- Settings `SecretStr` values are registered without logging their contents. Ordinary fields such as model, host, port, event, and request ID remain available for diagnosis.
+
+Known limitations:
+- Records emitted outside an HTTP request intentionally have `request_id: null`.
+- A custom handler installed after service configuration must be passed through `configure_logging()` to receive the JSON formatter; LogRecord message/argument redaction still protects standard handlers.
+- Redaction is deliberately bounded to registered Settings secrets, sensitive field names, credential-bearing URLs, and common authorization/key-value forms; arbitrary unregistered opaque values cannot be identified reliably without a broader secret-management contract.
+- The known T013 limitation remains: an exception escaping to Starlette's outer `ServerErrorMiddleware` can produce a final 500 without `X-Request-ID`; T014 records this but does not expand scope to change it.
+- This is application logging hardening, not distributed tracing, LangSmith/Langfuse redesign, or persisted observability.
+
+Learner notes:
+- Problem solved: service logs can be parsed by machines, correlated to the server-generated request ID, and inspected without exposing common credentials.
+- Read these files: `src/service/logging.py`, `src/service/service.py`, `tests/service/test_logging.py`, `src/service/utils.py`, `docs/TROUBLESHOOTING.md`.
+- Key concepts: `contextvars` provide request-local async state; LogRecord formatting is separate from log event creation; redaction must handle structured values and rendered exception text.
+- Small exercise: add a temporary logger call with a nested `{"api_key": "demo", "host": "localhost"}` payload, run the logging tests, and verify only the key is masked.
+- Ignore for now: distributed tracing, OpenTelemetry, TaskRun/AgentRun persistence, metrics, dashboards, and audit storage.
+
+Recommended next task:
+- T015 — Migration baseline verification. Do not execute it as part of T014.
+
 ### 2026-09-11 — T013: Request Correlation ID
 
 Status: DONE — ready for GPT-6 Astra review

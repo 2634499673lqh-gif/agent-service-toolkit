@@ -32,6 +32,22 @@ Ollama model may still use the library's local default endpoint, and
 `USE_FAKE_MODEL=true` remains a valid no-network development fallback. Error
 messages identify missing setting names only; secret values are never emitted.
 
+### Structured application logs
+
+The service keeps Python's standard-library `logging` and formats application
+records as one JSON object per line. Request middleware emits `request.started`,
+`request.completed`, and `request.failed` events with the server-generated
+`request_id`; the ID is held in request-local async context and is reset when
+the request finishes. The formatter includes UTC timestamp, level, logger,
+message, and safe request metadata without changing API or SSE payloads.
+
+Log messages and nested mapping/list values are redacted by sensitive field
+name. Authorization/Bearer values, API keys, passwords, tokens, credentials,
+and credential-bearing URLs are also masked. Ordinary fields such as model,
+host, port, event, and request ID remain visible for diagnosis. This is a
+Phase 1 application-log safeguard, not distributed tracing or a persisted audit
+system.
+
 ### Environment template and secret safety
 
 `.env.example` is the non-secret inventory for the current upstream runtime. It mirrors the fields in `src/core/settings.py` and the small set of client/integration variables read directly by the existing code (for example `AGENT_URL`, `AWS_KB_ID`, and voice-provider settings). Empty values are intentional placeholders; defaults are shown only for non-sensitive settings.

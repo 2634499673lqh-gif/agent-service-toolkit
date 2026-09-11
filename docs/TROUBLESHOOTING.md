@@ -65,6 +65,23 @@ Check:
 - dependency sync
 - migration state
 
+## Application log is not JSON or has no request ID
+
+Application records handled by the configured root handlers are emitted as
+JSON lines. A `request_id` value is present for records created inside the HTTP
+middleware context; startup, shutdown, background, or command-line records are
+expected to use `null` because they do not belong to an HTTP request.
+
+If a library or test installs a new logging handler after service configuration,
+call the existing `configure_logging()` helper so that handler receives the
+structured formatter. Do not log request headers, settings dumps, or raw
+connection exceptions to diagnose formatting: Authorization values, credentials,
+tokens, passwords, and credential-bearing URLs are intentionally redacted.
+
+An exception that escapes to Starlette's outer `ServerErrorMiddleware` may still
+produce a final 500 response without `X-Request-ID`; T014 does not change that
+known T013 response-header limitation.
+
 ## LLM call fails
 
 Check:
