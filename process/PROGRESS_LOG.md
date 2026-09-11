@@ -2,6 +2,41 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T010: Repository Branding and Attribution
+
+Status: DONE
+
+What changed:
+- Replaced the root starter-kit placeholder with an accurate TaskPilot Phase 1 landing page.
+- Documented the current boundary so readers do not mistake retained upstream chat/runtime examples for unimplemented TaskPilot domains.
+- Added an explicit link to the upstream `agent-service-toolkit` project and its retained documentation and MIT license.
+- Updated the package description to identify TaskPilot while retaining the existing distribution name and upstream author metadata; changing the distribution name would require a prohibited `uv.lock` update.
+
+Files changed:
+- `README.md`
+- `pyproject.toml`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pymarkdown scan README.md` -> PASS.
+
+Architecture/security notes:
+- No source code, dependencies, lock file, public API, persistence adapter, or TaskPilot business domain was changed.
+- `README_UPSTREAM.md` and `LICENSE` were inspected and deliberately left unchanged to preserve upstream attribution and license text.
+
+Known limitations:
+- The repository remains a Phase 1 foundation; TaskPilot product domains are intentionally not implemented.
+
+Learner notes:
+- Problem solved: the repository now identifies TaskPilot without presenting upstream examples as completed TaskPilot capabilities.
+- Read these files: `README.md`, `README_UPSTREAM.md`, `LICENSE`, `pyproject.toml`, `docs/ARCHITECTURE.md`.
+- Key concept: downstream branding can be accurate and transparent when it preserves upstream license and attribution.
+- Small exercise: compare `README.md` with `README_UPSTREAM.md`, then identify which stated capabilities are upstream runtime examples versus planned TaskPilot domains.
+- Ignore for now: package renaming, domain schemas, and runtime changes; they are outside this documentation-only task.
+
+Recommended next task:
+- T011 — Environment template audit. Do not begin it as part of T010.
+
 ### 2026-09-10 — Phase 0.5: Docker / PostgreSQL Baseline Verification (resumed)
 
 Status: DONE — READY FOR PHASE 1
