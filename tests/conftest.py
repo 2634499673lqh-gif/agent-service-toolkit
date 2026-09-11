@@ -24,6 +24,15 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def mock_env():
-    """Fixture to ensure environment is clean for each test."""
-    with patch.dict(os.environ, {}, clear=True):
+    """Fixture to ensure environment is clean while retaining Windows home discovery."""
+    # Streamlit resolves its config directory with Path.home(). On Windows that
+    # requires these profile variables, so clearing every variable makes its
+    # AppTest runner fail before application code executes. They contain no
+    # project configuration or secret and are retained only for OS path lookup.
+    home_environment = {
+        name: os.environ[name]
+        for name in ("USERPROFILE", "HOMEDRIVE", "HOMEPATH")
+        if name in os.environ
+    }
+    with patch.dict(os.environ, home_environment, clear=True):
         yield

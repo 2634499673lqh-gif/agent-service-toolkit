@@ -18,13 +18,9 @@ if __name__ == "__main__":
         )
 
     logging.basicConfig(level=settings.LOG_LEVEL.to_logging_level())
-    # Set Compatible event loop policy on Windows Systems.
-    # On Windows systems, the default ProactorEventLoop can cause issues with
-    # certain async database drivers like psycopg (PostgreSQL driver).
-    # The WindowsSelectorEventLoopPolicy provides better compatibility and prevents
-    # "RuntimeError: Event loop is closed" errors when working with database connections.
-    # This needs to be set before running the application server.
-    # Refer to the documentation for more information.
+    # Psycopg async requires SelectorEventLoop on Windows. Recent Uvicorn versions
+    # force ProactorEventLoop when ``loop="auto"`` is used, so the policy must be
+    # paired with ``loop="none"`` below to let asyncio create the Selector loop.
     # https://www.psycopg.org/psycopg3/docs/advanced/async.html#asynchronous-operations
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -33,5 +29,6 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.is_dev(),
+        loop="none" if sys.platform == "win32" else "auto",
         timeout_graceful_shutdown=settings.GRACEFUL_SHUTDOWN_TIMEOUT,
     )

@@ -1,150 +1,24 @@
-# Code Reading Order
+# Code Reading Order — Phase 0 baseline
 
-> Codex must update exact paths after Phase 0 because the upstream repository may evolve.
+Read production code in this order. These paths exist in the assessed repository on 2026-09-10. The early files describe the upstream chat service, not yet TaskPilot's future task domain.
 
-## 0. Read documents first
+1. `AGENTS.md` — TaskPilot constraints; it explains why plans must not be confused with implemented behavior.
+2. `prompts/00_repo_assessment.md` — the Phase 0 acceptance scope.
+3. `README.md` then `README_UPSTREAM.md` — TaskPilot package guidance followed by retained upstream operating/reference documentation.
+4. `PROJECT_SPEC.md` and `ROADMAP.md` — learn the target and phase boundaries before judging demo graphs.
+5. `pyproject.toml` and `.env.example` — dependencies, Python range, configuration and persistence choices.
+6. `src/run_service.py` — executable FastAPI launch point and Windows event-loop choice.
+7. `src/service/service.py` — app lifespan, shared-secret guard, chat/SSE routes, graph invocation, checkpoint history and feedback.
+8. `src/schema/schema.py` — actual API boundary models. `UserInput.user_id` is not authenticated identity.
+9. `src/agents/agents.py` — every registered graph and the default `research-assistant`; this maps URL `agent_id` to a graph.
+10. `src/agents/research_assistant.py` — best first concrete graph: guard -> model -> optional `ToolNode` loop -> end. Learn state, nodes, edges and tools.
+11. `src/agents/tools.py` — calculator and Chroma retrieval; illustrates why the latter needs tenancy/provenance work.
+12. `src/memory/__init__.py`, `src/memory/sqlite.py`, then `src/memory/postgres.py` — backend selection and what persists.
+13. `src/agents/interrupt_agent.py` and `src/service/agui.py` — technical interrupt/resume and AG-UI after normal requests; neither is an approval flow.
+14. `src/agents/rag_assistant.py` and `docs/RAG_Assistant.md` — Chroma RAG prototype, not a tenant-scoped knowledge service.
+15. `src/agents/knowledge_base_agent.py`, `src/agents/langgraph_supervisor_agent.py`, and `src/agents/langgraph_supervisor_hierarchy_agent.py` — optional Bedrock retrieval/multi-agent examples. Do not adopt them as V1 design yet.
+16. `src/client/client.py` then `src/streamlit_app.py` — existing UI calls, browser-generated user ID, streams and thread history.
+17. `compose.yaml`, `docker/Dockerfile.service`, `docker/Dockerfile.app`, and `.github/workflows/test.yml` — local container topology and CI commands.
+18. Tests alongside production: `tests/service/test_service.py`, `tests/service/test_auth.py`, `tests/service/test_service_real_graphs.py`, `tests/service/test_threads_sqlite.py`, `tests/agents/test_agent_loading.py`, and `tests/smoke/test_persistence.py`.
 
-1. `README.md`
-2. `AGENTS.md`
-3. `PROJECT_SPEC.md`
-4. `ROADMAP.md`
-
-Understand product boundaries before implementation.
-
-## 1. Application entry and configuration
-
-Read:
-- service startup / application factory
-- settings/config
-- dependency setup
-
-Questions:
-- FastAPI app is created where?
-- settings come from where?
-- DB/model clients are initialized where?
-
-## 2. API schemas
-
-Read:
-- request/response Pydantic models
-- shared API protocol models
-
-Questions:
-- internal domain model vs API schema?
-- streaming vs non-streaming response?
-
-## 3. Database and persistence
-
-Read:
-- DB session/engine
-- ORM models
-- migrations
-- repositories
-
-Questions:
-- transaction boundary?
-- tenant filter?
-- checkpoint storage?
-
-## 4. Authentication and authorization
-
-Read:
-- current user dependency
-- auth service
-- RBAC policy
-- organization/tenant checks
-
-Trace one request from token → current user → authorized resource.
-
-## 5. Task domain
-
-Read:
-- Task
-- TaskRun
-- TaskStep
-- state transition service
-- Task APIs
-
-Trace:
-POST task → DB → start run → update status.
-
-## 6. Agent graph
-
-Read in this order:
-1. AgentState
-2. graph builder
-3. planner node
-4. executor node
-5. verifier node
-6. recovery routing
-7. checkpoint/resume
-
-Do not read prompts first. Understand state flow first.
-
-## 7. Skills and Tools
-
-Read:
-- Skill manifest
-- registry
-- tool interface
-- 1 simple tool
-- 1 external/knowledge tool
-
-Trace:
-plan step → skill selection → tool call → result → state.
-
-## 8. Context
-
-Read:
-- context builder
-- memory retrieval
-- knowledge retrieval
-- context budget/truncation
-- tool result normalization
-
-Question:
-What exactly goes into each model call?
-
-## 9. Human approval
-
-Trace:
-risky tool proposal
-→ policy
-→ approval row
-→ interrupt
-→ API decision
-→ resume
-→ idempotent tool execution
-
-## 10. Observability
-
-Trace one task through:
-request_id → task_run → agent_run → tool_call → trace event.
-
-## 11. Evaluation
-
-Read:
-- fixtures
-- eval runner
-- metrics
-- regression output
-
-## 12. UI
-
-Only after backend flow is understood:
-- API client
-- task detail
-- trace timeline
-- approval UI
-
-## 13. Tests
-
-Read tests after corresponding production module; use them as executable specifications.
-
-### Personal reading method
-
-For every file, answer four questions:
-1. Who calls this?
-2. What does it receive?
-3. What does it return/change?
-4. What breaks if it is wrong?
+For every file ask: who calls it, what does it receive, what does it return or persist, and what authorization/trust assumption does it make? Distinguish a LangGraph conversation checkpoint from TaskPilot's `Task`/`TaskRun`/`TaskStep` domain, which does not exist yet.

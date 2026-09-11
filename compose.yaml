@@ -23,11 +23,23 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    # The local Compose stack is intended to exercise the PostgreSQL LangGraph
+    # checkpointer and Store. Keep these values aligned with the postgres
+    # service defaults instead of allowing an empty .env to select SQLite.
+    environment:
+      - DATABASE_TYPE=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-agent_service}
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/info"]
+      # python:slim does not include curl; use the interpreter already present
+      # in the image so Compose health status reflects the running API.
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/info').read()"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -60,7 +72,8 @@ services:
     depends_on:
       - agent_service
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
+      # Same minimal-image constraint as agent_service above.
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8501/healthz').read()"]
       interval: 5s
       timeout: 5s
       retries: 5

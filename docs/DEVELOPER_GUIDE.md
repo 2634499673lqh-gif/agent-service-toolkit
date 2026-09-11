@@ -1,76 +1,113 @@
-# Developer Guide
+# Developer Guide — Verified local baseline
 
-## Local development
+## Command status
 
-Codex must update exact commands after Phase 0 based on the current repository.
+The repository supports Python 3.12–3.14 and CI pins `uv 0.12.5`. The verified Windows baseline on 2026-09-10 used Python 3.12.4 and uv 0.12.12. `uv sync --frozen` created the project-managed `.venv` from the existing `uv.lock` without changing dependency definitions or the lock file.
 
-Expected pattern:
+## Normal local setup
 
-1. copy `.env.example` to `.env`
-2. add required LLM key(s)
-3. start PostgreSQL and services with Docker Compose
-4. run migrations
-5. run FastAPI
-6. run UI
-7. run tests
+Run in a writable clone. Do not commit `.env`.
 
-Never place real secrets in documentation.
+```powershell
+Copy-Item .env.example .env
+# For deterministic local verification, set USE_FAKE_MODEL=true in .env.
+uv sync --frozen
+```
 
-## Before coding
+`Settings` requires an LLM provider credential/configuration or `USE_FAKE_MODEL=true`; the fake model is appropriate for ordinary deterministic tests.
 
-Read:
-- `AGENTS.md`
-- current task prompt
-- relevant design doc
-- relevant tests
+## Verified commands after setup
 
-## Common commands
+```powershell
+# Full local test suite
+uv run pytest
 
-Codex should fill these with exact verified commands:
+# Style and imports
+uv run ruff format --check
+uv run ruff check --output-format github
+
+# Types and documentation
+uv run pyrefly check
+uv run pymarkdown scan README.md docs/
+
+# API, then UI in a second terminal. USE_FAKE_MODEL=true avoids real LLM calls.
+python src/run_service.py
+streamlit run src/streamlit_app.py
+
+# PostgreSQL + API + UI development stack
+docker compose watch
+```
+
+On this Windows installation, Docker Desktop is installed per-user. If a terminal opened before installation cannot find `docker`, open a new terminal after Docker Desktop is running; the CLI is installed under the Docker Desktop per-user program directory. Do not set a project-specific `DOCKER_HOST` as a workaround.
+
+### Docker versus local persistence
+
+Local `uv` development follows `.env`: an empty `DATABASE_TYPE` selects the code's SQLite default. Docker Compose deliberately overrides only the `agent_service` database settings to use `DATABASE_TYPE=postgres` and the same user/password/database defaults as its `postgres` service; its host is the internal Compose hostname `postgres`. This keeps the Docker stack on PostgreSQL while preserving SQLite as a simple local, no-container path.
+
+The verified Compose stack is `postgres` (PostgreSQL 16, host port 5432, named volume `postgres_data`), `agent_service` (FastAPI, port 8080), and `streamlit_app` (port 8501). Use the existing stack rather than a separately created development database:
+
+```powershell
+docker compose config
+docker compose up -d --build
+docker compose ps
+```
+
+For a PostgreSQL smoke check that preserves existing containers and volumes, start the service stack and run the test directly:
+
+```powershell
+$env:AGENT_URL = 'http://127.0.0.1:8080'
+$env:SMOKE_THREAD_ID = 'local-postgres-smoke'
+uv run pytest tests/smoke/test_persistence.py -v --run-docker
+```
+
+Do not run `scripts/smoke_test.sh postgres` against a reusable local environment without first reading it: its cleanup currently uses `docker compose down -v`. The direct test above is the safe equivalent for an existing named volume.
+
+On Windows, run the API through `python src/run_service.py`, not an ad-hoc `uvicorn service:app` command, when using async PostgreSQL. The entrypoint selects the Windows Selector event loop that psycopg requires. Docker uses Linux and is unaffected.
+
+The service health endpoint is `GET /health`; metadata is `GET /info`; OpenAPI is `GET /openapi.json`. When configured, the shared development secret requires `Authorization: Bearer <AUTH_SECRET>` on router endpoints.
+
+## Persistence and migrations
+
+There is no application migration command: the repository has no Alembic, SQLAlchemy models, or TaskPilot business schema. LangGraph initializes its own checkpointer/Store schemas in lifespan (`saver.setup()` and, when applicable, `store.setup()`). Phase 1 must verify and document a TaskPilot-safe migration baseline before domain tables are introduced; do not invent a migration command now.
+
+After Docker/dependencies are ready, optional upstream confidence checks are:
 
 ```bash
-# install/sync
-<TODO verified command>
-
-# test
-<TODO verified command>
-
-# lint
-<TODO verified command>
-
-# typecheck
-<TODO verified command>
-
-# run API
-<TODO verified command>
-
-# run UI
-<TODO verified command>
-
-# migrations
-<TODO verified command>
+./scripts/smoke_test.sh postgres
+./scripts/smoke_test.sh mongo
+./scripts/smoke_test.sh agui
 ```
+
+They are not default CI and need Docker. Langfuse is a separate heavy target.
+
+## Results observed in the environment repair
+
+```text
+uv --version                             PASS: 0.12.12
+python --version                         PASS: Python 3.12.4
+python -m pip --version                  PASS: pip 24.0
+uv sync --frozen                         PASS: created .venv from uv.lock
+uv run pytest                            PASS: 191 passed, 4 skipped, 18 warnings
+uv run ruff format --check               PASS
+uv run ruff check --output-format concise PASS
+uv run pyrefly check                     PASS: 0 errors (11 known suppressions)
+FastAPI /health, /info, /openapi.json    PASS with USE_FAKE_MODEL=true
+FastAPI invoke + /history                PASS with SQLite checkpoint
+Streamlit /healthz and base page         PASS
+Docker CLI / Compose plugin              PASS: Docker 29.7.2 / Compose v5.5.1
+Docker Engine                             PASS: Docker Desktop linux engine
+docker compose config                     PASS
+PostgreSQL 16 / health / volume           PASS: healthy, host 5432, postgres_data
+PostgreSQL checkpoint / Store             PASS: real smoke writes and Store put/get
+Docker FastAPI / Streamlit                PASS: healthy; mapped endpoints return 200
+```
+
+The four skipped tests require the explicit `--run-docker` option. The warnings are upstream dependency deprecations, not failing assertions. The PostgreSQL smoke test was executed separately with `--run-docker` and passed twice: once against a host FastAPI process and once against Docker FastAPI. Both cases wrote the unique smoke thread's checkpoints into PostgreSQL, so neither used a silent SQLite fallback.
 
 ## Change workflow
 
-1. create/read one task spec
-2. inspect code
-3. plan
-4. implement
-5. run focused tests
-6. run broader checks
-7. update docs
-8. update progress log
-9. review diff
-10. commit when appropriate
-
-## Debugging order
-
-1. reproduce
-2. capture exact error
-3. identify layer: API/domain/DB/agent/tool/external
-4. inspect trace IDs
-5. write/adjust failing test
-6. fix smallest root cause
-7. rerun test
-8. document non-obvious decision
+1. Read `AGENTS.md`, the current phase prompt, relevant code and tests.
+2. Make a small plan; identify authorization, migration and compatibility effects.
+3. Change only scoped files; run focused checks, then broader checks.
+4. Update stale docs and append an honest progress entry.
+5. Review the diff. Never modify production code merely to conceal an environmental baseline failure.
