@@ -59,3 +59,17 @@ Negative:
 
 Revisit when:
 What evidence would justify changing it?
+## ADR-002 — Future TaskPilot migrations alongside LangGraph PostgreSQL persistence
+
+Date: 2026-09-11
+Status: proposed for Phase 1 review
+
+Context: The repository has no SQLAlchemy, Alembic, ORM, application migration directory, or TaskPilot business tables. `src/memory/postgres.py` calls LangGraph `AsyncPostgresSaver.setup()` and `AsyncPostgresStore.setup()`, which own their persistence tables. PostgreSQL is already verified for checkpoint and Store use.
+
+Decision proposal: Keep LangGraph setup ownership separate from future TaskPilot application migrations. Do not add Alembic/ORM or business tables in Phase 1. Before Phase 2 models, a strong design review must choose an application migration tool, a dedicated application schema or clearly namespaced tables, revision ownership, startup ordering, and fresh-database verification. LangGraph tables must never be altered by application revisions.
+
+Options considered: (1) introduce Alembic/ORM now, adding unused framework and schema coupling; (2) defer until the first approved TaskPilot domain schema; (3) manually manage business DDL. Option 2 is recommended because it preserves tested upstream persistence and avoids premature abstractions; option 3 is rejected for repeatability.
+
+Consequences: Phase 1 has no migration command or business schema. Phase 2 must prove fresh database setup and coexistence before shipping models. Existing LangGraph `setup()` remains the library-managed prerequisite.
+
+Revisit when: Phase 2 identity schema is approved or LangGraph setup conflicts with the selected application namespace.
