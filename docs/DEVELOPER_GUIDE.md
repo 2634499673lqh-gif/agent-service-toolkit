@@ -16,6 +16,19 @@ uv sync --frozen
 
 `Settings` requires an LLM provider credential/configuration or `USE_FAKE_MODEL=true`; the fake model is appropriate for ordinary deterministic tests.
 
+### Environment template and secret safety
+
+`.env.example` is the non-secret inventory for the current upstream runtime. It mirrors the fields in `src/core/settings.py` and the small set of client/integration variables read directly by the existing code (for example `AGENT_URL`, `AWS_KB_ID`, and voice-provider settings). Empty values are intentional placeholders; defaults are shown only for non-sensitive settings.
+
+Keep provider keys, passwords, bearer tokens, and credential-file paths in the ignored `.env` file or in the host environment. Never paste values from `.env` into documentation, tests, logs, screenshots, or commits. Verify that Git still ignores the local file before committing:
+
+```powershell
+git check-ignore -v .env
+git status --short --ignored .env
+```
+
+The template must remain safe to publish: it contains no real API keys, passwords, tokens, or private credential paths. Do not add speculative environment variables for future TaskPilot phases; update the template only when an implemented runtime setting is introduced.
+
 ## Verified commands after setup
 
 ```powershell

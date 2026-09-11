@@ -2,6 +2,46 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T011: Environment Template Audit
+
+Status: DONE
+
+What changed:
+- Audited the Pydantic `Settings` fields and the existing direct environment reads, then made `.env.example` a complete Phase 1 runtime inventory.
+- Added safe defaults/placeholders for server, tracing, persistence, provider, integration, and client settings; corrected the stale LangSmith names to the implemented `LANGCHAIN_*` names.
+- Kept every credential, password, bearer token, and API key value empty; documented that `.env` is local-only and must remain ignored.
+- Added a Developer Guide section covering template scope, secret handling, and Git checks.
+
+Files changed:
+- `.env.example`
+- `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/core/test_settings.py -q` → initial cache-path error on the host; rerun unchanged with `UV_CACHE_DIR=.uv-cache-t011` → PASS (24 passed, 1 warning).
+- `git check-ignore -v .env` → PASS (`.gitignore:142:.env`).
+- `git status --short --ignored .env` → PASS (local `.env` is ignored and untracked).
+- Secret-safety scan of `.env.example` → PASS: no non-placeholder credential values or private paths found.
+- `git diff --check` → PASS.
+
+Architecture/security notes:
+- No source code, settings behavior, dependencies, lockfile, persistence architecture, Docker/PostgreSQL wiring, public API, or Phase 2+ domain was changed.
+- `.env` was not read or copied; only Git ignore metadata was checked.
+
+Known limitations:
+- This task audits the template only; provider-specific credential validation remains a future settings task (T012).
+- The full suite is deferred as the task card requires only the focused settings command.
+
+Learner notes:
+- Problem solved: developers now have one safe, source-aligned environment template without exposing secrets.
+- Read these files: `.env.example`, `src/core/settings.py`, `docs/DEVELOPER_GUIDE.md`.
+- Key concept: an environment template documents configuration names and safe defaults, while real secrets stay in an ignored runtime file.
+- Small exercise: copy `.env.example` to `.env`, set only `USE_FAKE_MODEL=true`, and run the focused settings tests.
+- Ignore for now: TaskPilot identity/task domains and provider-specific production hardening.
+
+Recommended next task:
+- T012 — Settings validation. Do not begin it as part of T011.
+
 ### 2026-09-11 — T010: Repository Branding and Attribution
 
 Status: DONE
