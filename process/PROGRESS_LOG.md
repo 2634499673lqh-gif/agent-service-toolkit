@@ -451,3 +451,84 @@ Files changed: process/DECISION_LOG.md, docs/ARCHITECTURE.md, docs/DEVELOPER_GUI
 Verification: documentation diff checks; PostgreSQL smoke not run because runtime/database behavior is unchanged.
 
 Learner Notes: LangGraph persistence is not TaskPilot business truth. Read src/memory/postgres.py and ADR-002.
+
+### 2026-09-13 — T016: Verified developer commands documentation
+
+Status: DONE — ready for Phase 1 Final Audit
+
+Baseline:
+- Repository root: `D:\github\agent-service\agent-service-toolkit`
+- Branch: `phase-1-foundation`
+- HEAD before changes: `47eb5c8 docs: document LangGraph and TaskPilot persistence ownership`
+- Working tree before changes: clean; no staged changes.
+
+What changed:
+- Synchronized the Developer Guide with the current `pyproject.toml`, Compose
+  services, local entrypoints, CI commands, and the safe PostgreSQL smoke-test
+  path.
+- Documented the Compose lifecycle commands (`config`, `up -d`, `ps`, `logs`, and
+  `stop`) and separated static configuration validation from Docker Engine
+  readiness.
+- Added the verified Windows repository-local `TEMP`/`TMP` and `UV_CACHE_DIR`
+  workaround without changing system settings or application code.
+- Recorded the existing `scripts/smoke_test.sh` `down -v` cleanup hazard and
+  clarified that current runtime examples are not TaskPilot Phase 2+ domains.
+- Added a current verification snapshot and distinguished pre-existing full
+  Markdown-lint debt from checks on the touched files.
+
+Files changed:
+- `docs/DEVELOPER_GUIDE.md`
+- `docs/TROUBLESHOOTING.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv sync --frozen` → PASS; checked 248 packages and did not change the lock file.
+- `uv run pytest` → PASS: 206 passed, 4 skipped, 18 warnings.
+- `uv run ruff format --check` → PASS.
+- `uv run ruff check` → PASS.
+- `uv run pyrefly check` → PASS: 0 errors, 11 known suppressions.
+- `uv run pymarkdown scan README.md docs/` → FAIL only on pre-existing MD022/MD032 violations in untouched documentation.
+- `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md` → PASS after the final documentation change.
+- `uv run python src/run_service.py` → PASS: `/health` and `/info` returned HTTP 200; the test process was stopped.
+- `uv run streamlit run src/streamlit_app.py` → PASS: `/healthz` and `/` returned HTTP 200; the test process was stopped.
+- `docker --version`, `docker compose version` → PASS: Docker 29.7.2, Compose v5.5.1.
+- `docker compose config` → PASS.
+- `docker compose up -d`, `docker compose ps`, `docker compose logs --tail 20 agent_service streamlit_app postgres`, `docker compose stop` → BLOCKED: Docker Desktop Linux Engine named pipe `dockerDesktopLinuxEngine` was unavailable in the current shell.
+- Repository-local `TEMP`/`TMP` plus `UV_CACHE_DIR=.uv-cache`: `uv sync --frozen` and `uv run pytest tests/core/test_settings.py -q` → PASS: 33 passed.
+
+Architecture/security notes:
+- This task changed documentation only. No source code, tests, dependencies,
+  lockfile, Compose architecture, database schema, public API, or runtime
+  behavior changed.
+- Local `uv` development remains SQLite/fake-model friendly; Compose explicitly
+  targets PostgreSQL as documented by the existing configuration.
+- No credentials or secret values were added to documentation or command output.
+- No Git add, commit, reset, rebase, merge, push, switch, or checkout operation
+  was performed.
+
+Known limitations:
+- Docker lifecycle commands remain pending until Docker Desktop's Linux Engine
+  is ready. The earlier 2026-09-10 Phase 0.5 entry records the prior successful
+  Compose/PostgreSQL verification; this T016 run does not overwrite that history.
+- Whole-tree Markdown lint still has pre-existing MD022/MD032 violations in
+  untouched docs; T016 does not broaden into a formatting cleanup.
+- The repository remains a Phase 1 foundation. Users, organizations, RBAC,
+  Task/TaskRun/TaskStep, planner/executor/verifier, approvals, and persisted
+  TaskPilot observability are still planned work, not current runtime features.
+
+Learner notes:
+- Problem solved: developers now have one source of truth for reproducible local
+  commands, Docker lifecycle commands, safe smoke-test boundaries, and Windows
+  permission recovery.
+- Read these files: `pyproject.toml`, `docs/DEVELOPER_GUIDE.md`,
+  `docs/TROUBLESHOOTING.md`, `compose.yaml`, and `.github/workflows/test.yml`.
+- Key concept: a command can be syntactically valid and still require an external
+  runtime; `docker compose config` validates YAML/configuration, while `up` needs
+  a healthy Docker Engine.
+- Small exercise: run `uv run pytest`, `uv run ruff check`, then `docker info` and
+  compare the local result with `docker compose config`.
+- Ignore for now: Docker internals, the smoke wrapper's implementation details,
+  and all unimplemented TaskPilot domain phases.
+
+Recommended next task:
+- Phase 1 Final Audit only. Do not begin Phase 2 as part of T016.
