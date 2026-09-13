@@ -57,8 +57,8 @@ redaction are deferred to T014.
 
 ## Persistence reality
 
-- Default: `DATABASE_TYPE=sqlite`, checkpoint file `checkpoints.db`; the long-term store is process-local `InMemoryStore`, so it is not durable across restarts.
-- PostgreSQL: `AsyncPostgresSaver` and `AsyncPostgresStore` use library-managed schemas via `setup()`. `compose.yaml` runs PostgreSQL 16 and the service/app.
+- SQLite checkpoint: lightweight local-development checkpoint; the long-term store is process-local `InMemoryStore` and is not durable across restarts.
+- PostgreSQL LangGraph persistence: `AsyncPostgresSaver` and `AsyncPostgresStore` create and upgrade library-managed checkpoint/Store schemas via `setup()`.
 - MongoDB: optional checkpointer only (`docker/compose.mongo.yaml`); no Mongo Store.
 - There are no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. `src/schema/task_data.py` is Streamlit background-task display data, not the TaskPilot domain.
 

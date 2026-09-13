@@ -436,3 +436,18 @@ Learner notes:
 
 Recommended next task:
 - ...
+
+### 2026-09-13 — T015: Migration architecture verification
+
+Status: DONE
+
+- Confirmed separate LangGraph persistence and future TaskPilot business ownership.
+- Phase 1 adds no SQLAlchemy, Alembic, ORM, migration directory, placeholder migration, or business table.
+- SQLite is local checkpoint; PostgreSQL currently contains LangGraph checkpoint/Store schemas only.
+- Phase 2 must decide framework, namespace, shared database, revision ownership, ordering, production migration, downgrade policy, and test database strategy.
+
+Files changed: process/DECISION_LOG.md, docs/ARCHITECTURE.md, docs/DEVELOPER_GUIDE.md, process/PROGRESS_LOG.md.
+
+Verification: documentation diff checks; PostgreSQL smoke not run because runtime/database behavior is unchanged.
+
+Learner Notes: LangGraph persistence is not TaskPilot business truth. Read src/memory/postgres.py and ADR-002.

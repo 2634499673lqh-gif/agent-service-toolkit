@@ -113,7 +113,7 @@ The service health endpoint is `GET /health`; metadata is `GET /info`; OpenAPI i
 
 ## Persistence and migrations
 
-There is no application migration command: the repository has no Alembic, SQLAlchemy models, or TaskPilot business schema. LangGraph initializes its own checkpointer/Store schemas in lifespan (`saver.setup()` and, when applicable, `store.setup()`). Phase 1 must verify and document a TaskPilot-safe migration baseline before domain tables are introduced; do not invent a migration command now.
+There is no application migration command: the repository has no SQLAlchemy, Alembic, ORM, migration directory, or TaskPilot business schema. SQLite is the lightweight local-development checkpoint. PostgreSQL checkpoint and Store persistence is LangGraph-owned. Future TaskPilot business persistence is not implemented and requires separate migration ownership. Phase 1 therefore adds no framework, placeholder migration, ORM, or business table.
 
 After Docker/dependencies are ready, optional upstream confidence checks are:
 
