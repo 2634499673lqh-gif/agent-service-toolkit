@@ -532,3 +532,57 @@ Learner notes:
 
 Recommended next task:
 - Phase 1 Final Audit only. Do not begin Phase 2 as part of T016.
+
+### 2026-09-13 — Phase 2 planning: T020–T027 identity/RBAC/tenant isolation task cards
+
+Status: DONE — planning only; no Phase 2 production code changed
+
+What changed:
+- Audited the real FastAPI service, optional shared bearer auth, settings, schemas, PostgreSQL/SQLite LangGraph persistence, lifespan, AG-UI, thread listing, client/UI identity fields, tests, dependencies, Compose and environment template.
+- Added a Phase 2 task-card index and implementation-ready T020–T027 cards.
+- Added proposed ADR-003 defining the T020 architecture gate and the server-derived identity/tenant security invariant.
+- Recorded the roadmap/backlog numbering drift: ROADMAP lists T020–T025 while TASK_BACKLOG is authoritative for T020–T027.
+
+Files changed:
+- process/tasks/INDEX.md
+- process/tasks/T020.md through process/tasks/T027.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+
+Commands/tests run:
+- `git rev-parse --show-toplevel`, `git branch --show-current`, `git status`, `git log -3 --oneline` → PASS: expected repository, `phase-2-identity-rbac`, clean tree before edits.
+- Read all required planning/security/persistence documents and the real source/tests listed in T020 → PASS.
+- Production tests/lint → NOT RUN: this task is documentation/planning only and adds no runtime behavior.
+
+Architecture/security notes:
+- Current AUTH_SECRET is an optional shared bearer secret, not user identity, organization identity, RBAC, or tenant authorization.
+- `UserInput.user_id`, `/threads` query `user_id`, Streamlit cookie/query IDs, and AG-UI configurable identity are caller-asserted upstream compatibility values and must not authorize TaskPilot business resources.
+- PostgreSQL saver/store schemas are LangGraph-owned; TaskPilot business migrations must be independently owned and must not include those tables.
+
+Known limitations:
+- The pasted task input ended at “重点决定：cross-tenan”; any requirements after that truncation could not be audited and should be merged into T020 if supplied.
+- T020 decisions remain proposed until strong architecture/security review; implementation cards are intentionally blocked on that review.
+
+Learner notes:
+- Problem solved: Phase 2 implementation is now decomposed around explicit identity, migration, transaction and tenant-security decisions instead of guessing in CRUD tasks.
+- Read these files: `process/tasks/T020.md`, `process/DECISION_LOG.md`, `src/service/service.py`, `src/schema/schema.py`, `src/memory/postgres.py`.
+- Key concept: authentication proves who a caller is; authorization derives what that identity may access inside a tenant.
+- Small exercise: trace a `/threads` request and list every client-controlled identity value, then explain why each cannot authorize a business query.
+- Ignore for now: enterprise SSO, custom policy engines, destructive actions, and production code until T020 is accepted.
+
+Recommended next task:
+- Supply any missing prompt text after the attachment truncation, then run T020 as a strong architecture/security review and approve its ADR before starting T021.
+
+### 2026-09-13 — Phase 2 Planning Completion Audit after prompt truncation
+
+Status: DONE — planning documents only; T020 not executed
+
+Audit result:
+- Rechecked requirements 1–19. Added explicit decision-freeze language, Membership split contingency, migration verification gates, exact model/review labels, full-regression gates, and expanded negative-test matrix.
+- The truncation did not leave an unplanned security domain: all requirements in the follow-up audit are now represented in T020–T027 and the index. The original attachment still ends at `cross-tenan`; no unseen text was inferred.
+
+Files changed: process/tasks/INDEX.md; process/tasks/T020.md–T027.md.
+
+Validation: focused `uv run pymarkdown scan` PASS; `git diff --check` PASS; no `src/`, `tests/`, migration, dependency, Compose, or env files changed.
+
+Next: strong review of T020 only when explicitly authorized.

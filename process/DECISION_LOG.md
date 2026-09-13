@@ -73,3 +73,19 @@ Options considered: (1) introduce Alembic/ORM now, adding unused framework and s
 Consequences: Phase 1 has no migration command, ORM, migration directory, or business schema. Phase 2 must prove fresh database setup and coexistence before shipping models. Existing LangGraph `setup()` remains the library-managed prerequisite.
 
 Revisit when: Phase 2 identity schema is approved or LangGraph setup conflicts with the selected application namespace.
+
+## ADR-003 — Phase 2 identity planning gate (decision pending implementation)
+
+Date: 2026-09-13
+
+Status: proposed; T020 strong-model review required
+
+Context: The repository currently has an optional shared `AUTH_SECRET`, caller-asserted conversation `user_id` in `UserInput`/`/threads`, AG-UI forwarded configurable values, and no TaskPilot business persistence. PostgreSQL is currently owned by LangGraph checkpointer/Store setup; there is no ORM or migration framework. Treating these upstream values as business identity would permit cross-tenant access.
+
+Decision: Create T020 as a mandatory architecture gate before any identity implementation. It must choose User/Organization/Membership topology, minimal role policy, identifier/lifecycle/email/bootstrap rules, authentication mechanism, password handling, migration/session/transaction architecture, and cross-tenant error semantics. T021–T027 may implement only those accepted decisions. The current `AUTH_SECRET` remains compatibility-only until a separately approved change.
+
+Security invariants: authorization is credential → server-resolved user → server-resolved membership/org/role → resource tenant check. Client-supplied user/org IDs, role claims, and AG-UI configurable identity are never authoritative. LangGraph internal tables remain outside TaskPilot migrations.
+
+Known drift: `ROADMAP.md` lists Phase 2 as T020–T025, while `TASK_BACKLOG.md` expands it to T020–T027. The backlog is authoritative; no roadmap rewrite is made in this planning task.
+
+Revisit when: T020 review supplies evidence that a different topology, migration owner, or credential strategy is required.
