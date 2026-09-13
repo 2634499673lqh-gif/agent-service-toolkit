@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from core.settings import LogLevel, Settings, check_str_is_http
+from core.settings import DatabaseType, LogLevel, Settings, check_str_is_http
 from schema.models import (
     AnthropicModelName,
     AzureOpenAIModelName,
@@ -187,8 +187,17 @@ def test_settings_with_both_openai_and_azure():
 
 
 def test_settings_azure_deployment_names():
-    # Delete this test
-    pass
+    with patch.dict(
+        os.environ,
+        {
+            "AZURE_OPENAI_API_KEY": "test_key",
+            "AZURE_OPENAI_ENDPOINT": "https://test.openai.azure.com",
+            "AZURE_OPENAI_DEPLOYMENT_MAP": '{"gpt-5": "deployment-1", "gpt-5-mini": "deployment-2"}',
+        },
+        clear=True,
+    ):
+        settings = Settings(_env_file=None)
+        assert set(settings.AZURE_OPENAI_DEPLOYMENT_MAP) == {"gpt-5", "gpt-5-mini"}
 
 
 def test_settings_azure_missing_deployment_names():
@@ -281,3 +290,111 @@ def test_settings_log_level_invalid():
     with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key", "LOG_LEVEL": "INVALID"}, clear=True):
         with pytest.raises(ValueError, match="validation error for Settings\nLOG_LEVEL\n"):
             Settings(_env_file=None)
+
+
+def test_sqlite_default_does_not_require_database_credentials():
+    with patch.dict(os.environ, {"USE_FAKE_MODEL": "true"}, clear=True):
+        settings = Settings(_env_file=None)
+        assert settings.DATABASE_TYPE == DatabaseType.SQLITE
+
+
+def test_postgres_requires_selected_backend_configuration():
+    with patch.dict(
+        os.environ, {"USE_FAKE_MODEL": "true", "DATABASE_TYPE": "postgres"}, clear=True
+    ):
+        with pytest.raises(ValidationError, match="Missing required PostgreSQL configuration"):
+            Settings(_env_file=None)
+
+
+def test_postgres_configuration_and_pool_bounds_are_validated():
+    values = {
+        "USE_FAKE_MODEL": "true",
+        "DATABASE_TYPE": "postgres",
+        "POSTGRES_USER": "postgres",
+        "POSTGRES_PASSWORD": "postgres",
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5432",
+        "POSTGRES_DB": "agent_service",
+        "POSTGRES_MIN_CONNECTIONS_PER_POOL": "2",
+        "POSTGRES_MAX_CONNECTIONS_PER_POOL": "1",
+    }
+    with patch.dict(os.environ, values, clear=True):
+        with pytest.raises(ValidationError, match="POSTGRES_MIN_CONNECTIONS_PER_POOL"):
+            Settings(_env_file=None)
+
+
+def test_mongo_allows_unauthenticated_selected_backend():
+    values = {
+        "USE_FAKE_MODEL": "true",
+        "DATABASE_TYPE": "mongo",
+        "MONGO_HOST": "localhost",
+        "MONGO_PORT": "27017",
+        "MONGO_DB": "agent_service",
+    }
+    with patch.dict(os.environ, values, clear=True):
+        settings = Settings(_env_file=None)
+        assert settings.DATABASE_TYPE == DatabaseType.MONGO
+
+
+def test_partial_optional_provider_configuration_fails_fast():
+    with patch.dict(
+        os.environ,
+        {"USE_FAKE_MODEL": "true", "COMPATIBLE_MODEL": "local-model"},
+        clear=True,
+    ):
+        with pytest.raises(ValidationError, match="OpenAI-compatible provider requires"):
+            Settings(_env_file=None)
+
+
+def test_ollama_model_without_base_url_keeps_local_fallback():
+    with patch.dict(
+        os.environ,
+        {"OLLAMA_MODEL": "llama3.3"},
+        clear=True,
+    ):
+        settings = Settings(_env_file=None)
+        assert settings.OLLAMA_MODEL == "llama3.3"
+        assert settings.OLLAMA_BASE_URL is None
+
+
+def test_custom_ollama_model_can_be_used_as_default_model():
+    with patch.dict(
+        os.environ,
+        {"OLLAMA_MODEL": "llama3.3", "DEFAULT_MODEL": "llama3.3"},
+        clear=True,
+    ):
+        settings = Settings(_env_file=None)
+        assert settings.OLLAMA_MODEL == "llama3.3"
+        assert settings.DEFAULT_MODEL == "llama3.3"
+
+
+def test_custom_openai_compatible_model_can_be_used_as_default_model():
+    with patch.dict(
+        os.environ,
+        {
+            "COMPATIBLE_MODEL": "local-model",
+            "COMPATIBLE_BASE_URL": "http://localhost:8001/v1",
+            "DEFAULT_MODEL": "local-model",
+        },
+        clear=True,
+    ):
+        settings = Settings(_env_file=None)
+        assert settings.COMPATIBLE_MODEL == "local-model"
+        assert settings.DEFAULT_MODEL == "local-model"
+
+
+def test_tracing_requires_credentials_only_when_enabled():
+    with patch.dict(
+        os.environ,
+        {"USE_FAKE_MODEL": "true", "LANGCHAIN_TRACING_V2": "true"},
+        clear=True,
+    ):
+        with pytest.raises(ValidationError, match="LANGCHAIN_API_KEY"):
+            Settings(_env_file=None)
+
+    with patch.dict(
+        os.environ,
+        {"USE_FAKE_MODEL": "true", "LANGCHAIN_TRACING_V2": "false"},
+        clear=True,
+    ):
+        Settings(_env_file=None)

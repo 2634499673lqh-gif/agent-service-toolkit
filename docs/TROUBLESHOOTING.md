@@ -10,19 +10,49 @@ Cause: the shared `mock_env` fixture clears the process environment. On Windows,
 
 Resolution in this repository: `tests/conftest.py` preserves only those three OS path variables while continuing to clear project configuration and secrets. Do not put API keys or other application settings into that fixture.
 
+## Windows: uv or pytest cannot write its cache or temporary files
+
+Symptom: `uv` reports a cache permission error, or pytest fails before collection
+because the default Windows `TEMP`/`TMP` directory is not writable.
+
+Resolution: use repository-local paths for the current PowerShell process. The
+existing `.uv-cache/` and `.pytest_cache/` directories are ignored by Git:
+
+```powershell
+$repo = (Get-Location).Path
+$tempDir = Join-Path $repo '.pytest_cache\tmp'
+New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+$env:TEMP = $tempDir
+$env:TMP = $tempDir
+$env:UV_CACHE_DIR = Join-Path $repo '.uv-cache'
+uv sync --frozen
+uv run pytest
+```
+
+This is a process-local development workaround, not a requirement for every
+machine. Do not change Windows ACLs, commit cache contents, or add these values to
+the application's `.env` file.
+
 ## Docker command is unavailable
 
 Symptom: `docker --version` and `docker compose version` cannot run; neither Docker Desktop nor the `com.docker.service` service is present.
 
-Resolution: install and start Docker Desktop using the owner's normal Windows setup. This requires user-controlled system software installation and may require WSL2; do not replace it with ad-hoc local PostgreSQL changes. After Docker is running, execute `docker compose config`, then `docker compose watch` or the relevant `scripts/smoke_test.sh` target.
+Resolution: install and start Docker Desktop using the owner's normal Windows setup. This requires user-controlled system software installation and may require WSL2; do not replace it with ad-hoc local PostgreSQL changes. After Docker is running, execute `docker compose config`, then `docker compose up -d` and `docker compose ps` before using the UI or a smoke target.
 
-## Docker Desktop opens but Engine does not answer
+## Docker CLI works but Docker Engine is unavailable
 
-Symptom: the Docker Desktop process and named pipes exist and `docker --version` / `docker compose version` work, but `docker info` or `docker version` never return. Docker Desktop backend logs may say that the backend is not running.
+Symptom: `docker --version` and `docker compose version` work, but `docker info`
+or `docker compose up -d` fails or never returns. On Windows, an error mentioning
+the `dockerDesktopLinuxEngine` named pipe means the Docker Desktop Linux Engine is
+not ready or is no longer running.
 
 Cause: this is a Docker Desktop/WSL runtime startup issue, not a repository Compose configuration issue. Do not change `compose.yaml`, install a second PostgreSQL, or remove volumes to work around it.
 
-Resolution: use Docker Desktop's Troubleshoot screen to restart Docker Desktop and wait for its Engine-ready status. If it remains stuck, follow Docker Desktop's displayed WSL2/virtualization repair guidance. Once `docker info` succeeds in a newly opened terminal, rerun `docker compose config` before starting the repository stack.
+Resolution: use Docker Desktop's Troubleshoot screen to restart Docker Desktop and
+wait for its Engine-ready status. If it remains stuck, follow Docker Desktop's
+displayed WSL2/virtualization repair guidance. Once `docker info` succeeds in a
+newly opened terminal, rerun `docker compose config`, then `docker compose up -d`.
+Do not interpret a successful `docker compose config` as Engine readiness.
 
 ## Compose starts PostgreSQL but agent service uses SQLite
 
@@ -59,11 +89,31 @@ Resolution: do not run that wrapper against a reusable development volume. Start
 Check:
 
 - `.env`
-- Docker
+- `uv sync --frozen`
+- Docker Engine readiness (`docker info`)
 - port conflicts
-- DB health
-- dependency sync
-- migration state
+- SQLite path or PostgreSQL health, depending on `DATABASE_TYPE`
+- `USE_FAKE_MODEL=true` for a no-network local check
+
+There is no application migration command in Phase 1; LangGraph owns its current
+checkpoint/Store setup, while future TaskPilot business migrations are deferred.
+
+## Application log is not JSON or has no request ID
+
+Application records handled by the configured root handlers are emitted as
+JSON lines. A `request_id` value is present for records created inside the HTTP
+middleware context; startup, shutdown, background, or command-line records are
+expected to use `null` because they do not belong to an HTTP request.
+
+If a library or test installs a new logging handler after service configuration,
+call the existing `configure_logging()` helper so that handler receives the
+structured formatter. Do not log request headers, settings dumps, or raw
+connection exceptions to diagnose formatting: Authorization values, credentials,
+tokens, passwords, and credential-bearing URLs are intentionally redacted.
+
+An exception that escapes to Starlette's outer `ServerErrorMiddleware` may still
+produce a final 500 response without `X-Request-ID`; T014 does not change that
+known T013 response-header limitation.
 
 ## LLM call fails
 

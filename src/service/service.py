@@ -2,12 +2,12 @@ import inspect
 import json
 import logging
 import warnings
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -27,6 +27,7 @@ from langfuse.langchain import (
 from langgraph.types import Command, Interrupt
 from langsmith import Client as LangsmithClient
 from langsmith import uuid7
+from starlette.responses import Response
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
@@ -44,10 +45,13 @@ from schema import (
     UserThreadsInput,
 )
 from service.agui import router as agui_router
+from service.logging import configure_logging, reset_request_id, set_request_id
 from service.threads import list_user_threads
 from service.utils import (
+    REQUEST_ID_HEADER,
     convert_message_content_to_string,
     ensure_model_available,
+    generate_request_id,
     langchain_to_chat_message,
     messages_from_checkpoint,
     remove_tool_calls,
@@ -81,6 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Configurable lifespan that initializes the appropriate database checkpointer, store,
     and agents with async loading - for example for starting up MCP clients.
     """
+    configure_logging(settings)
     try:
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
@@ -119,6 +124,49 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_unique_id)
+
+
+@app.middleware("http")
+async def request_id_middleware(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Assign one server-generated correlation ID for the request lifecycle.
+
+    Client-provided correlation headers are intentionally ignored. The generated ID is
+    available to downstream handlers through ``request.state.request_id`` and is echoed
+    in the response so callers can report it without being able to spoof it.
+    """
+    request_id = generate_request_id()
+    request.state.request_id = request_id
+    context_token = set_request_id(request_id)
+    configure_logging(settings)
+    logger.info(
+        "request.started",
+        extra={"event": "request.started", "method": request.method, "path": request.url.path},
+    )
+    try:
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        logger.info(
+            "request.completed",
+            extra={
+                "event": "request.completed",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+            },
+        )
+        return response
+    except Exception:
+        logger.exception(
+            "request.failed",
+            extra={"event": "request.failed", "method": request.method, "path": request.url.path},
+        )
+        raise
+    finally:
+        reset_request_id(context_token)
+
+
 router = APIRouter(dependencies=[Depends(verify_bearer)])
 # AG-UI protocol endpoints inherit the same bearer auth - see service/agui.py
 router.include_router(agui_router)

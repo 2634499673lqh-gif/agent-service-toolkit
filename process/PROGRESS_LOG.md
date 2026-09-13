@@ -2,6 +2,218 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-11 — T014: Structured Logging and Secret Redaction
+
+Status: DONE — ready for Strong Review
+
+Baseline:
+- Branch: `phase-1-foundation`
+- HEAD before changes: `3101058 fix(settings): validate conditional provider and backend configuration`
+- Working tree before changes: clean.
+
+What changed:
+- Added a small stdlib-only structured logging helper under `src/service/logging.py`.
+- Existing root handlers now emit JSON records with UTC timestamp, level, logger, message, request ID, and safe request metadata.
+- Reused T013's generated request ID by binding it to an async-safe `contextvars` context in the existing middleware; the context is reset in `finally` to prevent request crossover.
+- Added `request.started`, `request.completed`, and `request.failed` lifecycle events without changing HTTP/SSE payloads or exception semantics.
+- Added recursive key-based redaction for nested mappings/lists, common Authorization/Bearer and key-value forms, credential-bearing URLs, registered Settings secrets, and exception text.
+- Added real service regression tests for structured request correlation, request-context cleanup, nested redaction, bearer/DSN redaction, configured secrets, and exception messages.
+
+Files changed:
+- `src/service/logging.py`
+- `src/service/service.py`
+- `tests/service/test_logging.py`
+- `docs/DEVELOPER_GUIDE.md`
+- `docs/TROUBLESHOOTING.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service -q` → PASS (73 passed, 19 warnings) with repository-local writable `TMP`/`TEMP`.
+- `uv run pytest` → PASS (206 passed, 4 skipped, 19 warnings) with repository-local writable `TMP`/`TEMP`.
+- `uv run ruff check --output-format concise` → PASS.
+- `uv run pyrefly check` → PASS (0 errors; 11 known suppressions).
+- `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md` → PASS.
+- `git diff --check` → PASS; only normal Git LF/CRLF advisories for Markdown files.
+
+Architecture/security notes:
+- Existing Python stdlib logging remains the logging system; no new dependency or logging framework was added.
+- Request IDs are correlation metadata only and remain ephemeral; no tracing, persistence, TaskPilot IDs, metrics, or audit tables were introduced.
+- Settings `SecretStr` values are registered without logging their contents. Ordinary fields such as model, host, port, event, and request ID remain available for diagnosis.
+
+Known limitations:
+- Records emitted outside an HTTP request intentionally have `request_id: null`.
+- A custom handler installed after service configuration must be passed through `configure_logging()` to receive the JSON formatter; LogRecord message/argument redaction still protects standard handlers.
+- Redaction is deliberately bounded to registered Settings secrets, sensitive field names, credential-bearing URLs, and common authorization/key-value forms; arbitrary unregistered opaque values cannot be identified reliably without a broader secret-management contract.
+- The known T013 limitation remains: an exception escaping to Starlette's outer `ServerErrorMiddleware` can produce a final 500 without `X-Request-ID`; T014 records this but does not expand scope to change it.
+- This is application logging hardening, not distributed tracing, LangSmith/Langfuse redesign, or persisted observability.
+
+Learner notes:
+- Problem solved: service logs can be parsed by machines, correlated to the server-generated request ID, and inspected without exposing common credentials.
+- Read these files: `src/service/logging.py`, `src/service/service.py`, `tests/service/test_logging.py`, `src/service/utils.py`, `docs/TROUBLESHOOTING.md`.
+- Key concepts: `contextvars` provide request-local async state; LogRecord formatting is separate from log event creation; redaction must handle structured values and rendered exception text.
+- Small exercise: add a temporary logger call with a nested `{"api_key": "demo", "host": "localhost"}` payload, run the logging tests, and verify only the key is masked.
+- Ignore for now: distributed tracing, OpenTelemetry, TaskRun/AgentRun persistence, metrics, dashboards, and audit storage.
+
+Recommended next task:
+- T015 — Migration baseline verification. Do not execute it as part of T014.
+
+### 2026-09-11 — T013: Request Correlation ID
+
+Status: DONE — ready for GPT-6 Astra review
+
+What changed:
+- Added a single FastAPI HTTP middleware that generates a fresh UUID4 per request, stores it in `request.state.request_id`, and echoes the same value in the `X-Request-ID` response header.
+- Deliberately ignores client-supplied `X-Request-ID` values so correlation IDs cannot be spoofed; no structured logging, redaction, distributed tracing, Task IDs, or trace records were added.
+- Added focused regression tests for generation, request-state propagation, response consistency, fresh IDs, and existing `/health` behavior.
+- Documented the request lifecycle and the T014 boundary in `docs/ARCHITECTURE.md`.
+
+Files changed:
+- `src/service/service.py`
+- `src/service/utils.py`
+- `tests/service/test_service.py`
+- `docs/ARCHITECTURE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_service.py -q` → PASS (16 passed, 6 existing warnings).
+- `uv run pytest` → first run: 189 passed, 4 skipped, 14 environment fixture errors because the host temp root was not writable; rerun with repository-local `TEMP`/`TMP` → PASS (203 passed, 4 skipped, 19 existing warnings).
+- `uv run ruff format --check src/service/service.py src/service/utils.py tests/service/test_service.py` → PASS.
+- `uv run ruff check src/service/service.py src/service/utils.py tests/service/test_service.py` → PASS.
+- `uv run pyrefly check` → PASS (0 errors; 11 known suppressions).
+- `uv run pymarkdown scan docs/ARCHITECTURE.md` → PASS.
+- `git diff --check` → PASS.
+
+Architecture/security notes:
+- Existing endpoint payloads, LangGraph persistence, Settings, fake-model behavior, SQLite/PostgreSQL baseline, and startup lifecycle remain unchanged.
+- The only additive transport surface is the `X-Request-ID` response header; request IDs are ephemeral middleware metadata and are not persisted.
+- No client-provided correlation value is trusted. Structured logging and secret redaction remain T014 scope.
+
+Known limitations:
+- The default host pytest temp root is permission-restricted; full regression requires a writable `TEMP`/`TMP` directory in this environment.
+- This task does not propagate IDs into structured logs or TaskPilot trace entities; those are intentionally deferred.
+
+Learner notes:
+- Problem solved: every HTTP request now has one stable identifier available throughout its FastAPI lifecycle and visible to the caller.
+- Read these files: `src/service/service.py`, `src/service/utils.py`, `tests/service/test_service.py`, `docs/ARCHITECTURE.md`.
+- Key concept: middleware is the narrow transport boundary for request-scoped metadata; it should not become a task or distributed-tracing store.
+- Small exercise: call `/health` twice with and without `X-Request-ID` and compare the UUID response headers.
+- Ignore for now: log formatting/redaction, TaskRun/AgentRun IDs, persistence, and metrics.
+
+Recommended next task:
+- T014 — Structured logging and redaction. Do not begin it as part of T013.
+
+### 2026-09-11 — T012: Settings Validation
+
+Status: DONE
+
+What changed:
+- Added instance-safe provider catalogue construction and fail-fast cross-field validation to the existing Pydantic `Settings` model.
+- Validated only the selected persistence backend: SQLite remains the default local fallback; PostgreSQL and MongoDB validate their required connection fields, with optional MongoDB authentication kept available.
+- Added opt-in validation for partial OpenAI-compatible/Azure/Ollama configuration and enabled tracing credentials, while preserving `USE_FAKE_MODEL=true` and local Ollama fallback behavior.
+- Added field bounds for server/database ports and PostgreSQL pool sizes, plus regression tests for valid fallbacks and invalid configurations.
+
+Files changed:
+- `src/core/settings.py`
+- `tests/core/test_settings.py`
+- `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/core/test_settings.py -q` → PASS (32 passed; one host pytest-cache warning).
+- `uv run ruff format src/core/settings.py tests/core/test_settings.py` → PASS.
+- `uv run ruff check src/core/settings.py tests/core/test_settings.py` → PASS.
+- `uv run pytest` → PASS (199 passed, 4 skipped, 19 warnings) after setting `TMP`/`TEMP` to a repository-local writable directory; the default host temp root is not writable in this environment.
+- `git diff --check` → PASS (only Git's normal LF/CRLF advisory for the two Markdown files).
+
+Known limitations:
+- Postgres/Mongo validation checks configuration shape only; connectivity and LangGraph `setup()` remain runtime concerns owned by existing adapters.
+- No provider framework, TaskPilot business settings, migration, checkpoint ownership, or public API was changed.
+
+Learner notes:
+- Problem solved: invalid selected-backend or partially opted-in settings now fail at startup with setting names, without turning supported local fallbacks into mandatory configuration.
+- Read these files: `src/core/settings.py`, `tests/core/test_settings.py`, `src/memory/postgres.py`, `src/memory/mongodb.py`, `docs/DEVELOPER_GUIDE.md`.
+- Key concept: configuration validation should be conditional on an enabled feature; optional integrations must not break the SQLite/fake-model development path.
+- Small exercise: instantiate `Settings(USE_FAKE_MODEL=True, DATABASE_TYPE="postgres", _env_file=None)` and inspect the missing-field error, then add only the five Postgres fields and compare the result.
+- Ignore for now: TaskPilot identity/task settings, migrations, and provider redesign.
+
+Recommended next task:
+- T013 — Request correlation ID. Do not start T014–T016 in this task.
+
+### 2026-09-11 — T011: Environment Template Audit
+
+Status: DONE
+
+What changed:
+- Audited the Pydantic `Settings` fields and the existing direct environment reads, then made `.env.example` a complete Phase 1 runtime inventory.
+- Added safe defaults/placeholders for server, tracing, persistence, provider, integration, and client settings; corrected the stale LangSmith names to the implemented `LANGCHAIN_*` names.
+- Kept every credential, password, bearer token, and API key value empty; documented that `.env` is local-only and must remain ignored.
+- Added a Developer Guide section covering template scope, secret handling, and Git checks.
+
+Files changed:
+- `.env.example`
+- `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/core/test_settings.py -q` → initial cache-path error on the host; rerun unchanged with `UV_CACHE_DIR=.uv-cache-t011` → PASS (24 passed, 1 warning).
+- `git check-ignore -v .env` → PASS (`.gitignore:142:.env`).
+- `git status --short --ignored .env` → PASS (local `.env` is ignored and untracked).
+- Secret-safety scan of `.env.example` → PASS: no non-placeholder credential values or private paths found.
+- `git diff --check` → PASS.
+
+Architecture/security notes:
+- No source code, settings behavior, dependencies, lockfile, persistence architecture, Docker/PostgreSQL wiring, public API, or Phase 2+ domain was changed.
+- `.env` was not read or copied; only Git ignore metadata was checked.
+
+Known limitations:
+- This task audits the template only; provider-specific credential validation remains a future settings task (T012).
+- The full suite is deferred as the task card requires only the focused settings command.
+
+Learner notes:
+- Problem solved: developers now have one safe, source-aligned environment template without exposing secrets.
+- Read these files: `.env.example`, `src/core/settings.py`, `docs/DEVELOPER_GUIDE.md`.
+- Key concept: an environment template documents configuration names and safe defaults, while real secrets stay in an ignored runtime file.
+- Small exercise: copy `.env.example` to `.env`, set only `USE_FAKE_MODEL=true`, and run the focused settings tests.
+- Ignore for now: TaskPilot identity/task domains and provider-specific production hardening.
+
+Recommended next task:
+- T012 — Settings validation. Do not begin it as part of T011.
+
+### 2026-09-11 — T010: Repository Branding and Attribution
+
+Status: DONE
+
+What changed:
+- Replaced the root starter-kit placeholder with an accurate TaskPilot Phase 1 landing page.
+- Documented the current boundary so readers do not mistake retained upstream chat/runtime examples for unimplemented TaskPilot domains.
+- Added an explicit link to the upstream `agent-service-toolkit` project and its retained documentation and MIT license.
+- Updated the package description to identify TaskPilot while retaining the existing distribution name and upstream author metadata; changing the distribution name would require a prohibited `uv.lock` update.
+
+Files changed:
+- `README.md`
+- `pyproject.toml`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pymarkdown scan README.md` -> PASS.
+
+Architecture/security notes:
+- No source code, dependencies, lock file, public API, persistence adapter, or TaskPilot business domain was changed.
+- `README_UPSTREAM.md` and `LICENSE` were inspected and deliberately left unchanged to preserve upstream attribution and license text.
+
+Known limitations:
+- The repository remains a Phase 1 foundation; TaskPilot product domains are intentionally not implemented.
+
+Learner notes:
+- Problem solved: the repository now identifies TaskPilot without presenting upstream examples as completed TaskPilot capabilities.
+- Read these files: `README.md`, `README_UPSTREAM.md`, `LICENSE`, `pyproject.toml`, `docs/ARCHITECTURE.md`.
+- Key concept: downstream branding can be accurate and transparent when it preserves upstream license and attribution.
+- Small exercise: compare `README.md` with `README_UPSTREAM.md`, then identify which stated capabilities are upstream runtime examples versus planned TaskPilot domains.
+- Ignore for now: package renaming, domain schemas, and runtime changes; they are outside this documentation-only task.
+
+Recommended next task:
+- T011 — Environment template audit. Do not begin it as part of T010.
+
 ### 2026-09-10 — Phase 0.5: Docker / PostgreSQL Baseline Verification (resumed)
 
 Status: DONE — READY FOR PHASE 1
@@ -224,3 +436,99 @@ Learner notes:
 
 Recommended next task:
 - ...
+
+### 2026-09-13 — T015: Migration architecture verification
+
+Status: DONE
+
+- Confirmed separate LangGraph persistence and future TaskPilot business ownership.
+- Phase 1 adds no SQLAlchemy, Alembic, ORM, migration directory, placeholder migration, or business table.
+- SQLite is local checkpoint; PostgreSQL currently contains LangGraph checkpoint/Store schemas only.
+- Phase 2 must decide framework, namespace, shared database, revision ownership, ordering, production migration, downgrade policy, and test database strategy.
+
+Files changed: process/DECISION_LOG.md, docs/ARCHITECTURE.md, docs/DEVELOPER_GUIDE.md, process/PROGRESS_LOG.md.
+
+Verification: documentation diff checks; PostgreSQL smoke not run because runtime/database behavior is unchanged.
+
+Learner Notes: LangGraph persistence is not TaskPilot business truth. Read src/memory/postgres.py and ADR-002.
+
+### 2026-09-13 — T016: Verified developer commands documentation
+
+Status: DONE — ready for Phase 1 Final Audit
+
+Baseline:
+- Repository root: `D:\github\agent-service\agent-service-toolkit`
+- Branch: `phase-1-foundation`
+- HEAD before changes: `47eb5c8 docs: document LangGraph and TaskPilot persistence ownership`
+- Working tree before changes: clean; no staged changes.
+
+What changed:
+- Synchronized the Developer Guide with the current `pyproject.toml`, Compose
+  services, local entrypoints, CI commands, and the safe PostgreSQL smoke-test
+  path.
+- Documented the Compose lifecycle commands (`config`, `up -d`, `ps`, `logs`, and
+  `stop`) and separated static configuration validation from Docker Engine
+  readiness.
+- Added the verified Windows repository-local `TEMP`/`TMP` and `UV_CACHE_DIR`
+  workaround without changing system settings or application code.
+- Recorded the existing `scripts/smoke_test.sh` `down -v` cleanup hazard and
+  clarified that current runtime examples are not TaskPilot Phase 2+ domains.
+- Added a current verification snapshot and distinguished pre-existing full
+  Markdown-lint debt from checks on the touched files.
+
+Files changed:
+- `docs/DEVELOPER_GUIDE.md`
+- `docs/TROUBLESHOOTING.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv sync --frozen` → PASS; checked 248 packages and did not change the lock file.
+- `uv run pytest` → PASS: 206 passed, 4 skipped, 18 warnings.
+- `uv run ruff format --check` → PASS.
+- `uv run ruff check` → PASS.
+- `uv run pyrefly check` → PASS: 0 errors, 11 known suppressions.
+- `uv run pymarkdown scan README.md docs/` → FAIL only on pre-existing MD022/MD032 violations in untouched documentation.
+- `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md` → PASS after the final documentation change.
+- `uv run python src/run_service.py` → PASS: `/health` and `/info` returned HTTP 200; the test process was stopped.
+- `uv run streamlit run src/streamlit_app.py` → PASS: `/healthz` and `/` returned HTTP 200; the test process was stopped.
+- `docker --version`, `docker compose version` → PASS: Docker 29.7.2, Compose v5.5.1.
+- `docker compose config` → PASS.
+- `docker compose up -d`, `docker compose ps`, `docker compose logs --tail 20 agent_service streamlit_app postgres`, `docker compose stop` → BLOCKED: Docker Desktop Linux Engine named pipe `dockerDesktopLinuxEngine` was unavailable in the current shell.
+- Repository-local `TEMP`/`TMP` plus `UV_CACHE_DIR=.uv-cache`: `uv sync --frozen` and `uv run pytest tests/core/test_settings.py -q` → PASS: 33 passed.
+
+Architecture/security notes:
+- This task changed documentation only. No source code, tests, dependencies,
+  lockfile, Compose architecture, database schema, public API, or runtime
+  behavior changed.
+- Local `uv` development remains SQLite/fake-model friendly; Compose explicitly
+  targets PostgreSQL as documented by the existing configuration.
+- No credentials or secret values were added to documentation or command output.
+- No Git add, commit, reset, rebase, merge, push, switch, or checkout operation
+  was performed.
+
+Known limitations:
+- Docker lifecycle commands remain pending until Docker Desktop's Linux Engine
+  is ready. The earlier 2026-09-10 Phase 0.5 entry records the prior successful
+  Compose/PostgreSQL verification; this T016 run does not overwrite that history.
+- Whole-tree Markdown lint still has pre-existing MD022/MD032 violations in
+  untouched docs; T016 does not broaden into a formatting cleanup.
+- The repository remains a Phase 1 foundation. Users, organizations, RBAC,
+  Task/TaskRun/TaskStep, planner/executor/verifier, approvals, and persisted
+  TaskPilot observability are still planned work, not current runtime features.
+
+Learner notes:
+- Problem solved: developers now have one source of truth for reproducible local
+  commands, Docker lifecycle commands, safe smoke-test boundaries, and Windows
+  permission recovery.
+- Read these files: `pyproject.toml`, `docs/DEVELOPER_GUIDE.md`,
+  `docs/TROUBLESHOOTING.md`, `compose.yaml`, and `.github/workflows/test.yml`.
+- Key concept: a command can be syntactically valid and still require an external
+  runtime; `docker compose config` validates YAML/configuration, while `up` needs
+  a healthy Docker Engine.
+- Small exercise: run `uv run pytest`, `uv run ruff check`, then `docker info` and
+  compare the local result with `docker compose config`.
+- Ignore for now: Docker internals, the smoke wrapper's implementation details,
+  and all unimplemented TaskPilot domain phases.
+
+Recommended next task:
+- Phase 1 Final Audit only. Do not begin Phase 2 as part of T016.
