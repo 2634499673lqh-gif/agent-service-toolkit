@@ -586,3 +586,48 @@ Files changed: process/tasks/INDEX.md; process/tasks/T020.md–T027.md.
 Validation: focused `uv run pymarkdown scan` PASS; `git diff --check` PASS; no `src/`, `tests/`, migration, dependency, Compose, or env files changed.
 
 Next: strong review of T020 only when explicitly authorized.
+
+
+### 2026-09-14 — T020: Identity / tenancy / authentication / business persistence architecture
+
+Status: ARCHITECTURE COMPLETE — READY FOR STRONG REVIEW
+
+What changed:
+- Accepted ADR-004 freezing User + Organization + Membership, enum roles, opaque sessions, Argon2id password handling, PostgreSQL-only TaskPilot business persistence, SQLAlchemy async sessions, Alembic ownership, schema separation, bootstrap order, transaction boundaries, UUID4 IDs, lifecycle, email, bootstrap, error semantics, and the legacy `AUTH_SECRET` boundary.
+- Added explicit Membership split as T022A and synchronized Phase 2 task dependencies/model assignments.
+- Updated architecture, database, security, API, index, and progress documentation without modifying production code, tests, dependencies, migrations, or AUTH_SECRET behavior.
+
+Files changed:
+- `process/DECISION_LOG.md`
+- `process/PROGRESS_LOG.md`
+- `process/tasks/INDEX.md`
+- `process/tasks/T021.md` through `process/tasks/T027.md`
+- `process/tasks/T022A.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DATABASE_DESIGN.md`
+- `docs/SECURITY_HITL.md`
+- `docs/API_CONVENTIONS.md`
+
+Validation:
+- Baseline branch/worktree verified before edits.
+- Markdown lint, `git diff --check`, and final status/stat checks are run after documentation edits. No runtime suite is required by T020.
+
+Known limitations and deferred decisions:
+- No production implementation, migration, dependency, or AUTH_SECRET behavior change is included. Strong Review must approve ADR-004 before T021. Enterprise SSO, refresh-token families, custom permissions, email verification/change, hard delete, RLS, key rotation, and L3 execution remain deferred.
+
+Learner notes:
+- The key concept is separating compatibility transport identity from server-derived business authorization.
+- Read ADR-004, `docs/DATABASE_DESIGN.md`, `docs/SECURITY_HITL.md`, `process/tasks/T021.md`, and `process/tasks/T022A.md`.
+- Exercise: trace a forged `organization_id` from request input and explain why it cannot affect a repository predicate.
+- Do not worry yet about enterprise SSO or custom policy engines.
+
+Suggested next task: Strong Review of T020, then T021 only after approval.
+
+
+### 2026-09-14 — T020 Strong Review fixes
+
+Status: REVIEW FIXES COMPLETE — READY FOR RE-REVIEW
+
+Updated ADR-004 and the affected task/security/database/API cards with the controlled bootstrap contract (hidden two-step prompt, no plaintext CLI password, idempotent no-op, fail-closed conflicts, atomic transaction), request-time organization activity revalidation, canonical `normalized_email` storage, and precise production downgrade policy. No source, test, migration, dependency, or AUTH_SECRET behavior changes were made.
+
+Validation: focused Markdown lint for T022/T023/T024/T026 passed; `git diff --check` passed; branch and clean staging constraints verified.

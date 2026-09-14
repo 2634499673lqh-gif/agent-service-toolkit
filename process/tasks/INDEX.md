@@ -1,30 +1,21 @@
-# Phase 1 Task Card Index
+# Task Card Index
 
-| Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? |
-|---|---|---|---|---|---|
-| T010 | Branding/attribution | LOW_COST | None | None | No |
-| T011 | Safe env template | LOW_COST | None | T010 context | No |
-| T012 | Settings validation | STANDARD | STRONG_REVIEW_REQUIRED | T011 | Yes |
-| T013 | Request correlation middleware | LOW_COST | STRONG_REVIEW_REQUIRED | T012 | Yes |
-| T014 | Structured logging/redaction | STANDARD | STRONG_REVIEW_REQUIRED | T013 | Yes |
-| T015 | Migration ownership ADR | STRONG_REVIEW_REQUIRED | STRONG_REVIEW_REQUIRED | None | Phase exit |
-| T016 | Verified developer commands | LOW_COST | None | T010-T015 docs | Phase exit |
+## Phase 1
+
+See the historical Phase 1 cards T010–T016.
 
 ## Phase 2 Task Cards — Identity / Organization / RBAC / Tenant Isolation
 
 | Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? |
 |---|---|---|---|---|---|
-| T020 | Identity domain and migration architecture decision | STRONG | STRONG_REVIEW_REQUIRED | Phase 1 | No (design evidence) |
-| T021 | Organization schema, repository and migration | STANDARD | STRONG_REVIEW_REQUIRED | T020 | Focused + shared persistence |
-| T022 | User, membership and role schema, repository and migration | STANDARD | STRONG_REVIEW_REQUIRED | T020, T021 | Focused + shared persistence |
-| T023 | Authentication credential and login service | STANDARD | STRONG_REVIEW_REQUIRED | T021, T022 | Auth-focused; full at gate |
-| T024 | Current authenticated user dependency | STANDARD | STRONG_REVIEW_REQUIRED | T023 | Auth/API-focused |
-| T025 | Tenant authorization policy/helper | STANDARD | STRONG_REVIEW_REQUIRED | T024 | Authorization matrix; full at gate |
-| T026 | Negative authentication and tenant-isolation tests | LOW_COST | STRONG_REVIEW_REQUIRED | T023–T025 | Yes |
+| T020 | Identity, tenancy, authentication and business persistence architecture gate | STRONG | STRONG_REVIEW_REQUIRED | Phase 1 | No (design evidence) |
+| T021 | SQLAlchemy async foundation, Organization schema and Alembic migration | STANDARD | STRONG_REVIEW_REQUIRED | T020 | Focused + shared persistence |
+| T022 | User schema, password field and email constraints | STANDARD | STRONG_REVIEW_REQUIRED | T020, T021 | Focused + shared persistence |
+| T022A | Membership schema, role enum, active membership and repositories | STANDARD | STRONG_REVIEW_REQUIRED | T021, T022 | Focused + shared persistence |
+| T023 | Opaque authentication session/token service, Argon2id login and bootstrap | STANDARD | STRONG_REVIEW_REQUIRED | T021, T022, T022A | Auth-focused; full at gate |
+| T024 | CurrentPrincipal FastAPI dependency and request session lifecycle | STANDARD | STRONG_REVIEW_REQUIRED | T023 | Auth/API-focused |
+| T025 | Central authorization helper and tenant policy | STANDARD | STRONG_REVIEW_REQUIRED | T024 | Authorization matrix; full at gate |
+| T026 | Negative authentication, tenant, transaction and migration tests | STANDARD | STRONG_REVIEW_REQUIRED | T023–T025 | Yes |
 | T027 | Security/API/database documentation synchronization | LOW_COST | None | T020–T026 | Focused docs checks |
 
-Recommended order: T020 → T021 → T022 → T023 → T024 → T025 → T026 → T027. T020 is a planning gate: no implementation card may choose a different identity, ID, migration, transaction, or authorization model without revising T020 and obtaining strong review. The roadmap still contains the older Phase 2 labels T020–T025; `TASK_BACKLOG.md` is authoritative for the expanded T020–T027 sequence.
-
-Recommended order: T010 → T011 → T012 → T013 → T014 → T015 → T016. T015 is documentation/architecture verification only; it must not add Alembic, ORM, or business tables. The first safe low-cost task is T010.
-
-Full-regression gates: run full `uv run pytest` after the migration foundation (T021/T022), after authentication (T023), after tenant authorization (T025), and as the Phase 2 Final Audit before T027 closes. Focused tests are sufficient for intermediate cards.
+Recommended order: T020 (Strong Review) -> T021 -> T022 -> T022A -> T023 -> T024 -> T025 -> T026 -> T027. T020 is authoritative; implementation cards may not change identity, token, migration, transaction, tenant, or error semantics without a new accepted ADR.
