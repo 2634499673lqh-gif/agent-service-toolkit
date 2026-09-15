@@ -631,3 +631,188 @@ Status: REVIEW FIXES COMPLETE — READY FOR RE-REVIEW
 Updated ADR-004 and the affected task/security/database/API cards with the controlled bootstrap contract (hidden two-step prompt, no plaintext CLI password, idempotent no-op, fail-closed conflicts, atomic transaction), request-time organization activity revalidation, canonical `normalized_email` storage, and precise production downgrade policy. No source, test, migration, dependency, or AUTH_SECRET behavior changes were made.
 
 Validation: focused Markdown lint for T022/T023/T024/T026 passed; `git diff --check` passed; branch and clean staging constraints verified.
+
+### 2026-09-14 — T021: SQLAlchemy foundation, Organization model and Alembic migration
+
+Status: IMPLEMENTATION COMPLETE — READY FOR STRONG REVIEW (uncommitted)
+
+What changed:
+- Added a PostgreSQL-only TaskPilot business persistence boundary under `src/persistence/` with schema-scoped SQLAlchemy metadata, async psycopg engine/session factory, lifecycle rollback, Organization ORM model, and a no-commit repository.
+- Added `alembic.ini`, async `migrations/env.py`, ownership-filtered autogenerate configuration, and the initial `t021_organization` revision. The revision creates `taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations` only.
+- Added explicit `TASKPILOT_DATABASE_URL` settings validation and a safe `.env.example` placeholder. Existing `DATABASE_TYPE` and LangGraph SQLite/PostgreSQL/Mongo behavior remain unchanged.
+- Added unit and real-PostgreSQL integration verification code for migration isolation, revision metadata, transaction behavior, session independence, timestamps, constraints, and both independent TaskPilot/LangGraph setup orderings. Live execution requires the disposable PostgreSQL environment described below.
+
+Files changed:
+- `src/persistence/__init__.py`, `base.py`, `engine.py`, `models.py`, `repositories.py`
+- `migrations/env.py`, `migrations/script.py.mako`, `migrations/versions/20260914_01_organization.py`, `alembic.ini`
+- `src/core/settings.py`, `.env.example`, `tests/conftest.py`, `tests/persistence/test_foundation.py`, `tests/persistence/test_postgres_integration.py`
+- `pyproject.toml`, `uv.lock`
+- `docs/ARCHITECTURE.md`, `docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`, `docs/TROUBLESHOOTING.md`
+
+Validation:
+- `uv run pytest tests/persistence -q` → 5 passed, 3 skipped because no disposable `TASKPILOT_TEST_DATABASE_URL`/Docker PostgreSQL was available (HOST_ENVIRONMENT).
+- `uv run pytest` → 211 passed, 7 skipped, 18 existing dependency deprecation warnings.
+- `uv run ruff format --check`, `uv run ruff check --output-format concise`, `uv run pyrefly check`, `uv lock --check`, focused `uv run pymarkdown scan` and `git diff --check` passed.
+- `uv run alembic upgrade head --sql` generated schema/version/Organization DDL successfully; live PostgreSQL migration/coexistence verification remains HOST_ENVIRONMENT-blocked.
+
+Learner notes:
+- Problem solved: TaskPilot now has an independently migrated business schema without taking ownership of LangGraph persistence tables.
+- Read `src/persistence/engine.py`, `src/persistence/models.py`, `migrations/env.py`, `migrations/versions/20260914_01_organization.py`, and `docs/DATABASE_DESIGN.md`.
+- Key concept: repository writes are flushed inside a service-owned transaction; Alembic ownership is constrained by schema and metadata filters.
+- Exercise: configure a disposable PostgreSQL database, run `uv run alembic upgrade head`, inspect both `taskpilot.alembic_version` and public LangGraph tables, then downgrade/upgrade once.
+- Do not worry yet about User, Membership, authentication, authorization, or task tables; those belong to T022+.
+
+Suggested next task: Strong Review of T021 only.
+
+### 2026-09-15 — T021 Strong Review fixes
+
+Status: CODE FIXES COMPLETE — LIVE POSTGRES VERIFICATION REQUIRED
+
+- Added Alembic `include_name` pre-reflection filtering and retained defensive `include_object` filtering; added focused ownership tests.
+- Removed the unscoped `OrganizationRepository.list_active()` API.
+- Reworked PostgreSQL integration tests to create one uniquely named disposable database per scenario, cover LangGraph→TaskPilot and TaskPilot→LangGraph ordering, real Saver/Store setup and roundtrip, fresh-state assertions, and downgrade/re-upgrade preservation. The fixture refuses non-test databases and shared-database fallback.
+- Broadened the Organization name constraint to reject spaces, tabs, and newlines when no non-whitespace character exists; sanitized chained DSN parsing errors and added regression coverage.
+- Corrected documentation to describe the Phase-1 no-ORM statement as historical and to distinguish implemented verification code from unavailable live PostgreSQL execution.
+
+Validation: focused persistence tests 7 passed/3 HOST_ENVIRONMENT skips; full pytest 213 passed/7 skipped; Ruff, Pyrefly, uv lock, focused Markdown, offline Alembic SQL, and `git diff --check` passed. Docker Linux Engine and `TASKPILOT_TEST_DATABASE_URL` remain unavailable on this host.
+
+### 2026-09-15 — T021 focused live-verification defect fixes
+
+Status: CODE DEFECTS FIXED — READY FOR ENVIRONMENT RE-VERIFICATION
+
+What changed:
+- Added a persistence-test-only `pytest_asyncio_loop_factories` hook. On Windows
+  it selects `asyncio.SelectorEventLoop` for psycopg compatibility; non-Windows
+  tests use the current asyncio policy's native `new_event_loop` factory.
+- Added a Windows-only regression assertion for the running persistence test loop.
+- Replaced both pre-migration bare `to_regclass(...)` expressions with
+  parameterized `SELECT to_regclass(:qualified_name)` statements.
+- Added two post-migration parameterized relation assertions for
+  `taskpilot.alembic_version` and `taskpilot.organizations`.
+
+Files changed by this focused fix:
+- `tests/persistence/conftest.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- `uv run pytest tests/persistence -q` → PASS: 8 passed, 3 skipped; no
+  pytest-asyncio deprecation warning after using the installed 1.4.0 hook.
+- `uv run pytest` → PASS: 214 passed, 7 skipped, 18 existing dependency
+  deprecation warnings.
+- `uv run ruff format --check tests/persistence` → PASS.
+- `uv run ruff check --output-format concise tests/persistence` → PASS.
+- `uv run pyrefly check` → PASS: 0 errors.
+- `uv lock --check` → PASS.
+- `git diff --check` → PASS.
+- `TASKPILOT_TEST_DATABASE_URL` was absent in this implementation session, so the
+  live PostgreSQL scenario tests were not executed here and no credential was
+  invented. Dedicated Environment & Verification must rerun them.
+
+Scope/security notes:
+- No production event-loop policy, SQLAlchemy engine, migration ownership,
+  LangGraph setup, credentials, or unrelated behavior was changed.
+- Scenario A/B, disposable database guards, downgrade/re-upgrade, LangGraph
+  roundtrip, transaction/session coverage, and cleanup code were retained.
+- No T022, T022A, T023, or later work was started. No Git add, commit, or push
+  was performed.
+
+Learner notes:
+- Problem solved: Windows persistence tests now create psycopg-compatible loops,
+  and PostgreSQL relation checks are valid parameterized SQL.
+- Read `tests/persistence/conftest.py`,
+  `tests/persistence/test_postgres_integration.py`,
+  `src/persistence/engine.py`, `migrations/env.py`, and ADR-004.
+- Key concept: test event-loop policy belongs in the test harness; SQL relation
+  inspection still needs a complete SQL statement and bound parameters.
+- Exercise: configure a disposable PostgreSQL test URL, run the focused suite,
+  then inspect the temporary database before and after `alembic upgrade head`.
+- Do not worry yet about User, Membership, authentication, or authorization;
+  those remain T022+.
+
+Suggested next step: dedicated Environment & Verification rerun of T021 live
+PostgreSQL scenarios, followed by the separately authorized T021 review gate.
+
+### 2026-09-15 — T021 focused Alembic Windows loop fix
+
+Status: CODE FIX COMPLETE — READY FOR LIVE ENVIRONMENT RE-VERIFICATION
+
+What changed:
+- Updated `migrations/env.py` so only Windows online Alembic execution calls
+  `asyncio.run(..., loop_factory=asyncio.SelectorEventLoop)`.
+- Linux/macOS retain the normal `asyncio.run(...)` path.
+- Offline SQL generation, metadata ownership filters, schema configuration,
+  database URL handling, migration revisions, and application runtime behavior
+  were left unchanged.
+
+Files changed by this focused fix:
+- `migrations/env.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- `uv run pytest tests/persistence -q` → PASS: 8 passed, 3 skipped because
+  `TASKPILOT_TEST_DATABASE_URL` was absent in this window.
+- `uv run ruff format --check` → PASS.
+- `uv run ruff check --output-format concise` → PASS.
+- `uv run pyrefly check` → PASS: 0 errors.
+- `uv lock --check` → PASS.
+- `git diff --check` → PASS.
+- `uv run alembic upgrade head --sql` → BLOCKED before migration execution:
+  `TASKPILOT_DATABASE_URL` was absent, so no URL or credential was invented.
+- Live PostgreSQL verification was not executed in this implementation window.
+
+Scope notes:
+- The existing persistence pytest Selector-loop configuration remains intact;
+  this fix addresses the separate loop created by Alembic's `asyncio.run`.
+- No `src/` production runtime, psycopg, pytest behavior, migration revision,
+  LangGraph setup, or T022+ work was changed.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: Windows Alembic async migrations no longer create the
+  psycopg-incompatible Proactor event loop.
+- Read `migrations/env.py`, `tests/persistence/conftest.py`,
+  `tests/persistence/test_postgres_integration.py`, and `src/persistence/engine.py`.
+- Key concept: the pytest loop and the nested migration loop are separate loop
+  creation sites and must be fixed at their own boundaries.
+- Exercise: with a disposable PostgreSQL URL configured, run the offline SQL
+  command and then the three persistence integration tests on Windows.
+- Do not worry yet about T022+ identity models or authentication.
+
+Suggested next step: dedicated Environment & Verification rerun of the complete
+T021 PostgreSQL scenarios on Windows, followed by the authorized review gate.
+
+### 2026-09-15 — T021 Alembic logging side-effect fix
+
+Status: CODE FIX COMPLETE — READY FOR FINAL LIVE VERIFICATION
+
+What changed:
+- Changed only Alembic's guarded `fileConfig` call in `migrations/env.py` to
+  pass `disable_existing_loggers=False`, preserving service and agent loggers
+  during migration setup.
+
+Validation:
+- `uv run pytest tests/service/test_logging.py tests/service/test_service_lifespan.py -q` → PASS: 4 passed.
+- `uv run pytest tests/persistence -q` → PASS: 8 passed, 3 skipped because the live PostgreSQL environment was unavailable in this window.
+- `uv run ruff format --check` → PASS.
+- `uv run ruff check --output-format concise` → PASS.
+- `uv run pyrefly check` → PASS: 0 errors.
+- `git diff --check` → PASS.
+
+Scope:
+- No application logging code, tests/service files, persistence architecture,
+  event-loop configuration, migration metadata, revision, or T022+ work changed.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: Alembic no longer disables existing application loggers while
+  loading its logging configuration.
+- Read `migrations/env.py`, `alembic.ini`, `src/service/logging.py`, and
+  `tests/service/test_logging.py`.
+- Key concept: `fileConfig` can alter global logger state unless existing loggers
+  are explicitly preserved.
+- Exercise: compare logger `.disabled` values before and after loading Alembic.
+- Do not worry yet about T022+ identity implementation.
+
+Suggested next step: final live PostgreSQL verification of T021.

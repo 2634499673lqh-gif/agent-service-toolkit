@@ -1,14 +1,32 @@
 # Database Design Guide
 
-This document records the Phase 2 architecture decision; the schema is planned and not yet implemented. ADR-004 is authoritative.
+This document records the Phase 2 architecture decision and the T021 foundation. ADR-004 is authoritative.
 
 ## Ownership and bootstrap
 
 TaskPilot business tables are PostgreSQL-only in schema `taskpilot`, managed by SQLAlchemy 2.x models and Alembic revisions owned by TaskPilot. LangGraph checkpoint/store tables remain library-owned and outside Alembic. Both may share one PostgreSQL database instance. Fresh startup is PostgreSQL -> `alembic upgrade head` -> LangGraph `setup()` -> application. Production application startup never auto-migrates. One-revision-at-a-time is only the development/test migration verification procedure; production follows forward migrations, does not use downgrade as automatic/routine recovery, and requires separate review for any destructive downgrade.
 
+T021's `TASKPILOT_DATABASE_URL` is an explicit PostgreSQL-only business URL
+(`postgresql+psycopg://`, with `postgresql://` accepted and normalized). It is
+independent from `DATABASE_TYPE`, which still selects LangGraph's SQLite,
+PostgreSQL, or Mongo backend. Alembic stores its version table as
+`taskpilot.alembic_version` and creates `taskpilot` on a fresh database.
+The live coexistence tests use one uniquely created disposable database per
+scenario; they are not reported as passed unless a test PostgreSQL server is
+available.
+
 ## Identity schema (planned)
 
 - `organizations`: UUID4 `id`, `name`, `is_active`, UTC `created_at`, `updated_at`.
+
+T021 implements only `organizations`; the first migration is
+`migrations/versions/20260914_01_organization.py`. Names are non-null,
+maximum 255 characters, and must contain at least one PostgreSQL-regex
+non-whitespace character (spaces, tabs, and newlines are rejected when alone).
+IDs are application-generated UUID4 values. `created_at`/`updated_at` use
+timezone-aware UTC values and `is_active` defaults to true. The repository
+flushes but never commits; service code owns transaction commit/rollback.
+
 - `users`: UUID4 `id`, trimmed display `email`, non-null globally unique `normalized_email` produced by the shared trim + Unicode casefold helper, Argon2id `password_hash`, `is_active`, UTC `created_at`, `updated_at`. Hashes are never serialized; PostgreSQL `lower()`/collation is not the canonicalization mechanism.
 - `memberships`: UUID4 `id`, unique `(user_id, organization_id)`, constrained role enum `owner|admin|member`, `is_active`, UTC `created_at`, `updated_at`, explicit foreign keys.
 - `auth_sessions`: UUID4 `id`, indexed SHA-256 token hash, user/membership foreign keys, `expires_at`, `revoked_at`, UTC timestamps. Raw tokens are never stored.

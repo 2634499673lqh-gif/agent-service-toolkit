@@ -127,7 +127,25 @@ The service health endpoint is `GET /health`; metadata is `GET /info`; OpenAPI i
 
 ## Persistence and migrations
 
-There is no application migration command: the repository has no SQLAlchemy, Alembic, ORM, migration directory, or TaskPilot business schema. SQLite is the lightweight local-development checkpoint. PostgreSQL checkpoint and Store persistence is LangGraph-owned. Future TaskPilot business persistence is not implemented and requires separate migration ownership. Phase 1 therefore adds no framework, placeholder migration, ORM, or business table.
+TaskPilot business persistence is PostgreSQL-only and is intentionally separate
+from the existing LangGraph backend selected by `DATABASE_TYPE`. Configure an
+explicit `TASKPILOT_DATABASE_URL` (for example,
+`postgresql+psycopg://user:password@host/db`) when using the business engine;
+SQLite remains valid for local LangGraph checkpoints and does not enable
+business persistence. The URL is a secret setting and is never logged.
+
+The T021 Alembic environment lives in `migrations/` and owns only the
+`taskpilot` schema. A release/deployment step applies it with:
+
+```powershell
+uv run alembic upgrade head
+```
+
+Application startup does not run migrations. The first revision creates
+`taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`; the
+environment's pre-reflection ownership filter prevents LangGraph/public tables from becoming
+autogenerate targets. `OrganizationRepository` accepts an `AsyncSession`,
+flushes writes, and leaves commit/rollback to the service transaction boundary.
 
 After Docker/dependencies are ready, the repository also contains optional upstream
 confidence checks:

@@ -95,8 +95,11 @@ Check:
 - SQLite path or PostgreSQL health, depending on `DATABASE_TYPE`
 - `USE_FAKE_MODEL=true` for a no-network local check
 
-There is no application migration command in Phase 1; LangGraph owns its current
-checkpoint/Store setup, while future TaskPilot business migrations are deferred.
+TaskPilot business migrations are independent from LangGraph persistence. Set a
+valid PostgreSQL-only `TASKPILOT_DATABASE_URL` before running
+`uv run alembic upgrade head`; an unset URL fails clearly and a SQLite URL is
+rejected. LangGraph's existing `DATABASE_TYPE=sqlite` local checkpoint fallback
+is unaffected. Do not run migrations from application startup.
 
 ## Application log is not JSON or has no request ID
 

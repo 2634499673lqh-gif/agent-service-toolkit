@@ -12,6 +12,9 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "docker: mark test as requiring docker containers")
+    config.addinivalue_line(
+        "markers", "postgres: mark test as requiring a disposable PostgreSQL database"
+    )
 
 
 def pytest_collection_modifyitems(config, items):

@@ -60,7 +60,7 @@ redaction are deferred to T014.
 - SQLite checkpoint: lightweight local-development checkpoint; the long-term store is process-local `InMemoryStore` and is not durable across restarts.
 - PostgreSQL LangGraph persistence: `AsyncPostgresSaver` and `AsyncPostgresStore` create and upgrade library-managed checkpoint/Store schemas via `setup()`.
 - MongoDB: optional checkpointer only (`docker/compose.mongo.yaml`); no Mongo Store.
-- There are no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. `src/schema/task_data.py` is Streamlit background-task display data, not the TaskPilot domain.
+- At the Phase 1 baseline there were no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. T021 now adds only the Organization business table; `src/schema/task_data.py` remains Streamlit background-task display data, not the TaskPilot domain.
 
 ## Current feature inventory and TaskPilot V1 gap
 
@@ -86,9 +86,18 @@ The smallest safe path is additive: preserve the upstream service, LangGraph, ch
 2. The dependency-locked test/Docker baseline was not runnable on this host because `uv`, Docker and project dependencies are absent; reproduce after `uv sync --frozen` in a writable clone.
 3. Decide in Phase 2 whether `AUTH_SECRET` remains a development-only compatibility mechanism; it is inadequate for end-user authorization.
 
-
-## Phase 2 identity architecture (decided; not yet implemented)
+## Phase 2 identity architecture (T021 foundation implemented)
 
 ADR-004 freezes a PostgreSQL-only TaskPilot business schema in the `taskpilot` namespace, separate from LangGraph-owned tables. Identity is User + Organization + Membership, with one active membership bound to each opaque session. Authorization derives only from the server-resolved principal; upstream `AUTH_SECRET` and caller-supplied conversation IDs remain compatibility-only.
 
 Bootstrap order is PostgreSQL, TaskPilot Alembic migrations, LangGraph saver/store `setup()`, then application startup. Production startup does not run migrations. SQLAlchemy 2.x async sessions are request-scoped, services own transactions, repositories do not commit, and ORM sessions never enter LangGraph `AgentState`. See ADR-004 and T021–T027 for implementation boundaries.
+
+T021 now provides `src/persistence/` with TaskPilot-owned SQLAlchemy metadata,
+an async psycopg engine/session factory, and an Organization repository. Alembic
+uses `migrations/env.py` and `taskpilot` schema version metadata; its
+`include_name` pre-reflection filter plus defensive `include_object` filter
+exclude public/LangGraph tables from autogenerate.
+Business persistence is enabled only by an explicit PostgreSQL
+`TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream
+LangGraph backend selector. Run `alembic upgrade head` as a release step, never
+from application startup.
