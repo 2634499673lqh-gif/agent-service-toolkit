@@ -1,13 +1,16 @@
 """TaskPilot business ORM models."""
 
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     String,
     UniqueConstraint,
@@ -24,6 +27,18 @@ def utc_now() -> datetime:
     """Return an aware UTC timestamp for application-managed fields."""
 
     return datetime.now(UTC)
+
+
+class Role(Enum):
+    """Frozen V1 membership roles.
+
+    The stored value is the lowercase role name, so the database column stays
+    readable and the PostgreSQL check constraint can enforce the same set.
+    """
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
 
 
 class Organization(Base):
@@ -111,3 +126,89 @@ class User(Base):
         """Return a safe representation that never includes the password hash."""
 
         return f"User(id={self.id!r}, email={self.email!r}, is_active={self.is_active!r})"
+
+
+class Membership(Base):
+    """Formal User-to-Organization link carrying the V1 role.
+
+    A user may belong to several organizations, but the pair is unique and a
+    membership is deactivated rather than deleted. Foreign keys are
+    non-destructive (``RESTRICT``) so removing a user or organization can never
+    silently erase audit-relevant authorization rows.
+    """
+
+    __tablename__ = "memberships"
+    __table_args__ = (
+        CheckConstraint("role IN ('owner', 'admin', 'member')", name="membership_role_valid"),
+        UniqueConstraint("user_id", "organization_id", name="uq_memberships_user_organization"),
+        Index("ix_memberships_user_id", "user_id"),
+        Index("ix_memberships_organization_id", "organization_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    organization_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    role: Mapped[Role] = mapped_column(
+        sa.Enum(
+            Role,
+            name="membership_role",
+            native_enum=False,
+            length=16,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        user_id: UUID,
+        organization_id: UUID,
+        role: Role | str,
+        is_active: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        """Build a membership with a validated role and explicit tenant pair."""
+
+        if not isinstance(role, Role):
+            role = Role(role)
+        super().__init__(
+            user_id=user_id,
+            organization_id=organization_id,
+            role=role,
+            is_active=is_active,
+            **kwargs,
+        )
+
+    def __repr__(self) -> str:
+        """Return an inspectable representation; no credential data is involved."""
+
+        return (
+            f"Membership(id={self.id!r}, user_id={self.user_id!r}, "
+            f"organization_id={self.organization_id!r}, role={self.role!r}, "
+            f"is_active={self.is_active!r})"
+        )

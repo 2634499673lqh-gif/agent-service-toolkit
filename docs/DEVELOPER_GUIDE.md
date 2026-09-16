@@ -143,11 +143,16 @@ uv run alembic upgrade head
 
 Application startup does not run migrations. The first revision (`t021_organization`)
 creates `taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`;
-the second revision (`t022_user`) adds `taskpilot.users`. Downgrading removes only
-the objects the target revision owns. The environment's pre-reflection ownership
-filter prevents LangGraph/public tables from becoming autogenerate targets.
-`OrganizationRepository` and `UserRepository` accept an `AsyncSession`, flush
-writes, and leave commit/rollback to the service transaction boundary.
+the second revision (`t022_user`) adds `taskpilot.users`; the third revision
+(`t022a_membership`) adds `taskpilot.memberships`. Downgrading removes only the
+objects the target revision owns, so `alembic downgrade t022_user` drops the
+membership table while leaving users and organizations intact. The environment's
+pre-reflection ownership filter prevents LangGraph/public tables from becoming
+autogenerate targets. `OrganizationRepository`, `UserRepository`, and
+`MembershipRepository` accept an `AsyncSession`, flush writes, and leave
+commit/rollback to the service transaction boundary. `uv run alembic check`
+reports "No new upgrade operations detected" when the ORM metadata matches the
+migrated database.
 
 The persistence tests are PostgreSQL-only and run only when a disposable test
 database is configured. The URL must name a database containing `test`; the

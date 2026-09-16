@@ -7,14 +7,19 @@ from uuid import UUID
 
 import pytest
 from pydantic import SecretStr, ValidationError
+from sqlalchemy import UniqueConstraint
 
 from core.settings import Settings
 from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
-from persistence.models import Organization, User, utc_now
-from persistence.repositories import OrganizationRepository, UserRepository
+from persistence.models import Membership, Organization, Role, User, utc_now
+from persistence.repositories import (
+    MembershipRepository,
+    OrganizationRepository,
+    UserRepository,
+)
 
 
 def _fake_settings(**overrides: object) -> Settings:
@@ -25,9 +30,79 @@ def _fake_settings(**overrides: object) -> Settings:
 
 def test_taskpilot_metadata_is_schema_scoped() -> None:
     assert Base.metadata.schema == "taskpilot"
-    assert set(Base.metadata.tables) == {"taskpilot.organizations", "taskpilot.users"}
+    assert set(Base.metadata.tables) == {
+        "taskpilot.organizations",
+        "taskpilot.users",
+        "taskpilot.memberships",
+    }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
+    assert Membership.__table__.schema == "taskpilot"
+
+
+def test_role_enum_matches_the_frozen_v1_role_set() -> None:
+    assert [role.value for role in Role] == ["owner", "admin", "member"]
+
+
+def test_membership_defaults_and_column_contract() -> None:
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    organization_id = UUID("22222222-2222-4222-8222-222222222222")
+    membership = Membership(user_id=user_id, organization_id=organization_id, role="member")
+
+    assert membership.id is None  # SQLAlchemy applies uuid4 on flush.
+    assert membership.user_id == user_id
+    assert membership.organization_id == organization_id
+    assert membership.role is Role.MEMBER
+    assert membership.is_active is True
+    assert membership.created_at is None
+    assert membership.updated_at is None
+
+    table = Membership.__table__
+    assert table.c.id.type.python_type is UUID
+    assert table.c.id.primary_key is True
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert set(Membership.__table__.c) >= {
+        Membership.__table__.c.user_id,
+        Membership.__table__.c.organization_id,
+    }
+
+
+def test_membership_role_is_constrained_to_the_frozen_set() -> None:
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    organization_id = UUID("22222222-2222-4222-8222-222222222222")
+
+    for role in Role:
+        membership = Membership(user_id=user_id, organization_id=organization_id, role=role)
+        assert membership.role is role
+    assert Membership(user_id=user_id, organization_id=organization_id, role="admin").role is (
+        Role.ADMIN
+    )
+
+    with pytest.raises(ValueError):
+        Membership(user_id=user_id, organization_id=organization_id, role="superadmin")
+
+
+def test_membership_metadata_declares_tenant_uniqueness_and_restrict_foreign_keys() -> None:
+    table = Membership.__table__
+    unique_columns = {
+        tuple(sorted(constraint.columns.keys()))
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("organization_id", "user_id") in unique_columns
+
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert set(foreign_keys) == {"user_id", "organization_id"}
+    assert foreign_keys["user_id"].target_fullname == "taskpilot.users.id"
+    assert foreign_keys["user_id"].ondelete == "RESTRICT"
+    assert foreign_keys["organization_id"].target_fullname == "taskpilot.organizations.id"
+    assert foreign_keys["organization_id"].ondelete == "RESTRICT"
+
+    assert {index.name for index in table.indexes} == {
+        "ix_memberships_user_id",
+        "ix_memberships_organization_id",
+    }
 
 
 def test_organization_defaults_are_application_safe() -> None:
@@ -183,6 +258,20 @@ async def test_repository_flushes_without_commit() -> None:
     user_session.flush.assert_awaited_once_with()
     user_session.commit.assert_not_called()
 
+    membership_session = Mock()
+    membership_session.flush = AsyncMock()
+    membership_repository = MembershipRepository(membership_session)
+    membership = Membership(
+        user_id=UUID("11111111-1111-4111-8111-111111111111"),
+        organization_id=UUID("22222222-2222-4222-8222-222222222222"),
+        role="owner",
+    )
+
+    assert await membership_repository.add(membership) is membership
+    membership_session.add.assert_called_once_with(membership)
+    membership_session.flush.assert_awaited_once_with()
+    membership_session.commit.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_repository_email_coercion_reuses_the_identity_contract() -> None:
@@ -196,3 +285,26 @@ async def test_repository_email_coercion_reuses_the_identity_contract() -> None:
 
     with pytest.raises(ValueError, match="must not be blank"):
         await repository.get_by_email("   ")
+
+
+@pytest.mark.asyncio
+async def test_membership_repository_queries_always_name_their_scope() -> None:
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    organization_id = UUID("22222222-2222-4222-8222-222222222222")
+
+    scoped_session = Mock()
+    scoped_session.scalar = AsyncMock(return_value=None)
+    scoped_repository = MembershipRepository(scoped_session)
+
+    assert await scoped_repository.get_for_user_in_organization(user_id, organization_id) is None
+    scoped_params = set(scoped_session.scalar.await_args.args[0].compile().params)
+    assert scoped_params == {"user_id_1", "organization_id_1"}
+
+    tenant_session = Mock()
+    tenant_session.scalars = AsyncMock(return_value=[])
+    tenant_repository = MembershipRepository(tenant_session)
+
+    assert await tenant_repository.list_for_organization(organization_id) == []
+    # The organization-scoped query never filters on user identity.
+    tenant_params = set(tenant_session.scalars.await_args.args[0].compile().params)
+    assert tenant_params == {"organization_id_1"}

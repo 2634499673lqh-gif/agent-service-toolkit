@@ -921,3 +921,107 @@ Learner notes:
   are T023 and T022A.
 
 Suggested next step: strong review of the uncommitted T022 diff, then T022A.
+
+### 2026-09-16 — T022A: Membership model, role enum and active organization
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `4947347 feat: add TaskPilot user identity persistence`
+- Working tree before changes: clean.
+
+Task Card interpretation:
+- Scope: the `memberships` table with UUID4 `id`, `user_id`, `organization_id`,
+  constrained role `owner|admin|member`, `is_active`, UTC timestamps, unique
+  `(user_id, organization_id)`, explicit indexes, and non-destructive foreign
+  keys, plus the repository and migration that own it.
+- Forbidden: login/token issuance, role helper, client-selected organization,
+  public registration, LangGraph table changes, and `AUTH_SECRET` changes.
+
+What changed:
+- Added the frozen `Role` enum (`owner`, `admin`, `member`) and the `Membership`
+  ORM model in `src/persistence/models.py`.
+- Added `MembershipRepository` with `add`, `get`,
+  `get_for_user_in_organization`, and `list_for_organization`. Every lookup
+  names its scope; there is no global membership listing and the repository
+  never commits or closes the caller's session.
+- Added the third TaskPilot Alembic revision `t022a_membership`
+  (`migrations/versions/20260916_02_membership.py`, `down_revision =
+  t022_user`). Upgrade creates only `taskpilot.memberships`; downgrade drops
+  only the membership indexes and table.
+- Registered `Membership` in the Alembic metadata import and exported
+  `Membership`, `MembershipRepository`, and `Role` from `persistence`.
+- Added unit and live PostgreSQL integration tests for metadata, role
+  constraint, unique pair, both foreign keys, RESTRICT delete behavior,
+  active/inactive lifecycle, timestamps, rollback, cross-tenant scope, and the
+  migration chain.
+
+Role storage decision:
+- The role is stored as `VARCHAR(16)` with a PostgreSQL check constraint rather
+  than a native PostgreSQL enum type. SQLAlchemy is configured with
+  `native_enum=False` and `values_callable`, so the ORM and migration render
+  identical DDL with no enum type to create or drop. `alembic check` confirms
+  there is no metadata/schema drift.
+
+Files changed:
+- `src/persistence/models.py`
+- `src/persistence/repositories.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260916_02_membership.py` (new)
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence -q` → PASS (25 passed) with a live disposable
+  PostgreSQL instance; the PostgreSQL integration tests actually executed.
+- `uv run pytest` → full regression executed; see the task report for numbers.
+- `uv run ruff format --check` / `uv run ruff check` → PASS.
+- `uv run pyrefly check` → PASS.
+- `uv lock --check`, `git diff --check` → PASS.
+- Migration verification ran live: fresh -> head, T022 -> T022A,
+  T022A -> T022 downgrade (users and organizations preserved),
+  T022 -> T022A re-upgrade, LangGraph coexistence, and
+  `alembic check` (no new upgrade operations).
+
+Security/scope notes:
+- No AuthSession, login, token, password hashing, bootstrap, `CurrentPrincipal`,
+  authorization dependency, cross-tenant HTTP behavior, role helper, Task
+  domain, approval, or organization-switching code was added.
+- The repository exposes no global membership listing and no tenant selection
+  by client input; scope parameters are explicit.
+- No `AUTH_SECRET`, `src/memory/*`, LangGraph table, T021/T022 migration, or
+  event-loop behavior was changed.
+- No Git add, commit, or push was performed.
+
+Known limitations:
+- T022A only stores memberships. Enforcing "exactly one active organization per
+  session", validating active user/organization/membership before principal
+  construction, and the cross-tenant 404 behavior remain T023/T024/T025 work.
+- Because V1 deactivates instead of deleting, downgrading T022A removes the
+  memberships table and its rows; re-upgrading recreates it empty while users
+  and organizations survive.
+- The pre-existing Alembic `path_separator` deprecation warning from `cb603b1`
+  remains historical debt, not introduced or widened by T022A.
+
+Learner notes:
+- Problem solved: the identity model now records which user belongs to which
+  organization with which role, and PostgreSQL enforces the tenant pair and the
+  role set instead of trusting application pre-checks.
+- Read `src/persistence/models.py`, `src/persistence/repositories.py`,
+  `migrations/versions/20260916_02_membership.py`, and
+  `tests/persistence/test_postgres_integration.py`.
+- Key concept: uniqueness and referential integrity are database invariants, so
+  a concurrent or buggy caller cannot create a duplicate or dangling
+  membership.
+- Exercise: insert two memberships for the same user/organization pair and
+  observe the unique violation, then deactivate the first row and confirm the
+  duplicate is still rejected.
+- Do not worry yet about sessions, login, tokens, or authorization helpers;
+  those are T023-T025.
+
+Suggested next step: strong review of the uncommitted T022A diff, then T023.
