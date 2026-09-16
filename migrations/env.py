@@ -15,7 +15,7 @@ from core.settings import settings
 from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.migration_filters import include_name, include_object
-from persistence.models import Organization  # noqa: F401 - register model metadata
+from persistence.models import Organization, User  # noqa: F401 - register model metadata
 
 config = context.config
 if config.config_file_name is not None:

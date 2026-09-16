@@ -134,18 +134,30 @@ explicit `TASKPILOT_DATABASE_URL` (for example,
 SQLite remains valid for local LangGraph checkpoints and does not enable
 business persistence. The URL is a secret setting and is never logged.
 
-The T021 Alembic environment lives in `migrations/` and owns only the
+The TaskPilot Alembic environment lives in `migrations/` and owns only the
 `taskpilot` schema. A release/deployment step applies it with:
 
 ```powershell
 uv run alembic upgrade head
 ```
 
-Application startup does not run migrations. The first revision creates
-`taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`; the
-environment's pre-reflection ownership filter prevents LangGraph/public tables from becoming
-autogenerate targets. `OrganizationRepository` accepts an `AsyncSession`,
-flushes writes, and leaves commit/rollback to the service transaction boundary.
+Application startup does not run migrations. The first revision (`t021_organization`)
+creates `taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`;
+the second revision (`t022_user`) adds `taskpilot.users`. Downgrading removes only
+the objects the target revision owns. The environment's pre-reflection ownership
+filter prevents LangGraph/public tables from becoming autogenerate targets.
+`OrganizationRepository` and `UserRepository` accept an `AsyncSession`, flush
+writes, and leave commit/rollback to the service transaction boundary.
+
+The persistence tests are PostgreSQL-only and run only when a disposable test
+database is configured. The URL must name a database containing `test`; the
+suite creates and drops uniquely named databases for each scenario and never
+touches the base database:
+
+```powershell
+$env:TASKPILOT_TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test'
+uv run pytest tests/persistence -q
+```
 
 After Docker/dependencies are ready, the repository also contains optional upstream
 confidence checks:

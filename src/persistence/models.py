@@ -1,12 +1,23 @@
 """TaskPilot business ORM models."""
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, String, Uuid, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Index,
+    String,
+    UniqueConstraint,
+    Uuid,
+    text,
+)
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from persistence.base import Base
+from persistence.identity import canonicalize_email
 
 
 def utc_now() -> datetime:
@@ -46,3 +57,57 @@ class Organization(Base):
         onupdate=utc_now,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+
+
+class User(Base):
+    """TaskPilot user identity and opaque password-hash storage."""
+
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("email ~ '[^[:space:]]'", name="user_email_not_blank"),
+        UniqueConstraint("normalized_email", name="uq_users_normalized_email"),
+        Index("ix_taskpilot_users_is_active", "is_active"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    normalized_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Construct a user while deriving identity from the application helper."""
+
+        raw_email = kwargs.pop("email", None)
+        if not isinstance(raw_email, str):
+            raise TypeError("User email must be a string")
+        if "normalized_email" in kwargs:
+            raise TypeError("User normalized_email is derived from email by canonicalize_email")
+        super().__init__(email=raw_email, **kwargs)
+
+    @validates("email")
+    def _canonicalize_email(self, key: str, value: str) -> str:
+        del key
+        display_email, normalized_email = canonicalize_email(value)
+        self.normalized_email = normalized_email
+        return display_email
+
+    def __repr__(self) -> str:
+        """Return a safe representation that never includes the password hash."""
+
+        return f"User(id={self.id!r}, email={self.email!r}, is_active={self.is_active!r})"

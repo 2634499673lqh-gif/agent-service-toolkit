@@ -12,13 +12,17 @@ from persistence.engine import (
     get_business_session,
     normalize_business_database_url,
 )
-from persistence.models import Organization
-from persistence.repositories import OrganizationRepository
+from persistence.identity import canonicalize_email
+from persistence.models import Organization, User
+from persistence.repositories import OrganizationRepository, UserRepository
 
 __all__ = [
     "Base",
     "Organization",
     "OrganizationRepository",
+    "User",
+    "UserRepository",
+    "canonicalize_email",
     "create_async_engine",
     "create_session_factory",
     "get_business_session",

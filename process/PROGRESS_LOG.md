@@ -816,3 +816,108 @@ Learner notes:
 - Do not worry yet about T022+ identity implementation.
 
 Suggested next step: final live PostgreSQL verification of T021.
+
+### 2026-09-16 — T022: User model, email identity and password field
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- HEAD: `cb603b1 feat: add TaskPilot persistence foundation`
+- Working tree before changes: a partial T022 implementation was already
+  present and uncommitted (interrupted implementer). Existing edits were
+  inspected and continued; nothing was reset, cleaned, checked out, or stashed.
+
+What changed:
+- Added `persistence.identity.canonicalize_email`, the single application
+  email-identity helper: Unicode `strip` for the display email, then Unicode
+  `casefold` for `normalized_email`. Blank input raises `ValueError`; non-string
+  input raises `TypeError`.
+- Added the `User` ORM model (`taskpilot.users`) with UUID4 `id`, `email`,
+  `normalized_email`, opaque `password_hash`, `is_active`, and timezone-aware
+  `created_at`/`updated_at`. `normalized_email` is `NOT NULL` with a global
+  `UNIQUE` constraint; `password_hash` is excluded from `repr`/`str`.
+- Added `UserRepository` following the T021 boundary: query, add, and flush
+  only. It never commits or closes the caller's session, so caller rollback
+  reverses repository changes.
+- Added the second TaskPilot Alembic revision `t022_user`
+  (`migrations/versions/20260916_01_user.py`) with `down_revision =
+  t021_organization`. Upgrade creates only `taskpilot.users`; downgrade drops
+  only the TaskPilot user index and table.
+- Extended persistence tests with email canonicalization, Unicode casefold,
+  redaction, UUID4, inactive state, UTC timestamps, PostgreSQL `timestamptz`
+  mapping, duplicate normalized email, `NOT NULL`, rollback, and migration
+  upgrade/downgrade/re-upgrade coverage.
+
+Review fixes applied on top of the interrupted work:
+- Aligned the ORM and migration check-constraint name to the T021 naming
+  convention, which produces `ck_users_user_email_not_blank`.
+- Corrected the scenario helper so it no longer reflects `taskpilot.users`
+  after a T022 -> T021 downgrade has removed the table.
+- Made the users index assertion robust to PostgreSQL's same-named index that
+  backs `UNIQUE(normalized_email)`.
+- Strengthened `updated_at` verification to assert a strictly advancing value
+  that survives commit, and added real Unicode `casefold` and repository
+  email-coercion tests.
+
+Files changed:
+- `src/persistence/identity.py` (new)
+- `src/persistence/models.py`
+- `src/persistence/repositories.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260916_01_user.py` (new)
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence -q` → PASS (15 passed) with a live
+  disposable PostgreSQL instance configured through
+  `TASKPILOT_TEST_DATABASE_URL`; the integration tests actually executed.
+- `uv run pytest tests/persistence/test_foundation.py -q` → PASS (14 passed).
+- `uv run pytest` → full regression executed; see the task report for numbers.
+- `uv run ruff format --check` → PASS.
+- `uv run ruff check --output-format concise` → PASS.
+- `uv run pyrefly check` → PASS.
+- `uv lock --check` → PASS.
+- `git diff --check` → PASS.
+- Migration verification ran live: fresh database -> `head`,
+  T021 -> T022, T022 -> T021 downgrade, and T021 -> T022 re-upgrade, each with
+  LangGraph saver/store coexistence checked.
+
+Security/scope notes:
+- `password_hash` is opaque storage only. No password library, hashing,
+  verification, login, token, session, bootstrap, `CurrentPrincipal`,
+  Membership, role, authorization, or Task domain code was added.
+- No `AUTH_SECRET` behavior, LangGraph table, `src/memory/*`, or event-loop
+  handling was changed. `fileConfig(..., disable_existing_loggers=False)` is
+  unchanged.
+- Canonicalization is application-side `str.casefold`; PostgreSQL `lower()`,
+  `citext`, collation identity, IDNA/punycode, and provider-specific email
+  rules are deliberately not used.
+- No Git add, commit, or push was performed.
+
+Known limitations:
+- T022 stores `password_hash` without generating or verifying it; Argon2id
+  arrives with the T023 dependency.
+- Email uniqueness is global, not organization-scoped, matching ADR-004.
+- Alembic emits a pre-existing `path_separator` deprecation warning from
+  `cb603b1`; it is historical debt, not introduced or widened by T022.
+
+Learner notes:
+- Problem solved: the User identity row now exists with one shared email
+  canonicalization contract and a database-enforced unique identity.
+- Read `src/persistence/identity.py`, `src/persistence/models.py`,
+  `migrations/versions/20260916_01_user.py`,
+  `tests/persistence/test_postgres_integration.py`, and
+  `docs/DATABASE_DESIGN.md`.
+- Key concept: canonical identity belongs in one application helper, while the
+  database only enforces `NOT NULL`/`UNIQUE` on the stored normalized value.
+- Exercise: insert two users whose display emails differ only by surrounding
+  whitespace or case and observe the `UNIQUE(normalized_email)` violation.
+- Do not worry yet about password hashing, login, sessions, or Membership; those
+  are T023 and T022A.
+
+Suggested next step: strong review of the uncommitted T022 diff, then T022A.

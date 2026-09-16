@@ -21,15 +21,17 @@ from langgraph.store.postgres import AsyncPostgresStore
 from psycopg import AsyncConnection, errors, sql
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
-from sqlalchemy import inspect, make_url, select, text
+from sqlalchemy import insert, inspect, make_url, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from persistence.engine import create_async_engine, create_session_factory, get_business_session
-from persistence.models import Organization
-from persistence.repositories import OrganizationRepository
+from persistence.models import Organization, User
+from persistence.repositories import OrganizationRepository, UserRepository
 
 pytestmark = pytest.mark.postgres
-EXPECTED_REVISION = "t021_organization"
+T021_REVISION = "t021_organization"
+EXPECTED_REVISION = "t022_user"
 
 
 def _configured_test_url() -> str:
@@ -128,7 +130,12 @@ async def _langgraph_read(database_url: str, key: str) -> None:
         assert item.value == {"value": key}
 
 
-async def _assert_taskpilot_schema(engine: AsyncEngine) -> None:
+async def _assert_taskpilot_schema(
+    engine: AsyncEngine,
+    *,
+    expected_revision: str = EXPECTED_REVISION,
+    users_expected: bool = True,
+) -> None:
     async with engine.connect() as connection:
         schemas = set(await connection.run_sync(lambda conn: inspect(conn).get_schema_names()))
         tables = set(
@@ -145,6 +152,18 @@ async def _assert_taskpilot_schema(engine: AsyncEngine) -> None:
                 lambda conn: inspect(conn).get_columns("organizations", schema="taskpilot")
             )
         }
+        # The users relation is absent after a T022 -> T021 downgrade, so only
+        # reflect it when this revision is expected to own it.
+        user_columns = (
+            {
+                column["name"]: column
+                for column in await connection.run_sync(
+                    lambda conn: inspect(conn).get_columns("users", schema="taskpilot")
+                )
+            }
+            if users_expected
+            else {}
+        )
         version_relation = await connection.scalar(
             text("SELECT to_regclass(:qualified_name)"),
             {"qualified_name": "taskpilot.alembic_version"},
@@ -153,12 +172,40 @@ async def _assert_taskpilot_schema(engine: AsyncEngine) -> None:
             text("SELECT to_regclass(:qualified_name)"),
             {"qualified_name": "taskpilot.organizations"},
         )
+        users_relation = await connection.scalar(
+            text("SELECT to_regclass(:qualified_name)"),
+            {"qualified_name": "taskpilot.users"},
+        )
         checks = await connection.run_sync(
             lambda conn: inspect(conn).get_check_constraints("organizations", schema="taskpilot")
         )
+        user_checks = (
+            await connection.run_sync(
+                lambda conn: inspect(conn).get_check_constraints("users", schema="taskpilot")
+            )
+            if users_expected
+            else []
+        )
+        user_unique_constraints = (
+            await connection.run_sync(
+                lambda conn: inspect(conn).get_unique_constraints("users", schema="taskpilot")
+            )
+            if users_expected
+            else []
+        )
+        user_indexes = (
+            await connection.run_sync(
+                lambda conn: inspect(conn).get_indexes("users", schema="taskpilot")
+            )
+            if users_expected
+            else []
+        )
     assert "taskpilot" in schemas
-    assert tables == {"alembic_version", "organizations"}
-    assert revision == EXPECTED_REVISION
+    expected_tables = {"alembic_version", "organizations"}
+    if users_expected:
+        expected_tables.add("users")
+    assert tables == expected_tables
+    assert revision == expected_revision
     assert version_relation == "taskpilot.alembic_version"
     assert organizations_relation == "taskpilot.organizations"
     assert set(columns) == {"id", "name", "is_active", "created_at", "updated_at"}
@@ -168,6 +215,32 @@ async def _assert_taskpilot_schema(engine: AsyncEngine) -> None:
     assert {constraint["name"] for constraint in checks} == {
         "ck_organizations_organization_name_not_blank"
     }
+    if users_expected:
+        assert users_relation == "taskpilot.users"
+        assert set(user_columns) == {
+            "id",
+            "email",
+            "normalized_email",
+            "password_hash",
+            "is_active",
+            "created_at",
+            "updated_at",
+        }
+        assert str(user_columns["id"]["type"]) == "UUID"
+        assert user_columns["created_at"]["type"].timezone is True
+        assert user_columns["updated_at"]["type"].timezone is True
+        assert {constraint["name"] for constraint in user_checks} == {
+            "ck_users_user_email_not_blank"
+        }
+        assert {constraint["name"] for constraint in user_unique_constraints} == {
+            "uq_users_normalized_email"
+        }
+        # PostgreSQL backs the UNIQUE(normalized_email) constraint with a
+        # same-named index, so assert the explicit index is present instead of
+        # requiring exact set equality.
+        assert "ix_taskpilot_users_is_active" in {index["name"] for index in user_indexes}
+    else:
+        assert users_relation is None
 
 
 @pytest.mark.asyncio
@@ -180,7 +253,10 @@ async def test_scenario_a_langgraph_then_taskpilot_and_downgrade() -> None:
             await _run_alembic(config, "upgrade", "head")
             await _assert_taskpilot_schema(engine)
             await _langgraph_read(database_url, "scenario-a")
-            await _run_alembic(config, "downgrade", "base")
+            await _run_alembic(config, "downgrade", T021_REVISION)
+            await _assert_taskpilot_schema(
+                engine, expected_revision=T021_REVISION, users_expected=False
+            )
             await _langgraph_read(database_url, "scenario-a")
             await _run_alembic(config, "upgrade", "head")
             await _assert_taskpilot_schema(engine)
@@ -204,6 +280,13 @@ async def migrated_engine() -> AsyncIterator[AsyncEngine]:
                     await connection.scalar(
                         text("SELECT to_regclass(:qualified_name)"),
                         {"qualified_name": "taskpilot.organizations"},
+                    )
+                    is None
+                )
+                assert (
+                    await connection.scalar(
+                        text("SELECT to_regclass(:qualified_name)"),
+                        {"qualified_name": "taskpilot.users"},
                     )
                     is None
                 )
@@ -287,3 +370,89 @@ async def test_transactions_sessions_and_name_constraints(migrated_engine: Async
             async with get_business_session(session_factory) as session:
                 async with session.begin():
                     await OrganizationRepository(session).add(Organization(name=invalid_name))
+
+
+@pytest.mark.asyncio
+async def test_user_identity_constraints_and_persistence(migrated_engine: AsyncEngine) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    password_hash = "$argon2id$v=19$test-only-opaque-value"
+    user = User(
+        email="  Straße@Example.COM  ",
+        password_hash=password_hash,
+    )
+
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await UserRepository(session).add(user)
+
+    assert user.id is not None
+    assert user.id.version == 4
+    assert user.email == "Straße@Example.COM"
+    assert user.normalized_email == "strasse@example.com"
+    assert user.is_active is True
+    assert user.created_at.tzinfo is not None
+    assert user.created_at.utcoffset().total_seconds() == 0
+    assert user.updated_at.tzinfo is not None
+    assert user.updated_at.utcoffset().total_seconds() == 0
+
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            repository = UserRepository(session)
+            loaded = await repository.get(user.id)
+            assert loaded is not None
+            assert loaded.password_hash == password_hash
+            assert password_hash not in repr(loaded)
+            assert await repository.get_by_email("  STRASSE@EXAMPLE.COM ") is loaded
+            original_created_at = loaded.created_at
+            original_updated_at = loaded.updated_at
+            await asyncio.sleep(0.01)
+            loaded.is_active = False
+            # ``updated_at`` is an ORM onupdate value, so it is only refreshed
+            # once the change is flushed to PostgreSQL.
+            await session.flush()
+            assert loaded.is_active is False
+            assert loaded.updated_at > original_updated_at
+
+    async with get_business_session(session_factory) as session:
+        loaded = await UserRepository(session).get(user.id)
+        assert loaded is not None
+        assert loaded.is_active is False
+        # The onupdate timestamp must survive the commit, not only the session.
+        assert loaded.created_at == original_created_at
+        assert loaded.updated_at > original_updated_at
+        assert loaded.updated_at.utcoffset().total_seconds() == 0
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await UserRepository(session).add(
+                    User(email=" strasse@EXAMPLE.com ", password_hash="another-opaque-hash")
+                )
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    insert(User).values(
+                        id=uuid4(),
+                        email="null-normalized@example.com",
+                        normalized_email=None,
+                        password_hash="opaque-test-hash",
+                    )
+                )
+
+    rolled_back_id = uuid4()
+    with pytest.raises(RuntimeError, match="force user rollback"):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await UserRepository(session).add(
+                    User(
+                        id=rolled_back_id,
+                        email="rollback@example.com",
+                        password_hash="opaque-test-hash",
+                    )
+                )
+                raise RuntimeError("force user rollback")
+
+    async with get_business_session(session_factory) as session:
+        assert await UserRepository(session).get(rolled_back_id) is None
