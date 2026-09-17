@@ -16,6 +16,7 @@ from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.migration_filters import include_name, include_object
 from persistence.models import (  # noqa: F401 - register model metadata
+    AuthSession,
     Membership,
     Organization,
     User,

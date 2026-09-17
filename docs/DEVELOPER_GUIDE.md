@@ -144,15 +144,51 @@ uv run alembic upgrade head
 Application startup does not run migrations. The first revision (`t021_organization`)
 creates `taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`;
 the second revision (`t022_user`) adds `taskpilot.users`; the third revision
-(`t022a_membership`) adds `taskpilot.memberships`. Downgrading removes only the
-objects the target revision owns, so `alembic downgrade t022_user` drops the
-membership table while leaving users and organizations intact. The environment's
+(`t022a_membership`) adds `taskpilot.memberships`; the fourth
+(`t023_auth_session`) adds `taskpilot.auth_sessions`. Downgrading removes only the
+objects the target revision owns, so `alembic downgrade t022a_membership` drops the
+session table while leaving users, memberships, and organizations intact, and
+`alembic downgrade t022_user` additionally drops memberships. The environment's
 pre-reflection ownership filter prevents LangGraph/public tables from becoming
 autogenerate targets. `OrganizationRepository`, `UserRepository`, and
-`MembershipRepository` accept an `AsyncSession`, flush writes, and leave
-commit/rollback to the service transaction boundary. `uv run alembic check`
-reports "No new upgrade operations detected" when the ORM metadata matches the
-migrated database.
+`MembershipRepository`, and `AuthSessionRepository` accept an `AsyncSession`,
+flush writes, and leave commit/rollback to the service transaction boundary.
+`uv run alembic check` reports "No new upgrade operations detected" when the ORM
+metadata matches the migrated database.
+
+### Authentication (T023)
+
+Passwords are Argon2id hashes from `pwdlib` (`persistence/passwords.py`).
+`service/session.py` issues opaque sessions: the raw base64url token is returned
+once, and only its SHA-256 digest is stored in `taskpilot.auth_sessions`. Login
+fails with one generic error for unknown email, wrong password, inactive user,
+and no eligible membership, and a session is bound to exactly one user and one
+membership.
+
+For a user with several eligible organizations, `AuthService.login` accepts an
+optional `organization_id` selector. With no selector it issues automatically
+when exactly one membership is eligible and returns
+`OrganizationSelectionRequired` (code `ORGANIZATION_SELECTION_REQUIRED` plus the
+sorted eligible organization IDs) when several are; the result holds no token or
+session. Passing the selector issues a session bound to that verified
+membership, and switching organizations is simply another `login` call with the
+target selector.
+
+Create the first organization owner with the controlled CLI. The password is
+read from a hidden prompt and must be entered twice; `--password` and positional
+plaintext are rejected:
+
+```powershell
+uv run python scripts/bootstrap_owner.py --organization-name "Acme" --email owner@example.com
+```
+
+The organization name and owner email may also come from
+`TASKPILOT_BOOTSTRAP_ORGANIZATION_NAME` and `TASKPILOT_BOOTSTRAP_EMAIL`, or from
+interactive prompts. The password has no flag, positional, or environment-variable
+form: it is always read from two hidden prompts, so no automation shortcut can
+bypass the confirmation. Re-running against an exact active owner state is a
+no-op. Argument errors and database failures are reported with fixed messages
+that never echo the supplied values, the SQL, or the bind parameters.
 
 The persistence tests are PostgreSQL-only and run only when a disposable test
 database is configured. The URL must name a database containing `test`; the

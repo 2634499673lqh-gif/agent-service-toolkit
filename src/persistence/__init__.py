@@ -13,14 +13,17 @@ from persistence.engine import (
     normalize_business_database_url,
 )
 from persistence.identity import canonicalize_email
-from persistence.models import Membership, Organization, Role, User
+from persistence.models import AuthSession, Membership, Organization, Role, User
 from persistence.repositories import (
+    AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
     UserRepository,
 )
 
 __all__ = [
+    "AuthSession",
+    "AuthSessionRepository",
     "Base",
     "Membership",
     "MembershipRepository",

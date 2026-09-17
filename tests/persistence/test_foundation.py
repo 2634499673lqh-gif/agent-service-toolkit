@@ -14,8 +14,9 @@ from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
-from persistence.models import Membership, Organization, Role, User, utc_now
+from persistence.models import AuthSession, Membership, Organization, Role, User, utc_now
 from persistence.repositories import (
+    AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
     UserRepository,
@@ -34,10 +35,12 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.organizations",
         "taskpilot.users",
         "taskpilot.memberships",
+        "taskpilot.auth_sessions",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
     assert Membership.__table__.schema == "taskpilot"
+    assert AuthSession.__table__.schema == "taskpilot"
 
 
 def test_role_enum_matches_the_frozen_v1_role_set() -> None:
@@ -102,6 +105,40 @@ def test_membership_metadata_declares_tenant_uniqueness_and_restrict_foreign_key
     assert {index.name for index in table.indexes} == {
         "ix_memberships_user_id",
         "ix_memberships_organization_id",
+    }
+
+
+def test_auth_session_metadata_declares_digest_uniqueness_and_restrict_foreign_keys() -> None:
+    table = AuthSession.__table__
+
+    assert table.c.id.type.python_type is UUID
+    assert table.c.id.primary_key is True
+    assert table.c.token_hash.type.length == 64
+    assert table.c.token_hash.nullable is False
+    assert table.c.expires_at.type.timezone is True
+    assert table.c.expires_at.nullable is False
+    assert table.c.revoked_at.nullable is True
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+
+    unique_columns = {
+        tuple(sorted(constraint.columns.keys()))
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("token_hash",) in unique_columns
+
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert set(foreign_keys) == {"user_id", "membership_id"}
+    assert foreign_keys["user_id"].target_fullname == "taskpilot.users.id"
+    assert foreign_keys["user_id"].ondelete == "RESTRICT"
+    assert foreign_keys["membership_id"].target_fullname == "taskpilot.memberships.id"
+    assert foreign_keys["membership_id"].ondelete == "RESTRICT"
+
+    assert {index.name for index in table.indexes} == {
+        "ix_auth_sessions_user_id",
+        "ix_auth_sessions_membership_id",
+        "ix_auth_sessions_expires_at",
     }
 
 
@@ -272,6 +309,48 @@ async def test_repository_flushes_without_commit() -> None:
     membership_session.flush.assert_awaited_once_with()
     membership_session.commit.assert_not_called()
 
+    session_session = Mock()
+    session_session.flush = AsyncMock()
+    session_repository = AuthSessionRepository(session_session)
+    auth_session = AuthSession(
+        user_id=UUID("11111111-1111-4111-8111-111111111111"),
+        membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+        token_hash="0" * 64,
+        expires_at=utc_now(),
+    )
+
+    assert await session_repository.add(auth_session) is auth_session
+    session_session.add.assert_called_once_with(auth_session)
+    session_session.flush.assert_awaited_once_with()
+    session_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_auth_session_repository_looks_up_by_digest_only() -> None:
+    digest = "a" * 64
+    session = Mock()
+    session.scalar = AsyncMock(return_value=None)
+    repository = AuthSessionRepository(session)
+
+    assert await repository.get_by_token_hash(digest) is None
+    statement = session.scalar.await_args.args[0]
+    assert statement.compile().params["token_hash_1"] == digest
+
+    revoked = Mock()
+    revoked.flush = AsyncMock()
+    revoked_session = AuthSession(
+        user_id=UUID("11111111-1111-4111-8111-111111111111"),
+        membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+        token_hash=digest,
+        expires_at=utc_now(),
+    )
+    revoke_repository = AuthSessionRepository(revoked)
+    now = utc_now()
+    assert await revoke_repository.revoke(revoked_session, now) is revoked_session
+    assert revoked_session.revoked_at == now
+    revoked.flush.assert_awaited_once_with()
+    revoked.commit.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_repository_email_coercion_reuses_the_identity_contract() -> None:
@@ -308,3 +387,24 @@ async def test_membership_repository_queries_always_name_their_scope() -> None:
     # The organization-scoped query never filters on user identity.
     tenant_params = set(tenant_session.scalars.await_args.args[0].compile().params)
     assert tenant_params == {"organization_id_1"}
+
+
+@pytest.mark.asyncio
+async def test_eligible_membership_query_is_scoped_in_the_database() -> None:
+    user_id = UUID("11111111-1111-4111-8111-111111111111")
+    session = Mock()
+    session.scalars = AsyncMock(return_value=[])
+    repository = MembershipRepository(session)
+
+    assert await repository.list_eligible_for_user(user_id) == []
+
+    statement = session.scalars.await_args.args[0]
+    compiled = statement.compile(compile_kwargs={"literal_binds": True})
+    sql = str(compiled).casefold()
+    # User scope, active membership, and an active joined organization are all
+    # enforced by PostgreSQL rather than by a Python-side filter.
+    assert "join taskpilot.organizations" in sql
+    assert "taskpilot.memberships.user_id" in sql
+    assert "taskpilot.memberships.is_active" in sql
+    assert "taskpilot.organizations.is_active" in sql
+    assert set(statement.compile().params) == {"user_id_1"}

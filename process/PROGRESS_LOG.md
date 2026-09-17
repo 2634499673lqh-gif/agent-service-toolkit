@@ -1025,3 +1025,423 @@ Learner notes:
   those are T023-T025.
 
 Suggested next step: strong review of the uncommitted T022A diff, then T023.
+
+### 2026-09-16 — T023: Opaque authentication session/token service
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `203a720 feat: add TaskPilot membership persistence`
+- Working tree before changes: clean.
+
+Task Card interpretation:
+- Scope: `pwdlib[argon2]` Argon2id verification, generic login failure, opaque
+  token from >=32 random bytes with SHA-256 hash-at-rest and indexed lookup,
+  UUID4 session ID, 24-hour expiry, explicit revocation, expired-session
+  cleanup, user+membership binding with active-state revalidation, and the
+  controlled bootstrap CLI contract.
+- Forbidden: JWT, role claims as authority, refresh-token family, SSO, email
+  verification/change, any `AUTH_SECRET` behavior change, and general
+  authorization dependencies.
+
+What changed:
+- Added `persistence/passwords.py` (Argon2id `hash_password` / `verify_password`
+  via `pwdlib`) and `persistence/tokens.py` (32-byte CSPRNG base64url token and
+  SHA-256 digest helper).
+- Added the `AuthSession` model (`taskpilot.auth_sessions`) and
+  `AuthSessionRepository` (`add`, `get`, `get_by_token_hash`, `revoke`,
+  `delete_expired`). Added `OrganizationRepository.get_by_name` and
+  `MembershipRepository.list_for_user` for bootstrap and login resolution.
+- Added `service/session.py`: login, session lookup by digest, validity check,
+  revocation, and expired cleanup, with injectable repositories for tests.
+- Added `service/bootstrap.py`, `service/bootstrap_cli.py`, and
+  `scripts/bootstrap_owner.py` implementing the frozen bootstrap contract.
+- Added the fourth Alembic revision `t023_auth_session`
+  (`migrations/versions/20260916_03_auth_session.py`, `down_revision =
+  t022a_membership`). Upgrade creates only `taskpilot.auth_sessions`; downgrade
+  drops only its indexes and table.
+
+Security decisions preserved from ADR-004:
+- Only the SHA-256 digest is stored; the raw token is returned once at issuance
+  and never appears in a column, parameter name, `repr`, or log line.
+- Unknown email, wrong password, inactive user, missing/inactive membership, and
+  ambiguous (multiple) memberships all raise one generic
+  `LoginError("Invalid credentials")`. One Argon2id verification is always
+  performed so a missing account is not distinguishable by timing.
+- Session binding is server-derived: the service resolves the caller's own
+  membership and refuses to issue when it is not exactly one active row.
+- Role and organization remain database truth, not token claims.
+- `AUTH_SECRET` compatibility behavior is untouched.
+
+Files changed:
+- `pyproject.toml`, `uv.lock` (added `pwdlib[argon2]`; argon2-cffi pulled in)
+- `src/persistence/models.py`, `repositories.py`, `__init__.py`
+- `src/persistence/passwords.py` (new), `src/persistence/tokens.py` (new)
+- `src/service/session.py` (new), `src/service/bootstrap.py` (new),
+  `src/service/bootstrap_cli.py` (new)
+- `scripts/bootstrap_owner.py` (new)
+- `migrations/env.py`, `migrations/versions/20260916_03_auth_session.py` (new)
+- `tests/service/test_auth_session.py` (new),
+  `tests/service/test_bootstrap.py` (new)
+- `tests/persistence/test_foundation.py`, `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`, `docs/SECURITY_HITL.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence -q` → PASS (34 passed) with a live disposable
+  PostgreSQL instance; the PostgreSQL integration tests executed.
+- `uv run pytest -q` → PASS (276 passed, 4 skipped, 35 warnings); the four skips
+  are the unrelated `--run-docker` gates.
+- `uv run ruff format --check` / `uv run ruff check` → PASS.
+- `uv run pyrefly check` → PASS (0 errors).
+- `uv lock --check` → PASS.
+- `git diff --check` → PASS.
+- Live migration verification: fresh -> head, T022A -> T023,
+  T023 -> T022A downgrade (users, memberships, and organizations preserved),
+  T022A -> T023 re-upgrade, LangGraph coexistence, and `alembic check`
+  ("No new upgrade operations detected"). Offline SQL verified for both the
+  upgrade and downgrade paths.
+- Bootstrap CLI was exercised end to end against PostgreSQL: first run created
+  the owner, the second run was an idempotent no-op, and a `--password` argument
+  was rejected with exit code 2 without touching the database.
+
+Scope/security notes:
+- No `CurrentPrincipal`, request authentication dependency, authorization
+  middleware, cross-tenant 404, same-tenant 403, Task domain, approval, or
+  organization-switching code was added.
+- No JWT, refresh token, SSO, bcrypt/passlib, Redis session store, or OAuth/OIDC
+  stack was introduced.
+- No `AUTH_SECRET`, `src/memory/*`, LangGraph table, T021/T022/T022A migration,
+  or event-loop behavior was changed.
+- No Git add, commit, or push was performed.
+
+Known limitations:
+- `service/session.py` deliberately issues a session only when the user has
+  exactly one active membership. Organization switching (a new session for a
+  different membership) is a later decision, and login therefore rejects users
+  who already hold several active memberships.
+- Expired-session cleanup is an explicit call (`cleanup_expired_sessions`); no
+  scheduled job invokes it yet.
+- The principal/authorization layer (fresh per-request revalidation, 401/403/404
+  policy, tenant scoping) is still T024/T025.
+- The pre-existing Alembic `path_separator` deprecation warning from `cb603b1`
+  remains historical debt.
+
+Learner notes:
+- Problem solved: TaskPilot can now verify a password with Argon2id and issue an
+  opaque, revocable, 24-hour session that is bound to one user and one
+  membership, without ever storing the token a client presents.
+- Read `src/persistence/tokens.py`, `src/persistence/passwords.py`,
+  `src/service/session.py`, `migrations/versions/20260916_03_auth_session.py`,
+  and `tests/service/test_auth_session.py`.
+- Key concept: a bearer token is verified by hashing it and comparing digests,
+  so the database only ever holds a one-way fingerprint; the same trick does not
+  work for passwords, which need a slow salted KDF such as Argon2id.
+- Exercise: log in twice and compare the stored `token_hash` values, then
+  confirm that neither the raw token nor `"correct horse battery staple"` can be
+  recovered from the `auth_sessions` or `users` rows.
+- Do not worry yet about request dependencies, 403/404 policy, or tenant
+  resource scoping; those are T024 and T025.
+
+Suggested next step: strong review of the uncommitted T023 diff, then T024.
+
+### 2026-09-16 — T023 Strong Review blocker fixes (1–3)
+
+Status: BLOCKER FIXES COMPLETE — BLOCKER 4 BLOCKED ON ARCHITECTURE DECISION
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- T023 baseline HEAD: `203a720 feat: add TaskPilot membership persistence`
+- The uncommitted T023 implementation was fixed in place; nothing was reset,
+  cleaned, restored, checked out, or stashed.
+
+BLOCKER 1 — argument rejection echoed the supplied value:
+- `argparse` printed `unrecognized arguments: <value>` on stderr, so a password
+  typed as a positional or unknown argument was echoed verbatim.
+- `service/bootstrap_cli.py` now uses a private `_SafeArgumentParser` whose
+  `error()` raises a `BootstrapArgumentError` that renders only the fixed
+  `bootstrap failed: invalid bootstrap arguments` string. The CLI prints that
+  fixed message and exits `2` before any database work.
+- Tests assert a synthetic secret (`SuperSecret123!`) never reaches stdout,
+  stderr, or the exception text, including a subprocess run of the shipped
+  entry point.
+
+BLOCKER 2 — database exceptions could expose bind parameters:
+- The CLI caught only `BootstrapError`/`PwdlibError`, so a `SQLAlchemyError`
+  could surface a traceback containing SQL text and bind parameters such as
+  `password_hash`.
+- `_run` now converts `SQLAlchemyError` and connection `OSError`/`TimeoutError`
+  into the fixed `bootstrap failed: database operation failed; no changes were
+  committed` message without printing the exception, its repr, or a chained
+  cause. The session context manager still performs the rollback.
+- Tests cover both a fault-injected `IntegrityError` carrying a synthetic
+  `password_hash`, and a live PostgreSQL failure path that asserts full
+  rollback (no partial bootstrap rows) plus absence of the plaintext password,
+  the stored hash, SQL text, and bind parameters from all output.
+
+BLOCKER 3 — environment variable bypassed the hidden double confirmation:
+- Removed the unauthorized `TASKPILOT_BOOTSTRAP_PASSWORD` source and the
+  `--no-input` flag, plus every doc, help-text, and test reference to them.
+- The password is now read exclusively from the two hidden `getpass` prompts.
+  Non-secret organization name and email may still come from flags, the
+  `TASKPILOT_BOOTSTRAP_ORGANIZATION_NAME` / `TASKPILOT_BOOTSTRAP_EMAIL`
+  variables, or interactive prompts.
+- Tests assert both prompts are always used, a mismatch and a blank entry fail
+  closed, the environment variable cannot supply a password, an interrupted
+  prompt produces no traceback, and `--no-input` no longer exists.
+
+BLOCKER 4 — membership selection is not frozen:
+- Reported as `ARCHITECTURE GAP — MEMBERSHIP SELECTION NOT FROZEN`. No selector
+  was invented. `AuthService` still rejects a login that does not resolve to
+  exactly one active membership; see the task report for the exact frozen text.
+
+Files changed by this fix round:
+- `src/service/bootstrap_cli.py`
+- `tests/service/test_bootstrap.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DEVELOPER_GUIDE.md`, `docs/DATABASE_DESIGN.md`, `docs/SECURITY_HITL.md`
+- `scripts/bootstrap_owner.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- focused auth + bootstrap: PASS (56 passed).
+- `uv run pytest tests/persistence -q` with live PostgreSQL: PASS (36 passed).
+- `uv run pytest -q`: PASS (298 passed, 4 skipped, 37 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+- Migrations were not modified, so the previously verified migration behavior
+  is unchanged and its tests remain green.
+
+Security notes:
+- No new secret input channel exists; no JWT, refresh token, authorization
+  dependency, or T024 work was added.
+- `AUTH_SECRET`, `src/memory/*`, and the existing service routes are unchanged.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: the CLI no longer echoes a mistyped secret and no longer
+  prints raw database exceptions, and the bootstrap password can only come from
+  the hidden double prompt.
+- Read `src/service/bootstrap_cli.py` and `tests/service/test_bootstrap.py`.
+- Key concept: an error boundary must print fixed text, because both argument
+  text and SQL bind parameters are attacker- or user-controlled and can contain
+  a credential.
+- Exercise: run the entry point with a fake password as a positional argument
+  and confirm the value never appears in the output.
+- Do not worry yet about organization switching; the selection mechanism is the
+  open architecture question recorded for BLOCKER 4.
+
+Suggested next step: architecture decision on membership selection, then
+focused re-review.
+
+### 2026-09-16 — T023 membership selection architecture gap
+
+Status: architecture decision complete; implementation pending
+
+What changed:
+
+- Confirmed ADR-004/T023 omitted multi-organization login selection and current session code counts all memberships before active filtering.
+- Froze a password-authenticated optional organization selector, typed selection-required result containing eligible IDs only, generic invalid-selector failures, eligibility-before-counting, and fresh login for switching.
+- Added future selection acceptance tests to T023; no production/test implementation was edited.
+
+Files changed: `process/DECISION_LOG.md`, `process/tasks/T023.md`, `process/PROGRESS_LOG.md`.
+
+Validation:
+
+- Read T020, T022A, T023, T024, INDEX, ADR-004, current session service and auth-session tests.
+- T023 Markdown check PASS; touched-file Markdown scan reports pre-existing log formatting violations only after the new entry is corrected.
+- `git diff --check` and non-target SHA-256 comparison PASS; all 216 non-target files preserved.
+- Runtime tests not run: architecture documentation only.
+
+Known limitations:
+
+- Existing T023 implementation still requires the selection correction and Strong Review; this decision does not certify it.
+- The workspace already contained production, migration, dependency, test and documentation changes before this task; those changes are preserved.
+
+Learner notes:
+
+- Problem solved: legitimate multi-org users now have an explicit login selection contract.
+- Read `process/DECISION_LOG.md`, `process/tasks/T023.md`, and `src/service/session.py`.
+- Key concept: a selector requests a context; verified server Membership grants that context.
+- Exercise: trace active A plus inactive B, then two active memberships without a selector.
+- Ignore for now: chooser tokens, switching UI and HTTP status mapping.
+
+Suggested next task: implement only the frozen T023 selection correction when authorized, then Strong Review; do not start T024 here.
+
+### 2026-09-17 — T023 BLOCKER 4: frozen membership selection implemented
+
+Status: BLOCKER 4 FIXED PER FROZEN CONTRACT — READY FOR FOCUSED RE-REVIEW
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Committed baseline HEAD: `203a720 feat: add TaskPilot membership persistence`
+- Working tree already contained the uncommitted T023 implementation and the
+  BLOCKER 1–3 fixes; nothing was reset, cleaned, restored, checked out, or stashed.
+
+Frozen contract implemented:
+- Source: `process/DECISION_LOG.md` → "T023 membership selection addendum —
+  frozen 2026-09-16", plus `process/tasks/T023.md` → "Frozen membership
+  selection contract" and "Selection acceptance cases".
+- `AuthService.login(email, password, *, organization_id: UUID | None = None)`
+  now returns `AuthenticatedSession | OrganizationSelectionRequired`.
+
+What changed:
+- Added the immutable `OrganizationSelectionRequired` result carrying only
+  `code = "ORGANIZATION_SELECTION_REQUIRED"` and a deduplicated
+  `organization_ids: tuple[UUID, ...]` sorted by canonical UUID string. It holds
+  no token, session, role, membership id, or user data, and it cannot be
+  mutated into a credential.
+- Added `MembershipRepository.list_eligible_for_user`, which joins memberships
+  to organizations in PostgreSQL and requires user scope, active membership,
+  and an existing active organization. Eligibility is no longer decided in
+  Python and inactive or dangling rows are never counted.
+- Rewrote login selection: credentials and active user are verified first, then
+  membership metadata is read. No selector issues for one eligible membership,
+  fails generically for zero, and returns the typed selection result for several
+  without choosing a first/owner/most-recent default. An explicit selector must
+  match a verified eligible membership of that same user; malformed, unknown,
+  foreign, inactive, or ambiguous matches all raise the generic
+  `LoginError("Invalid credentials")` with no fallback and no list.
+- Selection is resolved before any token is generated or session staged, so a
+  selection-required outcome writes nothing and produces no raw token.
+- Removed the now-unused `LoginFailure.INACTIVE_MEMBERSHIP` and the unused
+  organization repository injection from `AuthService`.
+
+Files changed by this fix round:
+- `src/service/session.py`
+- `src/persistence/repositories.py`
+- `tests/service/test_auth_session.py`
+- `tests/service/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/SECURITY_HITL.md`, `docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- focused auth/session + bootstrap: PASS (72 passed).
+- `uv run pytest tests/persistence -q` with live PostgreSQL: PASS (39 passed).
+- `uv run pytest -q`: PASS (317 passed, 4 skipped, 39 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+- Migrations were not modified, so migration verification is unchanged and its
+  tests remain green.
+
+Security notes:
+- BLOCKER 1–3 fixes are preserved: argument values are never echoed, database
+  exceptions are converted to a fixed message with no SQL/bind/`password_hash`,
+  and the bootstrap password still comes only from the hidden double prompt.
+- The selector is a requested context only; ownership, membership state, and
+  organization state are all re-read from the database on every login, so a
+  selection result is never a credential.
+- Existing sessions are never mutated or implicitly revoked by switching.
+- No `CurrentPrincipal`, authorization dependency, 403/404 policy, Task domain,
+  chooser credential, JWT, or refresh token was added. T024 was not started.
+- No Git add, commit, or push was performed.
+
+Known limitations:
+- The HTTP mapping of `OrganizationSelectionRequired` (status code, response
+  envelope, and how a browser resubmits the selector) is deliberately outside
+  T023 and belongs to a later card.
+- The identifier is still `organization_id`; a membership-id selector was
+  considered and rejected by the frozen addendum.
+
+Learner notes:
+- Problem solved: a user in several organizations can authenticate, see only
+  their own eligible organization IDs, and then obtain a session bound to the
+  organization they actually chose.
+- Read `src/service/session.py`, `src/persistence/repositories.py`, and the
+  selection tests in `tests/service/test_auth_session.py`.
+- Key concept: authentication and selection are separate phases. Eligibility is
+  a database question, and a "which organization?" answer is not a credential.
+- Exercise: create a user with two active memberships, log in without a
+  selector and observe the typed result, then log in twice with each selector
+  and compare the two sessions' memberships and revocation state.
+- Do not worry yet about the HTTP layer for the selection result, or about the
+  per-request principal; those are later cards.
+
+Suggested next step: focused re-review of the T023 diff, then T024.
+
+### 2026-09-17 — T023 BLOCKER 4 trust-chain fix: service-boundary ownership check
+
+Status: BLOCKER 4 CLOSED — READY FOR FINAL FOCUSED RE-REVIEW
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Committed baseline HEAD: `203a720 feat: add TaskPilot membership persistence`
+- Working tree already contained the uncommitted T023 implementation, the
+  BLOCKER 1–3 fixes, and the frozen membership-selection addendum; nothing was
+  reset, cleaned, restored, checked out, or stashed.
+
+Root cause:
+- `AuthService._resolve_selection` trusted every row returned by
+  `MembershipRepository.list_eligible_for_user(user_id)`. ADR-004's selection
+  addendum step 2 requires that ownership be checked *even when consuming
+  repository results*, so the service boundary itself must verify
+  `membership.user_id == authenticated_user.id` rather than relying on the
+  repository method name or its SQL predicate.
+
+Exact fix:
+- Added `AuthService._require_owned_memberships(user_id, memberships)`.
+- `_resolve_selection` calls it immediately after the repository query and
+  before any selector matching, `OrganizationSelectionRequired` construction,
+  token generation, or session issuance. A single foreign row fails the entire
+  result set closed with the frozen generic `LoginError("Invalid credentials")`;
+  rows are never silently filtered and there is no fallback.
+- The repository's user-scoped SQL predicate is unchanged; this is defense in
+  depth at the service boundary, not a replacement for tenant scoping.
+
+Tests added (focused, repository stub that ignores user scope):
+- foreign row only → generic failure, no `OrganizationSelectionRequired`, no
+  metadata, token factory called 0 times, no session staged or persisted.
+- mixed own + foreign rows → generic failure even though a legitimate own row
+  exists; the broken invariant is never silently downgraded, for both the
+  no-selector and explicit-selector paths.
+- owned rows through the same boundary still issue normally, still honor an
+  explicit selector, and still return `OrganizationSelectionRequired` for two
+  eligible memberships.
+- live PostgreSQL variant: a scope-leaking repository method returns a
+  stranger's real membership row for the authenticated user and the service
+  still fails closed with no `auth_sessions` row written.
+
+Files changed by this fix round:
+- `src/service/session.py`
+- `tests/service/test_auth_session.py`
+- `tests/persistence/test_postgres_integration.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_auth_session.py -q` → PASS (51 passed).
+- `uv run pytest tests/service/test_auth_session.py tests/service/test_bootstrap.py -q`
+  → PASS (78 passed).
+- `uv run pytest tests/persistence -q` with live PostgreSQL → PASS (40 passed).
+- `uv run pytest -q` → PASS (324 passed, 4 skipped, 40 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+- No migration was modified.
+
+Security notes:
+- BLOCKER 1–3 fixes and all previously frozen selection tests still pass.
+- The ownership failure is indistinguishable from a bad credential, so a
+  foreign organization id is never disclosed through an error or a selection
+  list.
+- No `CurrentPrincipal`, authorization dependency, 403/404 policy, Task domain,
+  or repository redesign was introduced. T024 was not started.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: the service no longer trusts "the repository is scoped" as a
+  security argument; it re-checks ownership before using any membership row.
+- Read `src/service/session.py` (`_resolve_selection` and
+  `_require_owned_memberships`) and the ownership tests in
+  `tests/service/test_auth_session.py`.
+- Key concept: defense in depth means the component that makes the security
+  decision validates its inputs, even when a lower layer already promised to.
+- Exercise: make the stub return one own and one foreign membership and confirm
+  the login fails instead of issuing a session for the own membership.
+- Do not worry yet about the HTTP mapping of the selection result or the
+  per-request principal.
+
+Suggested next step: final focused re-review of the T023 diff.

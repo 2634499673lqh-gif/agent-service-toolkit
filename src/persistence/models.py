@@ -212,3 +212,78 @@ class Membership(Base):
             f"organization_id={self.organization_id!r}, role={self.role!r}, "
             f"is_active={self.is_active!r})"
         )
+
+
+class AuthSession(Base):
+    """Opaque server-side session bound to one user and one membership.
+
+    Only the SHA-256 digest of the raw token is stored.  A session carries no
+    authorization claims: organization and role are always re-read from the
+    current Membership/Organization rows.
+    """
+
+    __tablename__ = "auth_sessions"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_auth_sessions_token_hash"),
+        Index("ix_auth_sessions_user_id", "user_id"),
+        Index("ix_auth_sessions_membership_id", "membership_id"),
+        Index("ix_auth_sessions_expires_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    membership_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.memberships.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        user_id: UUID,
+        membership_id: UUID,
+        token_hash: str,
+        expires_at: datetime,
+        revoked_at: datetime | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Build a session row; the raw token never reaches the model."""
+
+        super().__init__(
+            user_id=user_id,
+            membership_id=membership_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            revoked_at=revoked_at,
+            **kwargs,
+        )
+
+    def __repr__(self) -> str:
+        """Describe the session without exposing the raw token or token digest."""
+
+        return (
+            f"AuthSession(id={self.id!r}, user_id={self.user_id!r}, "
+            f"membership_id={self.membership_id!r}, expires_at={self.expires_at!r}, "
+            f"revoked_at={self.revoked_at!r})"
+        )

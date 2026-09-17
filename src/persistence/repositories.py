@@ -1,12 +1,15 @@
 """Small repositories for TaskPilot business models."""
 
+from datetime import datetime
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.identity import canonicalize_email
-from persistence.models import Membership, Organization, User
+from persistence.models import AuthSession, Membership, Organization, User
 
 
 class OrganizationRepository:
@@ -26,6 +29,12 @@ class OrganizationRepository:
         """Load one organization by its tenant identifier."""
 
         return await self.session.get(Organization, organization_id)
+
+    async def get_by_name(self, name: str) -> Organization | None:
+        """Load one organization by its display name."""
+
+        statement = select(Organization).where(Organization.name == name)
+        return await self.session.scalar(statement)
 
 
 class UserRepository:
@@ -100,3 +109,80 @@ class MembershipRepository:
         statement = statement.order_by(Membership.created_at, Membership.id)
         result = await self.session.scalars(statement)
         return list(result)
+
+    async def list_for_user(self, user_id: UUID) -> list[Membership]:
+        """List one user's memberships.
+
+        This is deliberately the only user-scoped membership query.  Login must
+        resolve the caller's own membership before any organization scope
+        exists, and it fails closed when the result is not a single active row.
+        """
+
+        statement = select(Membership).where(Membership.user_id == user_id)
+        statement = statement.order_by(Membership.created_at, Membership.id)
+        result = await self.session.scalars(statement)
+        return list(result)
+
+    async def list_eligible_for_user(self, user_id: UUID) -> list[Membership]:
+        """List one user's memberships whose organization also exists and is active.
+
+        Eligibility is evaluated in PostgreSQL - user scope, active membership,
+        and an existing active organization - so login never filters tenants in
+        Python and never counts an inactive or dangling row as selectable.
+        """
+
+        statement = (
+            select(Membership)
+            .join(Organization, Organization.id == Membership.organization_id)
+            .where(
+                Membership.user_id == user_id,
+                Membership.is_active.is_(True),
+                Organization.is_active.is_(True),
+            )
+            .order_by(Membership.created_at, Membership.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+
+class AuthSessionRepository:
+    """Opaque session persistence; transaction ownership stays above.
+
+    Lookups use the token digest only.  The raw token is never a parameter name,
+    never stored, and never returned from this boundary.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def add(self, auth_session: AuthSession) -> AuthSession:
+        """Stage and flush a session without committing its transaction."""
+
+        self.session.add(auth_session)
+        await self.session.flush()
+        return auth_session
+
+    async def get(self, session_id: UUID) -> AuthSession | None:
+        """Load one session by its identity identifier."""
+
+        return await self.session.get(AuthSession, session_id)
+
+    async def get_by_token_hash(self, token_hash: str) -> AuthSession | None:
+        """Load the single session owning ``token_hash`` (never a raw token)."""
+
+        statement = select(AuthSession).where(AuthSession.token_hash == token_hash)
+        return await self.session.scalar(statement)
+
+    async def revoke(self, auth_session: AuthSession, revoked_at: datetime) -> AuthSession:
+        """Mark one session revoked; the row is retained for audit."""
+
+        auth_session.revoked_at = revoked_at
+        await self.session.flush()
+        return auth_session
+
+    async def delete_expired(self, now: datetime) -> int:
+        """Delete only rows that already expired; explicit revocation is never deleted."""
+
+        statement = delete(AuthSession).where(AuthSession.expires_at < now)
+        result = cast(CursorResult, await self.session.execute(statement))
+        return int(result.rowcount or 0)
