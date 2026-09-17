@@ -1445,3 +1445,179 @@ Learner notes:
   per-request principal.
 
 Suggested next step: final focused re-review of the T023 diff.
+
+### 2026-09-17 — T024: CurrentPrincipal FastAPI dependency
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `0c3ccd2 feat: add TaskPilot authentication and sessions` (T023)
+- Working tree before changes: clean.
+
+Task Card interpretation:
+- Scope: a typed request-scoped dependency consuming T023 opaque sessions, with
+  `CurrentPrincipal` holding `user_id`, `membership_id`, `organization_id`,
+  `role`, and `session_id`, all server-derived, plus fresh per-request checks on
+  session, user, membership, and organization state, and one generic 401.
+- Forbidden: any authorization policy (403/404, role matrix, tenant resource
+  enforcement), changes to legacy `AUTH_SECRET` behavior, and a new schema.
+
+What changed:
+- Added `CurrentPrincipal` and `build_principal` to `src/service/session.py`.
+  The value object is a frozen, slots-based dataclass of plain scalars: no ORM
+  row, no `AsyncSession`, no repository, no request object, and no credential
+  material. `build_principal` re-asserts the trust chain (user, membership
+  owner, session binding, organization match) and fails closed on any
+  inconsistency.
+- Added `AuthService.authenticate(raw_token)`, which resolves a credential to a
+  principal by hashing the token through the existing T023 helper and re-reading
+  session, user, membership, and organization state on every call. It returns
+  `None` for every failure and never writes.
+- Added `src/service/auth_dependency.py` with `require_principal`,
+  `get_session_factory`, and `get_session`. The dependency accepts only
+  `Authorization: Bearer <opaque-token>`, acquires a session per request, closes
+  it in `finally`, rolls back on exceptions, never commits, and raises one
+  generic 401 (`{"detail": "Not authenticated"}` with `WWW-Authenticate: Bearer`)
+  for every authentication failure.
+- `get_session_factory` and `get_session` are first-class `Depends` providers so
+  tests can override the database without monkeypatching module globals.
+
+Files changed:
+- `src/service/session.py`
+- `src/service/auth_dependency.py` (new)
+- `tests/service/test_current_principal.py` (new)
+- `tests/persistence/test_current_principal_integration.py` (new)
+- `docs/SECURITY_HITL.md`, `docs/DEVELOPER_GUIDE.md`, `docs/API_CONVENTIONS.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_current_principal.py -q` → PASS (21 passed).
+- `uv run pytest tests/persistence/test_current_principal_integration.py -q` with
+  live PostgreSQL → PASS (21 passed, genuinely executed against a disposable
+  database and real FastAPI requests).
+- `uv run pytest -q` → PASS (366 passed, 4 skipped, 61 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+
+Security notes:
+- The principal is derived only from the server-side session lookup plus current
+  rows; `user_id`, `organization_id`, and role supplied through query strings or
+  headers were verified to have no effect.
+- Role freshness is tested: changing the membership role changes the next
+  principal's role while the session stays valid and bound to the same tenant.
+- Deactivated user, membership, or organization after issuance yields 401 on the
+  next request; revoked, expired, unknown, malformed, mismatched, and
+  foreign-membership sessions all yield the same 401.
+- The dependency never emits the raw token, its digest, or the `Authorization`
+  header in a response, and authentication performs no writes or commits.
+- The legacy `AUTH_SECRET` bearer does not authenticate a TaskPilot request, and
+  its upstream behavior is unchanged.
+
+Known limitations:
+- `AuthService.authenticate` issues one query per checked row (session,
+  user, membership, organization). That is deliberate freshness over speed for
+  V1 and can be optimized later without changing the contract.
+- The database-level "dangling membership" case cannot be constructed because
+  the foreign keys forbid it; it is covered by service-level tests instead.
+- The 403 authorization policy and cross-tenant 404 semantics remain T025.
+
+Learner notes:
+- Problem solved: a protected request now receives a typed identity built from
+  current server state, independent of anything the caller claims.
+- Read `src/service/auth_dependency.py`, `CurrentPrincipal` and `authenticate` in
+  `src/service/session.py`, and the live tests in
+  `tests/persistence/test_current_principal_integration.py`.
+- Key concept: authentication answers "is there a currently valid principal?",
+  while authorization answers "may that principal do this?" - T024 implements
+  only the first, and re-derives it on every request.
+- Exercise: issue a token, deactivate the membership, and observe the next
+  request return the same 401 as an unknown token.
+- Do not worry yet about role policy, 403/404 semantics, or Task resources.
+
+Suggested next step: strong review of the T024 diff, then T025.
+
+### 2026-09-17 — T024 Strong Review blocker fix: session lifecycle ordering
+
+Status: BLOCKER FIXED — READY FOR FOCUSED RE-REVIEW
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Committed baseline HEAD: `0c3ccd2 feat: add TaskPilot authentication and sessions`
+- Working tree already contained the uncommitted T024 implementation; nothing
+  was reset, cleaned, restored, checked out, or stashed.
+
+Root cause:
+- `require_principal` extracted the bearer token and raised the generic 401
+  *before* entering the `try/finally`, while the FastAPI-injected
+  `AsyncSession` already existed. Every missing/malformed credential path
+  therefore returned the session to nobody, leaking one pooled connection per
+  rejected request.
+
+Exact lifecycle fix:
+- The cleanup boundary now starts immediately after the injected session
+  exists, and the token check moved inside it, so all outcomes share one exit
+  point: missing header, wrong scheme, empty or extra-word bearer, unknown
+  token, revoked/expired session, inactive user/membership/organization,
+  relation mismatch, unexpected exception, and success.
+- `finally` performs the cleanup, `_close_session` is the single `close()`
+  call site, and `_cleanup_session` (rollback then close) is used only for
+  unexpected exceptions. Exactly-once close holds because there is one
+  `finally` and no close call in any branch.
+- A rollback failure is logged without exception text and can neither prevent
+  the close nor replace the original error.
+
+Tests added:
+- Focused (`tests/service/test_current_principal.py`, now 33 tests): a tracked
+  session double asserts `close == 1` and `rollback == 0` for missing header,
+  wrong scheme, empty bearer, and extra-word bearer; `close == 1` for an
+  unknown/invalid token and for success; `rollback == 1` and `close == 1` for an
+  unexpected exception; and `close == 1` even when rollback itself fails. One
+  test drives the real `require_principal` dependency through FastAPI so the
+  cleanup boundary itself is covered, not just a helper.
+- PostgreSQL integration (now 22 tests): five real requests (four rejected,
+  one valid) each use a real session and a proxy proves one session per request
+  with exactly one close each.
+- The new integration test was verified to detect the original defect: with the
+  raise reverted to its old position the close counts drop to `[0, 0, 0, 1, 1]`.
+
+Files changed by this fix round:
+- `src/service/auth_dependency.py`
+- `tests/service/test_current_principal.py`
+- `tests/persistence/test_current_principal_integration.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_current_principal.py -q` → PASS (33 passed).
+- `uv run pytest tests/persistence/test_current_principal_integration.py -q` with
+  live PostgreSQL → PASS (22 passed).
+- `uv run pytest tests/service/test_auth_session.py -q` → PASS (51 passed).
+- `uv run pytest -q` → PASS (379 passed, 4 skipped, 62 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+
+Security notes:
+- HTTP semantics are unchanged: 401 with `{"detail": "Not authenticated"}` and
+  `WWW-Authenticate: Bearer`; no credential, token digest, or database error
+  text is emitted.
+- Normal authentication rejections do not roll back (nothing was written); only
+  unexpected exceptions roll back, then close.
+- All approved T024 behavior is untouched, and no schema, migration, or T025
+  authorization code was added.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: a request-scoped session is now always returned, even when the
+  request is rejected before authentication begins.
+- Read `src/service/auth_dependency.py` (`require_principal`, `_close_session`,
+  `_cleanup_session`) and the lifecycle tests in
+  `tests/service/test_current_principal.py`.
+- Key concept: an injected resource's cleanup boundary must be entered at the
+  moment the resource exists, before any validation that can raise.
+- Exercise: move the token check back above the `try` and watch the tracked
+  close counts drop to zero for the malformed-credential cases.
+- Do not worry yet about authorization or tenant 403/404 policy.
+
+Suggested next step: focused re-review of the T024 diff.

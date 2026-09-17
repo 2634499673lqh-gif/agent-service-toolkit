@@ -174,6 +174,30 @@ session. Passing the selector issues a session bound to that verified
 membership, and switching organizations is simply another `login` call with the
 target selector.
 
+### Request authentication (T024)
+
+Protected TaskPilot endpoints depend on `service.auth_dependency.require_principal`,
+which resolves `Authorization: Bearer <opaque-token>` into a server-derived
+`CurrentPrincipal`. Every request re-reads the session, user, membership, and
+organization, so revocation, expiry, deactivation, and role changes take effect
+immediately. Any failure returns one generic 401 `{"detail": "Not authenticated"}`
+with `WWW-Authenticate: Bearer`, and no principal is constructed. The dependency
+opens and closes its own session per request and never commits. Overriding
+`service.auth_dependency.get_session_factory` (its `Depends` provider) is the
+supported way for tests to point the dependency at a specific database.
+
+```python
+from typing import Annotated
+
+from fastapi import Depends
+
+from service.session import CurrentPrincipal
+
+
+@app.get("/api/v1/me")
+async def me(principal: Annotated[CurrentPrincipal, Depends(require_principal)]): ...
+```
+
 Create the first organization owner with the controlled CLI. The password is
 read from a hidden prompt and must be entered twice; `--password` and positional
 plaintext are rejected:

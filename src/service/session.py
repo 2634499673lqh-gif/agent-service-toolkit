@@ -15,11 +15,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from persistence.models import AuthSession, Membership, User
+from persistence.models import AuthSession, Membership, Organization, Role, User
 from persistence.passwords import hash_password, verify_password
 from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
+    OrganizationRepository,
     UserRepository,
 )
 from persistence.tokens import generate_token, hash_token
@@ -87,11 +88,69 @@ class OrganizationSelectionRequired:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentPrincipal:
+    """Server-derived request-scoped identity.
+
+    Every field comes from the current database state resolved through the
+    presented opaque credential.  The value object holds plain scalars only: no
+    ORM row, no ``AsyncSession``, no repository, no request object, and no
+    credential material (neither the raw token nor its digest), so it is safe to
+    pass around and to render in diagnostics.
+    """
+
+    user_id: UUID
+    membership_id: UUID
+    organization_id: UUID
+    role: Role
+    session_id: UUID
+
+    def __repr__(self) -> str:
+        """Render identity without any credential material."""
+
+        return (
+            f"CurrentPrincipal(user_id={self.user_id!r}, "
+            f"membership_id={self.membership_id!r}, "
+            f"organization_id={self.organization_id!r}, role={self.role!r}, "
+            f"session_id={self.session_id!r})"
+        )
+
+
 @lru_cache(maxsize=1)
 def _placeholder_password_hash() -> str:
     """Return a dummy Argon2id hash used only to equalize failed-login work."""
 
     return hash_password("taskpilot-placeholder-password-not-a-credential")
+
+
+def build_principal(
+    *,
+    auth_session: AuthSession,
+    user: User,
+    membership: Membership,
+    organization: Organization,
+) -> CurrentPrincipal:
+    """Build the request principal, re-asserting the trust chain defensively.
+
+    Raises the generic :class:`LoginError` when the rows do not agree, so a
+    repository or adapter regression fails closed instead of producing a
+    principal that mixes identities or tenants.
+    """
+
+    if (
+        user.id != auth_session.user_id
+        or membership.user_id != auth_session.user_id
+        or membership.id != auth_session.membership_id
+        or organization.id != membership.organization_id
+    ):
+        raise LoginError(LoginFailure.INVALID_CREDENTIAL)
+    return CurrentPrincipal(
+        user_id=user.id,
+        membership_id=membership.id,
+        organization_id=organization.id,
+        role=membership.role,
+        session_id=auth_session.id,
+    )
 
 
 def utc_now() -> datetime:
@@ -112,6 +171,7 @@ class AuthService:
         token_factory: Callable[[], str] = generate_token,
         user_repository: UserRepository | None = None,
         membership_repository: MembershipRepository | None = None,
+        organization_repository: OrganizationRepository | None = None,
         auth_session_repository: AuthSessionRepository | None = None,
     ) -> None:
         self.session = session
@@ -120,6 +180,7 @@ class AuthService:
         self._token_factory = token_factory
         self._users = user_repository or UserRepository(session)
         self._memberships = membership_repository or MembershipRepository(session)
+        self._organizations = organization_repository or OrganizationRepository(session)
         self._auth_sessions = auth_session_repository or AuthSessionRepository(session)
 
     async def login(
@@ -209,6 +270,58 @@ class AuthService:
         """Delete sessions whose 24-hour window already closed."""
 
         return await self._auth_sessions.delete_expired(self.now())
+
+    async def authenticate(self, raw_token: str) -> CurrentPrincipal | None:
+        """Resolve a presented credential into a fresh, server-derived principal.
+
+        Returns ``None`` - meaning one generic authentication failure - for a
+        missing/malformed/unknown/revoked/expired session, an inactive or
+        missing user/membership/organization, or any inconsistent binding
+        between them.  The returned role and organization are read from the
+        current Membership/Organization rows, so a role change or deactivation
+        takes effect on the very next request.  This path never writes.
+        """
+
+        auth_session = await self.get_valid_session(raw_token)
+        if auth_session is None:
+            return None
+        user = await self._require_active_user(auth_session.user_id)
+        if user is None:
+            return None
+        membership = await self._require_active_membership(auth_session)
+        if membership is None:
+            return None
+        organization = await self._require_active_organization(membership.organization_id)
+        if organization is None:
+            return None
+        return build_principal(
+            auth_session=auth_session,
+            user=user,
+            membership=membership,
+            organization=organization,
+        )
+
+    async def _require_active_user(self, user_id: UUID) -> User | None:
+        user = await self._users.get(user_id)
+        if user is None or not user.is_active:
+            return None
+        return user
+
+    async def _require_active_membership(self, auth_session: AuthSession) -> Membership | None:
+        membership = await self._memberships.get(auth_session.membership_id)
+        if membership is None or not membership.is_active:
+            return None
+        # Defence in depth: never trust that the session's membership still
+        # belongs to the session's user, even though issuance enforced it.
+        if membership.user_id != auth_session.user_id:
+            return None
+        return membership
+
+    async def _require_active_organization(self, organization_id: UUID) -> Organization | None:
+        organization = await self._organizations.get(organization_id)
+        if organization is None or not organization.is_active:
+            return None
+        return organization
 
     async def _resolve_selection(
         self, user_id: UUID, organization_id: UUID | None
