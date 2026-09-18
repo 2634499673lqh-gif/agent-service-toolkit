@@ -1621,3 +1621,195 @@ Learner notes:
 - Do not worry yet about authorization or tenant 403/404 policy.
 
 Suggested next step: focused re-review of the T024 diff.
+
+### 2026-09-17 — T025: central tenant authorization helper
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `4d00359 feat: add request-scoped TaskPilot principal` (T024),
+  in sync with `origin/phase-2-identity-rbac`
+- Working tree before changes: clean.
+
+Task Card interpretation:
+- Scope: the single server-side policy boundary with
+  `require_authenticated`, `require_active_membership`, `require_role(roles)`,
+  and `require_resource_tenant(resource_organization_id)`; tenant-scoped
+  repositories carry an explicit `organization_id` predicate; same-tenant allow,
+  in-tenant insufficient role 403, cross-tenant/nonexistent 404.
+- Forbidden: endpoint-specific cross-tenant semantics, an enterprise policy
+  engine, client role trust, and LangGraph state/session coupling.
+- T026 boundary: the authoritative negative security/persistence test matrix.
+  T025 supplies the policy boundary and the focused proof; T026 owns the full
+  matrix.
+- The card also mentions approval reads/decisions. No approval domain, model, or
+  table exists in any frozen Phase 2 card, so implementing approval
+  authorization would require inventing that schema. The one role set the ADR
+  states explicitly (`owner` or `admin`) is frozen as `APPROVAL_DECISION_ROLES`;
+  approval-specific authorization and duplicate-decision idempotency are
+  deferred to the task that introduces those records. Recorded, not invented.
+
+What changed:
+- Added `src/service/authorization.py`: the four guards plus `AuthorizationError`
+  (fixed 403/404 status and non-disclosing detail), FastAPI guard wrappers
+  (`require_authenticated_principal`, `require_role_dependency`,
+  `require_resource_tenant_dependency`), and `APPROVAL_DECISION_ROLES`.
+- Role policy is an explicit set match on `principal.role`, never a hierarchy:
+  `owner > admin > member` is not assumed, so an owner is rejected by a
+  member-only operation.
+- `require_resource_tenant` answers 404 for foreign and for nonexistent
+  resources alike; an owner is never a global owner.
+- Added `OrganizationRepository.get_in_principal_tenant(organization_id,
+  principal_organization_id)` as the tenant-scoped query pattern
+  (`WHERE id = :id AND organization_id = :principal_organization_id`), so a
+  foreign row is not found rather than fetched and compared in Python.
+
+Files changed:
+- `src/service/authorization.py` (new)
+- `src/persistence/repositories.py`
+- `tests/service/test_authorization.py` (new)
+- `tests/persistence/test_authorization_integration.py` (new)
+- `tests/persistence/test_foundation.py`
+- `docs/SECURITY_HITL.md`, `docs/API_CONVENTIONS.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_authorization.py -q` → PASS (31 passed).
+- `uv run pytest tests/persistence/test_authorization_integration.py -q` with
+  live PostgreSQL → PASS (10 passed, genuinely executed through real FastAPI
+  requests and real tokens against a disposable database).
+- `uv run pytest -q` → PASS (421 passed, 4 skipped, 72 warnings; the skips are
+  the unrelated `--run-docker` gates).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+
+Security notes:
+- 401 is never converted into an authorization answer: a missing principal
+  still yields T024's 401 envelope, and the guards run only for an
+  authenticated principal.
+- Tenant existence is resolved before the role check, so a foreign resource
+  never returns 403 - including when the caller's role is high or the URL id is
+  foreign while query/header inputs claim the caller's own organization.
+- Authorization failures reveal no token, organization id, user id, membership
+  id, or other-tenant detail.
+- No schema or migration change; `AUTH_SECRET` behavior is untouched and no
+  legacy auth file was modified.
+
+Known limitations:
+- `require_active_membership` performs no extra query because T024 already
+  guarantees an active membership before a principal exists; it is the
+  documented policy seam, not a second authentication path.
+- `OrganizationRepository.get_in_principal_tenant` is intentionally a small
+  two-predicate query. For the principal's own organization the id and the
+  principal tenant are equal, so the predicate is currently redundant by
+  construction - it exists as the enforced pattern that the future
+  task-owned resources will follow.
+- Approval authorization and duplicate-decision idempotency await the approval
+  domain.
+
+Learner notes:
+- Problem solved: TaskPilot now has one place that answers "may this valid
+  principal do this?", with fixed 403/404 semantics and tenant isolation.
+- Read `src/service/authorization.py`, `OrganizationRepository.get_in_principal_tenant`,
+  and the live tests in `tests/persistence/test_authorization_integration.py`.
+- Key concept: authorization needs the resource's tenant to be resolved *inside*
+  the caller's scope, otherwise a 403/404 difference becomes an
+  existence-enumeration side channel.
+- Exercise: request a foreign organization id as an owner and observe the same
+  404 body as a random nonexistent id.
+- Do not worry yet about approval records or the broader negative matrix.
+
+Suggested next step: strong review of the T025 diff, then T026.
+
+### 2026-09-18 — T025 Strong Review blocker fix: integration chain must hit the repository
+
+Status: BLOCKER FIXED — READY FOR FOCUSED RE-REVIEW
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `4d00359 feat: add request-scoped TaskPilot principal` (T024)
+- Working tree already contained the uncommitted T025 implementation.
+
+Root cause:
+- The T025 integration test's test-only route took the path
+  `resource_organization_id` straight into `require_resource_tenant`, which is a
+  pure UUID comparison. The HTTP flow therefore never called
+  `OrganizationRepository.get_in_principal_tenant`, so the suite did not prove
+  the frozen chain `request -> require_principal -> tenant-scoped PostgreSQL
+  lookup -> resource visibility -> role authorization`.
+
+Exact fix (test wiring and the repository docstring only; no production
+abstraction added):
+- The tenant routes now depend on a request-scoped `OrganizationRepository` and
+  call `get_in_principal_tenant(resource_organization_id,
+  principal.organization_id)` as the first decision step. A `None` result raises
+  the fixed 404 before any role comparison, so foreign and nonexistent resources
+  are indistinguishable.
+- `/tenant-admin/{id}` then applies `require_role([Role.ADMIN])`, proving the
+  ordering: same tenant + insufficient role is 403, while a foreign or missing
+  resource is 404 for every role.
+- The principal's organization is always the repository scope. Tests record the
+  `(resource_id, scope_id)` pairs actually passed to the repository and assert
+  the scope is the principal's, even when the caller supplies a matching
+  `organization_id` query parameter, `X-Organization-Id` header, and role claim.
+- `OrganizationRepository.get_in_principal_tenant` keeps both SQL predicates
+  (`id` and `organization_id`); only its docstring changed, to state precisely
+  that for an organization row the tenant is the organization, so the principal
+  can only address its own tenant's row, and that later tenant-owned resources
+  reuse the same two-predicate shape with a distinct `organization_id` column.
+
+Test corrections found while fixing (test expectations, not production bugs):
+- The earlier route/role expectations conflated "another tenant's owner" with
+  "a foreign resource". A foreign owner's principal organization is their own
+  tenant, so their scoped lookup for the caller's organization correctly returns
+  nothing; the expectation is 404, not 403. The 403 case is an in-tenant
+  principal with an insufficient role against an in-tenant organization.
+
+SQL boundary proof:
+- `test_http_flow_executes_a_tenant_scoped_database_query` listens on the engine
+  the request session actually uses (`before_cursor_execute`) and asserts that
+  the HTTP flow executes a query on `taskpilot.organizations` whose WHERE clause
+  contains the id predicate twice - the requested id and the principal's tenant
+  scope. Identity reads use single-key lookups and are filtered out of the set.
+
+Files changed by this fix round:
+- `tests/persistence/test_authorization_integration.py`
+- `src/persistence/repositories.py` (docstring accuracy only)
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_authorization.py -q` → PASS (31 passed).
+- `uv run pytest tests/persistence/test_authorization_integration.py -q` with
+  live PostgreSQL → PASS (12 passed, 0 skips).
+- `uv run pytest tests/service/test_current_principal.py tests/service/test_authorization.py -q`
+  → PASS (64 passed).
+- `uv run pytest tests/persistence -q` → PASS (75 passed).
+- `uv run ruff format --check`, `uv run ruff check`, `uv run pyrefly check`,
+  `uv lock --check`, `git diff --check`: PASS.
+
+Security notes:
+- 401 is still decided by T024 before any authorization or lookup work.
+- Step 1 is the scoped lookup; step 2 is the role check. No route performs a
+  role comparison before tenant-scoped existence is resolved.
+- Caller-supplied organization id/role cannot change the repository scope, and
+  the foreign row is verified to exist in the table while staying invisible to
+  the scoped query.
+- No T026, Task domain, approval domain, permission table, policy engine,
+  schema/migration, or `AUTH_SECRET` change was introduced.
+- No Git add, commit, or push was performed.
+
+Learner notes:
+- Problem solved: the integration suite now proves the whole authorization
+  chain, including the database, instead of only a UUID comparison.
+- Read `tests/persistence/test_authorization_integration.py` and
+  `OrganizationRepository.get_in_principal_tenant`.
+- Key concept: a security test must exercise the layer that enforces the
+  invariant. Asserting the HTTP status alone can pass while the real query is
+  never executed.
+- Exercise: remove the repository call from the route and watch the
+  `scoped_queries`/SQL assertions fail even though the status codes still look
+  right.
+- Do not worry yet about the Task-owned resources that will reuse this pattern.
+
+Suggested next step: focused re-review of the T025 diff, then T026.

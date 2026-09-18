@@ -408,3 +408,20 @@ async def test_eligible_membership_query_is_scoped_in_the_database() -> None:
     assert "taskpilot.memberships.is_active" in sql
     assert "taskpilot.organizations.is_active" in sql
     assert set(statement.compile().params) == {"user_id_1"}
+
+
+@pytest.mark.asyncio
+async def test_principal_tenant_organization_lookup_is_scoped_in_the_database() -> None:
+    organization_id = UUID("22222222-2222-4222-8222-222222222222")
+    session = Mock()
+    session.scalar = AsyncMock(return_value=None)
+    repository = OrganizationRepository(session)
+
+    assert await repository.get_in_principal_tenant(organization_id, organization_id) is None
+
+    statement = session.scalar.await_args.args[0]
+    sql = str(statement.compile(compile_kwargs={"literal_binds": True})).casefold()
+    # The tenant predicate is part of the query: a foreign row is never fetched
+    # and then compared in Python.
+    assert sql.count("taskpilot.organizations.id") >= 2
+    assert "where" in sql

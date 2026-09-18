@@ -36,6 +36,31 @@ class OrganizationRepository:
         statement = select(Organization).where(Organization.name == name)
         return await self.session.scalar(statement)
 
+    async def get_in_principal_tenant(
+        self, organization_id: UUID, principal_organization_id: UUID
+    ) -> Organization | None:
+        """Load an organization only when the row is inside the principal's tenant.
+
+        The tenant predicate lives in the SQL, so a row outside the principal's
+        tenant is simply *not found* and never reaches an authorization
+        decision - which would otherwise let a caller distinguish tenants
+        through a 403/404 difference.  Callers pass the server-derived
+        ``CurrentPrincipal.organization_id`` as the scope; a caller-supplied
+        identifier is never accepted as the tenant.
+
+        For an organization row the tenant *is* the organization, so the
+        resource and scope arguments hold the same value: the principal can only
+        ever address its own tenant's row.  The two predicates are kept explicit
+        because the tenant-owned resources that follow (tasks, runs, approvals)
+        receive a distinct ``organization_id`` column and reuse this shape.
+        """
+
+        statement = select(Organization).where(
+            Organization.id == organization_id,
+            Organization.id == principal_organization_id,
+        )
+        return await self.session.scalar(statement)
+
 
 class UserRepository:
     """Persistence operations for users; transaction ownership stays above."""

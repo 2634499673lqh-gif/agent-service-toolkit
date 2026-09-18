@@ -104,4 +104,15 @@ Implemented in T024:
 - Every failure - missing, malformed, unknown, revoked, expired, inactive user/membership/organization, missing related row, or a mismatched session/user/membership binding - produces the same 401 `{"detail": "Not authenticated"}` envelope with `WWW-Authenticate: Bearer`. No principal is built and no protected resource is reached.
 - Authentication is a read path. The dependency acquires a session per request, closes it in `finally`, and rolls back if the resolution raises; it never commits. The legacy `AUTH_SECRET` compatibility bearer is not an accepted TaskPilot credential, and no authorization decision (403/404 policy, role matrix) is implemented here.
 
-Still pending (T025): the shared authorization helper, in-tenant 403 policy, and cross-tenant 404 tenant-resource enforcement. `AUTH_SECRET` remains a compatibility-only upstream bearer secret; it is not a TaskPilot user credential and was not changed.
+## Authorization boundary (T025 complete)
+
+Implemented in T025 (`src/service/authorization.py`):
+
+- `require_authenticated` fails closed when no server-derived principal exists (401, never 403). `require_active_membership` is the explicit policy seam named by the helper contract; T024 already proves an active user/membership/organization before a principal exists, so it adds no second authentication path.
+- `require_role(principal, allowed_roles)` compares the current `principal.role` against the roles an operation names. There is no role hierarchy: `owner > admin > member` is never assumed, because the ADR grants `member` self-service rights that `admin`/`owner` are not assumed to inherit. A caller-supplied role is never consulted. Insufficient in-tenant role returns 403.
+- `require_resource_tenant(principal, resource_organization_id)` answers 404 for a resource outside the principal's organization, making a foreign resource indistinguishable from a nonexistent one. An `owner` is an owner of their own organization only - there is no global owner, so a powerful role never bypasses tenant scope.
+- Tenant-owned lookups must carry the predicate in the query itself, not in a Python comparison after a global fetch. `OrganizationRepository.get_in_principal_tenant` establishes the pattern: `WHERE id = :id AND organization_id = :principal_organization_id`, so a foreign row is simply not found.
+- Decision ordering is enforced: tenant-scoped existence is resolved first, and only then the role check runs, so a 403/404 difference cannot be used to enumerate another tenant's resources.
+- `APPROVAL_DECISION_ROLES` records the one role set the ADR names explicitly ("L2 approval decisions require owner or admin"). The approval domain itself does not exist yet, so approval-specific authorization and idempotent duplicate-decision rejection are deferred to the task that adds those records.
+
+Still pending: nothing in T025's helper contract. Phase 2 authorization continues with the future resource/task domain and its approval records. `AUTH_SECRET` remains a compatibility-only upstream bearer secret; it is not a TaskPilot user credential and was not changed.
