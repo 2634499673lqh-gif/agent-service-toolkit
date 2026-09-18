@@ -101,6 +101,75 @@ valid PostgreSQL-only `TASKPILOT_DATABASE_URL` before running
 rejected. LangGraph's existing `DATABASE_TYPE=sqlite` local checkpoint fallback
 is unaffected. Do not run migrations from application startup.
 
+## TaskPilot-protected request always returns 401
+
+Symptom: a route that depends on `service.auth_dependency.require_principal`
+returns `{"detail": "Not authenticated"}` with `WWW-Authenticate: Bearer`
+although a credential was supplied.
+
+Cause and resolution, in order:
+
+- `AUTH_SECRET` is not a TaskPilot credential. It only guards the retained upstream router. A TaskPilot route needs an opaque token issued by `AuthService.login`; an `AUTH_SECRET` value is rejected exactly like an unknown token.
+- Sessions expire 24 hours after issuance, and explicit revocation sets `revoked_at`. Both mean the token is no longer valid; the row is retained for audit rather than deleted.
+- Every request re-reads state. An inactive user, inactive membership, inactive organization, missing related row, or a session whose membership no longer belongs to the session's user all produce the same 401.
+- The dependency resolves tokens through `service.auth_dependency.get_session_factory`, which reads `TASKPILOT_DATABASE_URL`. A process or test pointed at a different database than the one that issued the token sees an unknown token.
+
+The single generic envelope is intentional: the response must not distinguish
+unknown, revoked, expired, or inactive credentials.
+
+## Unexpected 403 or 404 from a protected operation
+
+Symptom: the credential is valid but the operation is refused.
+
+Cause: 403 means the caller is inside the principal's own organization and lacks
+the role the operation requires; 404 means the resource is outside the
+principal's organization or does not exist. The two must not be interchanged: a
+foreign resource always answers 404, even for an owner, so a 403/404 difference
+cannot be used to enumerate another tenant's resources. Roles have no hierarchy,
+so a `member`-only operation legitimately rejects an `owner`.
+
+## `TASKPILOT_DATABASE_URL` is rejected
+
+Symptom: settings validation or engine creation fails with a PostgreSQL
+requirement.
+
+Cause: TaskPilot business persistence is PostgreSQL-only. `TASKPILOT_DATABASE_URL`
+accepts `postgresql://` or `postgresql+psycopg://` and rejects SQLite. The
+upstream `DATABASE_TYPE` setting still selects the LangGraph checkpoint backend
+and is independent of it; SQLite remains valid for local LangGraph checkpoints
+and does not enable business persistence.
+
+## Persistence and security tests skip
+
+Symptom: `uv run pytest tests/persistence -q` reports skips instead of running
+the disposable-database suites.
+
+Cause: those tests require `TASKPILOT_TEST_DATABASE_URL`, and the URL must name a
+database whose name contains `test`. Each scenario then creates and drops its own
+uniquely named database and never touches the base database. Start the existing
+container with `docker compose up -d postgres`, then:
+
+```powershell
+$env:TASKPILOT_TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test'
+uv run pytest tests/persistence -q
+```
+
+Do not use `docker compose down -v` or `docker system prune` to prepare a test
+run: that removes named volumes and developer data. A skipped run is not evidence
+that the authentication or tenant rules hold.
+
+## Bootstrap refuses to run
+
+Symptom: `uv run python scripts/bootstrap_owner.py` exits non-zero, or the hidden
+password prompt fails closed.
+
+Cause: bootstrap is fail-closed by design. `--password` and positional plaintext
+are always rejected, and the password must be entered twice at hidden prompts.
+Partial, conflicting, inactive, or non-owner state is never repaired,
+overwritten, elevated, or password-reset, and an exact complete active owner
+state is a successful no-op. Fix the conflicting state deliberately; there is no
+force flag.
+
 ## Application log is not JSON or has no request ID
 
 Application records handled by the configured root handlers are emitted as

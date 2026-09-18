@@ -62,7 +62,7 @@ What evidence would justify changing it?
 ## ADR-002 — Separate ownership for TaskPilot migrations and LangGraph persistence
 
 Date: 2026-09-11
-Status: accepted for Phase 1; Phase 2 migration framework decision pending
+Status: accepted for Phase 1; the Phase 2 migration framework decision this record deferred was made by ADR-004 (SQLAlchemy 2.x async ORM plus Alembic owning only the `taskpilot` schema)
 
 Context: The repository has no SQLAlchemy, Alembic, ORM, application migration directory, or TaskPilot business tables. SQLite is the lightweight local-development checkpoint path. `src/memory/postgres.py` calls LangGraph `AsyncPostgresSaver.setup()` and `AsyncPostgresStore.setup()`, which create and upgrade their LangGraph-owned persistence tables. PostgreSQL is the current LangGraph checkpoint/Store persistence option, not a TaskPilot business schema.
 
@@ -78,7 +78,7 @@ Revisit when: Phase 2 identity schema is approved or LangGraph setup conflicts w
 
 Date: 2026-09-13
 
-Status: proposed; T020 strong-model review required
+Status: closed; the T020 gate was completed under Strong Review and its accepted decisions are recorded in ADR-004
 
 Context: The repository currently has an optional shared `AUTH_SECRET`, caller-asserted conversation `user_id` in `UserInput`/`/threads`, AG-UI forwarded configurable values, and no TaskPilot business persistence. PostgreSQL is currently owned by LangGraph checkpointer/Store setup; there is no ORM or migration framework. Treating these upstream values as business identity would permit cross-tenant access.
 
@@ -86,14 +86,14 @@ Decision: Create T020 as a mandatory architecture gate before any identity imple
 
 Security invariants: authorization is credential → server-resolved user → server-resolved membership/org/role → resource tenant check. Client-supplied user/org IDs, role claims, and AG-UI configurable identity are never authoritative. LangGraph internal tables remain outside TaskPilot migrations.
 
-Known drift: `ROADMAP.md` lists Phase 2 as T020–T025, while `TASK_BACKLOG.md` expands it to T020–T027. The backlog is authoritative; no roadmap rewrite is made in this planning task.
+Known drift: `ROADMAP.md` lists Phase 2 as T020–T025, while `TASK_BACKLOG.md` expands it to T020–T027. The backlog is authoritative; no roadmap rewrite is made in this planning task. Resolved by T027, which aligned the roadmap Phase 2 task list with the real cards.
 
 Revisit when: T020 review supplies evidence that a different topology, migration owner, or credential strategy is required.
 
 ## ADR-004 — TaskPilot Phase 2 identity, tenancy, authentication and business persistence
 
 Date: 2026-09-14
-Status: accepted pending Strong Review (T020 architecture gate; review fixes applied 2026-09-14)
+Status: accepted; the T020 gate was closed and Phase 2 was implemented, reviewed and verified through T026, with documentation synchronized by T027
 
 ### Context
 
@@ -162,3 +162,9 @@ Security rationale: only a password-authenticated active User sees their own eli
 ### Consequences and deferred decisions
 
 This keeps V1 auditable: one active organization per request, server-derived roles, explicit PostgreSQL ownership, and revocable credentials. It adds a membership lookup and PostgreSQL requirement for business data. Enterprise SSO, refresh-token families, email verification, email rename, custom permissions, organization switching UI, hard deletion, row-level security, key rotation, and L3 execution remain deferred. Revisit only if enterprise identity requirements, measured scale, or a PostgreSQL operational constraint provide evidence that this topology or token model is insufficient.
+
+### Phase 2 implementation status — closed 2026-09-18
+
+Implemented as decided above: `organizations`, `users`, `memberships`, and `auth_sessions` in the `taskpilot` schema through four linear Alembic revisions; Argon2id passwords; opaque 24-hour sessions with SHA-256 at-rest digests, revocation, and expiry; the controlled `scripts/bootstrap_owner.py` CLI; multi-organization login selection as an intermediate result; the server-derived `CurrentPrincipal`; the single authorization boundary with fixed 401/403/404 semantics; tenant-scoped repository lookups; and the T026 live-PostgreSQL security matrix. All four verified revisions are owned by TaskPilot, and no `src/` module imports Alembic, so application startup neither migrates nor downgrades.
+
+Explicitly still absent after Phase 2: TaskPilot HTTP endpoints (`/api/v1`, login, `/me`), Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approval records and duplicate-decision idempotency, permission/role tables, a policy engine, JWT or refresh tokens, organization-switch endpoints or UI, and TaskPilot observability/audit tables. These are unimplemented scope, not defects in the accepted design. Decision 12 remains in force: `AUTH_SECRET` is compatibility-only for the retained upstream routes, and a TaskPilot protected dependency rejects it with the same generic 401 as any unknown token.

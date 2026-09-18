@@ -37,17 +37,26 @@ Exit:
 
 ## Phase 2 — Identity, Organization, RBAC [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
+Status (2026-09-18): complete. The cards below were renumbered during planning; `process/tasks/` and `TASK_BACKLOG.md` are authoritative and this list reflects them.
+
 Tasks:
-- T020 User/Organization/Role domain design
-- T021 migrations/models
-- T022 auth login/token/session layer
-- T023 authorization dependencies
-- T024 tenant isolation tests
-- T025 auth docs
+
+- T020 identity, tenancy, authentication and persistence architecture gate (ADR-004, accepted)
+- T021 SQLAlchemy/Alembic foundation and Organization schema
+- T022 User identity schema
+- T022A Membership schema, roles and repositories
+- T023 opaque session/token service, Argon2id login and controlled bootstrap
+- T024 `CurrentPrincipal` request dependency
+- T025 central authorization boundary and tenant policy
+- T026 negative authentication, tenant, transaction and migration test matrix
+- T027 security/API/database documentation sync
 
 Exit:
+
 - two users in different orgs cannot read each other's resources
 - negative auth tests exist
+
+Both exit criteria are met by the T025 authorization boundary and the T026 live-PostgreSQL matrix. No TaskPilot HTTP endpoint, Task domain, or approval domain exists yet; those stay in Phase 3 and later.
 
 ## Phase 3 — Task Domain [STRONG DESIGN + STANDARD IMPLEMENTATION]
 

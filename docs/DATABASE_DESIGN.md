@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 architecture decision and the T021 foundation. ADR-004 is authoritative.
+This document records the Phase 2 architecture decision and the T021–T023 schema that implements it. ADR-004 is authoritative.
 
 ## Ownership and bootstrap
 
@@ -97,3 +97,7 @@ Future task, run, approval, knowledge, memory, and audit tables must carry expli
 ## Administrative bootstrap
 
 The first Organization + owner User + owner Membership is created only by `scripts/bootstrap_owner.py`, which delegates to `service.bootstrap_cli` and `service.bootstrap`. The password is read exclusively from two hidden interactive `getpass` prompts - there is no flag, positional, or environment-variable form - and `--password` plus positional plaintext are rejected before any database work. Exact complete active state is an idempotent no-op; partial/conflicting/inactive state fails closed without repair, overwrite, password reset, or role elevation. Organization, User, password hash, and Membership share one business transaction: commit once or roll back all. No global consumed flag is used, and no HTTP registration endpoint exists.
+
+## Verification (T021–T026)
+
+The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.

@@ -19,3 +19,9 @@ See the historical Phase 1 cards T010–T016.
 | T027 | Security/API/database documentation synchronization | LOW_COST | None | T020–T026 | Focused docs checks |
 
 Recommended order: T020 (Strong Review) -> T021 -> T022 -> T022A -> T023 -> T024 -> T025 -> T026 -> T027. T020 is authoritative; implementation cards may not change identity, token, migration, transaction, tenant, or error semantics without a new accepted ADR.
+
+## Phase 2 completion status (2026-09-18)
+
+T020 was accepted as ADR-004. T021–T026 are implemented, reviewed and committed; T027 synchronizes the documentation with the implementation. No Phase 3 task has started: there is no Task/TaskRun/TaskStep domain, no approval records, and no TaskPilot HTTP endpoint yet.
+
+The Phase 2 definitions of done were verified at the T026 gate: `uv run pytest` (full suite, including the disposable-PostgreSQL persistence and security suites when `TASKPILOT_TEST_DATABASE_URL` is set), `uv run ruff format --check .`, `uv run ruff check --output-format concise`, `uv run pyrefly check`, `uv lock --check`, and `git diff --check`.

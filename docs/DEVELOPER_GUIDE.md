@@ -198,6 +198,38 @@ from service.session import CurrentPrincipal
 async def me(principal: Annotated[CurrentPrincipal, Depends(require_principal)]): ...
 ```
 
+### Authorization (T025)
+
+Protected operations use the single policy boundary in `service/authorization`
+instead of comparing roles inline:
+
+- `require_authenticated(principal)` fails closed with 401 when no server-derived principal exists; authorization never turns a missing credential into 403.
+- `require_active_membership(principal)` is the explicit policy seam named by the helper contract. T024 already proves an active membership before a principal exists, so it performs no second lookup.
+- `require_role(principal, allowed_roles)` returns 403 when the current membership role is not in the operation's allowed set. Roles are an explicit set match with no hierarchy, so a `member`-only operation rejects an `owner`.
+- `require_resource_tenant(principal, resource_organization_id)` returns 404 for a resource outside the principal's organization, identical to a nonexistent resource.
+- The FastAPI wrappers `require_authenticated_principal`, `require_role_dependency([...])`, and `require_resource_tenant_dependency(...)` convert the same decisions into `HTTPException`.
+
+Tenant-owned lookups must carry the tenant predicate in the query itself
+(`WHERE id = :id AND organization_id = :principal_organization_id`, as in
+`OrganizationRepository.get_in_principal_tenant`) so a foreign row is not found
+rather than fetched and compared in Python, and tenant existence must be
+resolved before any role check. `APPROVAL_DECISION_ROLES` freezes the documented
+owner/admin approval gate; no approval records exist yet.
+
+### Security matrix (T026)
+
+The authoritative negative matrix is
+`tests/persistence/test_security_matrix_integration.py`. It uses the same
+disposable PostgreSQL database as the persistence suite:
+
+```powershell
+$env:TASKPILOT_TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test'
+uv run pytest tests/persistence -q
+```
+
+Without that variable the persistence and security suites skip, so a green run
+does not prove the authentication or tenant rules.
+
 Create the first organization owner with the controlled CLI. The password is
 read from a hidden prompt and must be entered twice; `--password` and positional
 plaintext are rejected:
@@ -255,10 +287,13 @@ docker compose up -d                     BLOCKED: Docker Desktop Linux Engine na
 
 The touched documentation files pass their focused Markdown check:
 `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md`. The full
-scan remains non-zero only because of pre-existing formatting violations in
-untouched files such as `docs/AGENT_DESIGN.md`, `docs/API_CONVENTIONS.md`,
-`docs/DATABASE_DESIGN.md`, `docs/DEPLOYMENT_RUNBOOK.md`,
-`docs/OBSERVABILITY_EVAL.md`, `docs/SECURITY_HITL.md`, and `docs/USER_GUIDE.md`.
+scan is still non-zero, but only because of pre-existing formatting violations in
+files this phase did not touch: as of 2026-09-18 the remaining 22 are in
+`docs/AGENT_DESIGN.md` (5), `docs/CONTEXT_ENGINEERING.md` (1),
+`docs/DEPLOYMENT_RUNBOOK.md` (3), and `docs/OBSERVABILITY_EVAL.md` (13).
+`docs/API_CONVENTIONS.md`, `docs/SECURITY_HITL.md`, and `docs/USER_GUIDE.md` were
+fixed here because T027 edits them; the rest is untouched debt for a separate
+formatting-only change.
 
 ## Historical Phase 0.5 verification (2026-09-10)
 

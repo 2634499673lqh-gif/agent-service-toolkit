@@ -1,14 +1,14 @@
 # TaskPilot
 
-TaskPilot is a production-oriented task-execution platform for knowledge work. This repository is in its Phase 1 foundation: it retains an upstream LangGraph, FastAPI, and Streamlit runtime while the TaskPilot product is built incrementally and with explicit domain boundaries.
+TaskPilot is a production-oriented task-execution platform for knowledge work. This repository is at the end of Phase 2 (identity, organizations, memberships, authorization): it retains an upstream LangGraph, FastAPI, and Streamlit runtime while the TaskPilot product is built incrementally and with explicit domain boundaries.
 
 ## Current scope
 
-The current checkout provides the retained upstream runtime and the TaskPilot planning and engineering process around it. It does **not** yet provide TaskPilot users, organizations, RBAC, Task/TaskRun/TaskStep records, planner/executor/verifier roles, approvals, or TaskPilot observability tables. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and the phase boundary.
+The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy: a PostgreSQL-only `taskpilot` schema (`organizations`, `users`, `memberships`, `auth_sessions`), Argon2id passwords, opaque revocable sessions, a server-derived request principal, a centralized authorization boundary with fixed 401/403/404 semantics, tenant-scoped lookups, and a negative security matrix. These are service, dependency, and persistence layers: **no TaskPilot HTTP endpoint exists yet**, and Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approvals, and TaskPilot observability tables are still absent. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and the phase boundary.
 
 ## Getting started
 
-Read [AGENTS.md](AGENTS.md), then follow the verified local commands in [the Developer Guide](docs/DEVELOPER_GUIDE.md). For the ordered Phase 1 work, use [the task backlog](TASK_BACKLOG.md) and the individual task cards under `process/tasks/`.
+Read [AGENTS.md](AGENTS.md), then follow the verified local commands in [the Developer Guide](docs/DEVELOPER_GUIDE.md). For the ordered Phase 2 work, use [the task backlog](TASK_BACKLOG.md) and the individual task cards under `process/tasks/`.
 
 For deterministic local verification, use `USE_FAKE_MODEL=true`; do not put real credentials in version control.
 

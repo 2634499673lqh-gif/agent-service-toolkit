@@ -1982,3 +1982,141 @@ Learner notes:
 
 Suggested next step: Strong Review of the T026 diff, then T027 documentation
 synchronization.
+
+### 2026-09-18 — T027: Phase 2 documentation synchronization
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `7a5f89d test: add Phase 2 security matrix` (T026), the
+  approved and committed T026 implementation.
+- Working tree before changes: clean (`git status --short` produced no output).
+
+Task Card interpretation:
+- Scope: documentation only. `process/tasks/T027.md`: "Synchronize only
+  architecture, database, security, API, developer/troubleshooting,
+  decision/progress, and task/index docs with actual code. Document opaque
+  credentials, CurrentPrincipal, role policy, tenant 404 rule, migration
+  ownership/order, bootstrap, transaction lifecycle, and legacy `AUTH_SECRET`.
+  Never claim unimplemented behavior."
+- Forbidden: changing any T023–T026 production behavior, Phase 3 domains, new
+  endpoints, schema or migrations, new dependencies, or new files. No
+  production file, test, migration, dependency, or `AUTH_SECRET` behavior was
+  changed.
+- Conflicts/gaps: none with ADR-004. Two judgement calls are recorded. First,
+  `README.md`, `ROADMAP.md`, `docs/CODE_READING_ORDER.md`, and
+  `docs/USER_GUIDE.md` are not named in the card's document enumeration, but
+  each contained a materially false statement about repository truth (README
+  claimed a Phase 1 state with no users/organizations/RBAC; ROADMAP described a
+  Phase 2 task set with different meanings than the real cards; the code reading
+  order omitted every Phase 2 file; the user guide presented a login/task/
+  approval workflow as available), so they were reconciled under "remove stale
+  statements". Second, the
+  Markdown violations in files T027 does not edit were deliberately left alone,
+  because the card asks for focused Markdown checks.
+
+Reconciliation per document:
+- `README.md`: states the Phase 2 status, names what exists (four `taskpilot`
+  tables, Argon2id passwords, opaque revocable sessions, server-derived
+  principal, centralized authorization, tenant-scoped lookups, security
+  matrix), and states plainly that no TaskPilot HTTP endpoint exists yet.
+- `docs/ARCHITECTURE.md`: keeps the Phase 0/1 assessment as history behind a
+  header note, updates the persistence bullet to the four business tables, marks
+  the identity/RBAC gap row as Phase 2 done, and replaces the T021-only section
+  with the T021–T026 status plus an explicit not-implemented list.
+- `docs/DATABASE_DESIGN.md`: intro now covers T021–T023, and a new
+  "Verification (T021–T026)" section records the linear revision chain,
+  LangGraph coexistence, per-revision downgrade/re-upgrade, rollback,
+  independent sessions, cleanup, the no-Alembic-import-in-`src/` check, and the
+  disposable-database requirement.
+- `docs/SECURITY_HITL.md`: stale "(decided; planned)" and "(pending T024/T025)"
+  headings corrected, T026 evidence recorded, and a "Known deferrals" section
+  added (no approval records, no HTTP endpoints, no Task domain, a skipped suite
+  is not evidence, destructive downgrade is a separately reviewed process step).
+- `docs/API_CONVENTIONS.md`: now states that no TaskPilot HTTP endpoint exists
+  and that every listed path is planned; the legacy `AUTH_SECRET` guard applies
+  only to the retained upstream router; the cross-tenant 404 rule is recorded as
+  the frozen decision instead of an open question.
+- `docs/DEVELOPER_GUIDE.md`: adds an Authorization (T025) section (helper
+  contract, no role hierarchy, SQL tenant predicate, decision ordering,
+  `APPROVAL_DECISION_ROLES`) and a Security matrix (T026) section with the
+  disposable-database command, and corrects the Markdown-debt sentence.
+- `docs/TROUBLESHOOTING.md`: adds Phase 2 entries for TaskPilot 401 causes
+  (`AUTH_SECRET` is not a TaskPilot credential, expiry/revocation, revalidated
+  state, wrong database), 403 versus 404 semantics, the PostgreSQL-only
+  `TASKPILOT_DATABASE_URL`, skipped persistence/security suites and the safe way
+  to prepare a test database, and fail-closed bootstrap.
+- `docs/CODE_READING_ORDER.md`: adds the Phase 2 reading item and states that
+  caller-supplied identity is never authorization truth.
+- `docs/USER_GUIDE.md`: adds a status section stating that the documented login,
+  task, run, and approval workflow is target behavior and none of it exists yet,
+  and fixes its single Markdown list-spacing violation.
+- `ROADMAP.md`: Phase 2 task list aligned with the real T020–T027 cards, marked
+  complete with both exit criteria met and Phase 3 not started.
+- `process/DECISION_LOG.md`: ADR-002 and ADR-003 status lines closed (the
+  deferred migration-framework decision was made by ADR-004), ADR-003's known
+  roadmap drift marked resolved, ADR-004 status updated, and a "Phase 2
+  implementation status — closed 2026-09-18" subsection added that separates
+  implemented scope from unimplemented scope ("unimplemented scope, not
+  defects"). No accepted decision text was changed.
+- `process/tasks/INDEX.md`: adds the Phase 2 completion status and the gates
+  verified at the T026/T027 boundary.
+- Markdown lint: fixed the pre-existing MD012/MD022/MD032 violations inside the
+  three gated files T027 edits that carried them (`docs/SECURITY_HITL.md` 9,
+  `docs/API_CONVENTIONS.md` 11, `docs/USER_GUIDE.md` 1) so the focused check
+  passes.
+
+Commands/tests run:
+- `uv run pymarkdown scan README.md docs/ARCHITECTURE.md docs/DATABASE_DESIGN.md
+  docs/SECURITY_HITL.md docs/API_CONVENTIONS.md docs/DEVELOPER_GUIDE.md
+  docs/TROUBLESHOOTING.md docs/CODE_READING_ORDER.md docs/USER_GUIDE.md` ->
+  PASS (0 violations).
+- `uv run pymarkdown scan README.md docs/` -> 22 violations remain in files T027
+  does not touch (`docs/AGENT_DESIGN.md` 5, `docs/CONTEXT_ENGINEERING.md` 1,
+  `docs/DEPLOYMENT_RUNBOOK.md` 3, `docs/OBSERVABILITY_EVAL.md` 13). The
+  baseline was 43; T027 removed 21 by fixing the three files it edits.
+- `uv run pytest -q` with live PostgreSQL -> PASS (436 passed, 4 skipped, 86
+  warnings) as the Phase 2 final audit; no test was changed by T027.
+- `uv run ruff format --check .`, `uv run ruff check --output-format concise`,
+  `uv run pyrefly check` (0 errors), `uv lock --check`, `git diff --check` ->
+  PASS.
+
+Security notes:
+- The documentation now states every security rule the code actually enforces
+  and no rule it does not: opaque server-side credentials, `CurrentPrincipal`
+  derivation, set-based role policy without hierarchy, 401/403/404 semantics,
+  SQL-level tenant predicates, bootstrap secrets handling, transaction
+  lifecycle, and the compatibility-only `AUTH_SECRET`.
+- No document claims an approval domain, Task domain, HTTP endpoint, permission
+  table, JWT, or organization switch that does not exist.
+- The docs state that the persistence and security suites skip without
+  `TASKPILOT_TEST_DATABASE_URL` and that a skipped run proves nothing.
+
+Known limitations:
+- 22 pre-existing Markdown violations remain in `docs/AGENT_DESIGN.md`,
+  `docs/CONTEXT_ENGINEERING.md`, `docs/DEPLOYMENT_RUNBOOK.md`,
+  and `docs/OBSERVABILITY_EVAL.md`. They predate Phase 2, are in files T027 does
+  not edit, and need a separate formatting-only change.
+- T027 is documentation-only, so the deferred product capabilities (approval
+  records, Task domain, TaskPilot HTTP endpoints, observability/audit tables)
+  remain unimplemented; the documents now say so explicitly.
+
+Learner notes:
+- Problem solved: after Phase 2, the repository's own documentation no longer
+  contradicts the code, and a reader cannot mistake planned endpoints or the
+  approval domain for implemented behavior.
+- Read `docs/SECURITY_HITL.md` (Phase 2 identity rules, T023–T026 evidence,
+  deferrals) and `docs/DATABASE_DESIGN.md` (ownership, transaction boundary,
+  verification) first, then `docs/API_CONVENTIONS.md` for the planned-versus-
+  implemented distinction.
+- Key concept: a documentation sync is an audit, not a rewrite - each sentence
+  must be traceable to code, tests, or an accepted ADR, and unimplemented scope
+  must be labeled as such.
+- Exercise: pick one claim from `docs/SECURITY_HITL.md`, find the test that
+  proves it in `tests/persistence/test_security_matrix_integration.py`, and
+  confirm the doc would fail review if the test were deleted.
+- Do not worry yet about the five files with leftover Markdown formatting debt.
+
+Suggested next step: commit T027, then start Phase 3 only when authorized, with
+T030 Task state-machine design. No Phase 3 work was started here.
