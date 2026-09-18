@@ -61,16 +61,23 @@ Both exit criteria are met by the T025 authorization boundary and the T026 live-
 ## Phase 3 — Task Domain [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
 Tasks:
-- T030 Task/TaskRun/TaskStep states
-- T031 persistence/repository
-- T032 create/list/get APIs
-- T033 transition service
-- T034 idempotency/concurrency controls
-- T035 task tests/docs
+- T030 Task domain/lifecycle architecture decision (ADR-005; single Planning Strong Review gate)
+- T031 Task schema/migration
+- T032 TaskRun schema/migration
+- T033 TaskStep persistence deferred to Phase 4 runtime design
+- T034 tenant-scoped repositories and transaction boundary
+- T035 lifecycle transition service
+- T036 Task create/list/get API
+- T037 Task update/cancel API
+- T038 TaskRun start/inspect API
+- T039 Phase 3 integration/security tests and documentation
 
 Exit:
 - task lifecycle works without LLM
 - invalid transitions rejected
+- same-tenant CRUD works and cross-tenant resources return 404
+- insufficient in-tenant role returns 403
+- PostgreSQL migration and rollback/coexistence checks pass
 
 ## Phase 4 — Agent Runtime [STRONG MODEL]
 

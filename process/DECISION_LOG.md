@@ -168,3 +168,25 @@ This keeps V1 auditable: one active organization per request, server-derived rol
 Implemented as decided above: `organizations`, `users`, `memberships`, and `auth_sessions` in the `taskpilot` schema through four linear Alembic revisions; Argon2id passwords; opaque 24-hour sessions with SHA-256 at-rest digests, revocation, and expiry; the controlled `scripts/bootstrap_owner.py` CLI; multi-organization login selection as an intermediate result; the server-derived `CurrentPrincipal`; the single authorization boundary with fixed 401/403/404 semantics; tenant-scoped repository lookups; and the T026 live-PostgreSQL security matrix. All four verified revisions are owned by TaskPilot, and no `src/` module imports Alembic, so application startup neither migrates nor downgrades.
 
 Explicitly still absent after Phase 2: TaskPilot HTTP endpoints (`/api/v1`, login, `/me`), Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approval records and duplicate-decision idempotency, permission/role tables, a policy engine, JWT or refresh tokens, organization-switch endpoints or UI, and TaskPilot observability/audit tables. These are unimplemented scope, not defects in the accepted design. Decision 12 remains in force: `AUTH_SECRET` is compatibility-only for the retained upstream routes, and a TaskPilot protected dependency rejects it with the same generic 401 as any unknown token.
+
+## ADR-005 — Phase 3 Task domain boundary and lifecycle
+
+Date: 2026-09-18
+
+Status: proposed; architecture gate is the focused Planning Strong Review. Once approved, ADR-005 is Accepted and Phase 3 implementation starts at T031.
+
+### Decisions
+
+1. **Source of truth.** Persist `Task` and `TaskRun`. `Task.status` is the current user-visible overall execution state; `TaskRun.status` is the lifecycle of one concrete execution attempt. Historical terminal runs remain immutable history except for their legal transition. `TaskStep` is deferred to Phase 4 runtime design and is not a Phase 3 entity.
+2. **States.** Task: `DRAFT`, `QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`. TaskRun: `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
+3. **Lifecycle.** Creating a Task yields `DRAFT` with no run. Starting is allowed only from `DRAFT` or `FAILED`, creates `PENDING` and changes Task to `QUEUED` in one service transaction. `PENDING→RUNNING`, `RUNNING→SUCCEEDED`, and `RUNNING→FAILED` update the owning Task (`QUEUED→RUNNING`, `RUNNING→SUCCEEDED`, `RUNNING→FAILED`) in the same transaction. No automatic retry. `QUEUED`, `RUNNING`, `SUCCEEDED`, and `CANCELLED` reject start; `FAILED` permits retry.
+4. **Active-run invariant.** An active run is `PENDING` or `RUNNING`; each Task has at most one active run, while multiple terminal historical runs are allowed. `QUEUED` requires exactly one `PENDING` run and `RUNNING` exactly one `RUNNING` run. The service/persistence implementation must enforce this transactionally; the invariant does not prescribe infrastructure.
+5. **Cancellation.** Cancellation is persistence-only and never claims to interrupt external execution. `DRAFT→CANCELLED` has no run. `QUEUED`/`RUNNING` cancel the active run and Task together in one transaction. `SUCCEEDED`/`FAILED` reject with conflict. Repeated cancellation returns the already-cancelled resource without a new state change. `CANCELLED` cannot restart.
+6. **Ownership/security.** Task stores server-derived organization and creator provenance. `CurrentPrincipal` supplies authorization truth; caller identity fields never do. Tenant predicates remain in repository queries. API semantics are 401 invalid auth, 403 same-tenant insufficient authorization, and 404 foreign/non-visible resources.
+7. **Transactions and runtime boundary.** Services own commit/rollback; repositories query/add/flush only. Phase 3 stores no planner, executor, verifier, LangGraph, AgentState, or external-runtime interruption fields. PostgreSQL constraints/transactions enforce domain invariants.
+8. **Application idempotency deferred.** Phase 3 has no concrete external retry boundary, so Task create and TaskRun start have no `Idempotency-Key`, fingerprint, replay, conflict, or idempotency storage contract. Concurrency safety, one active run, run numbering, and legal transitions remain mandatory domain/database invariants. Application-level idempotency is designed when a concrete retry-producing boundary exists.
+9. **Architecture ownership.** T030 is the non-production planning milestone completed by the approved Planning Strong Review. It does not perform a second architecture freeze. After that single gate, ADR-005 is Accepted and T031 begins production implementation.
+
+### Migration and verification
+
+The executable order is Task → TaskRun, then tenant repositories, lifecycle service, APIs, and final audit. T033 is `DEFERRED`: TaskStep persistence belongs to Phase 4 runtime design and is not an executable Phase 3 dependency. Production startup never auto-migrates; release/job migration remains the owner. SQLite is not a TaskPilot business backend.

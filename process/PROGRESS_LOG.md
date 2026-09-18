@@ -2120,3 +2120,53 @@ Learner notes:
 
 Suggested next step: commit T027, then start Phase 3 only when authorized, with
 T030 Task state-machine design. No Phase 3 work was started here.
+
+### 2026-09-18 — Phase 3 Task domain planning
+
+Status: PLANNING COMPLETE — no Phase 3 implementation started
+
+What changed:
+- Audited Phase 2 implementation truth: PostgreSQL TaskPilot schema, async SQLAlchemy/Alembic boundary, CurrentPrincipal and authorization helpers exist; Task/TaskRun/TaskStep, TaskPilot HTTP routes, approvals and Agent runtime domain do not exist.
+- Added ADR-005 for Task domain topology, tenant/actor ownership, lifecycle state machines, Task-to-LangGraph boundary, transaction/concurrency rules, API semantics and deferrals.
+- Expanded Phase 3 to T030–T039 and created implementation-ready cards with explicit dependencies, forbidden scope, migration gates, PostgreSQL integration and review gates.
+- Synchronized ROADMAP, TASK_BACKLOG and task index.
+
+Files changed:
+- ROADMAP.md
+- TASK_BACKLOG.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+- process/tasks/INDEX.md
+- process/tasks/T030.md through process/tasks/T039.md
+
+Commands/tests run:
+- Baseline Git checks → PASS: phase-3-task-domain, HEAD 7b9c473, clean before planning.
+- Read Phase 3 authoritative context and relevant Phase 2 persistence/auth/runtime code → PASS.
+- Runtime pytest → NOT RUN: planning-only task; no runtime changes.
+- Focused Markdown and diff checks recorded after edits.
+
+Architecture/security notes:
+- Task, TaskRun and TaskStep remain business records, never LangGraph checkpoint/thread/AgentState records.
+- All Task-owned access derives organization scope from CurrentPrincipal; caller identity and tenant fields are not authorization truth.
+- Approval, planner/executor/verifier, skills/tools/context, observability and UI remain deferred to their roadmap phases.
+
+Known limitations:
+- No Phase 3 production schema or API exists until the cards are separately authorized.
+
+Learner notes:
+- Problem solved: Phase 3 is now an executable design with explicit lifecycle and tenant boundaries rather than a list of table names.
+- Read `process/DECISION_LOG.md` ADR-005, `process/tasks/T030.md`, `src/persistence/models.py`, `src/service/authorization.py`, and `src/service/session.py`.
+- Key concept: a business Task can reference future agent execution without becoming a LangGraph thread.
+- Exercise: draw the Task → TaskRun → TaskStep ownership chain and mark where CurrentPrincipal.organization_id must appear in SQL.
+- Ignore for now: planner prompts, tools, approvals, queues, Redis and UI.
+
+Suggested next task: T030 Strong Review. Do not start T031 until ADR-005 and its transition/API/migration gates are accepted.
+
+
+## Phase 3 planning blocker fix — 2026-09-18
+
+- Corrected the six planning blockers: Task/TaskRun source of truth and lifecycle, persistence-only cancellation, deferred TaskStep/T033, deferred application-level idempotency, single ADR-005/T030 architecture gate, and the sequential executable DAG.
+- Planning files changed: ROADMAP.md, TASK_BACKLOG.md, process/DECISION_LOG.md, process/tasks/INDEX.md, and process/tasks/T030.md–T039.md.
+- No production code, tests, dependencies, or migrations changed.
+- Validation: `git diff --check`; stale-contract search and diff review remain to be reported with the final review.
+- Learner focus: distinguish business Task state from execution-attempt TaskRun state, and distinguish domain concurrency invariants from application idempotency.
