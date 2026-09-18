@@ -127,7 +127,134 @@ The service health endpoint is `GET /health`; metadata is `GET /info`; OpenAPI i
 
 ## Persistence and migrations
 
-There is no application migration command: the repository has no SQLAlchemy, Alembic, ORM, migration directory, or TaskPilot business schema. SQLite is the lightweight local-development checkpoint. PostgreSQL checkpoint and Store persistence is LangGraph-owned. Future TaskPilot business persistence is not implemented and requires separate migration ownership. Phase 1 therefore adds no framework, placeholder migration, ORM, or business table.
+TaskPilot business persistence is PostgreSQL-only and is intentionally separate
+from the existing LangGraph backend selected by `DATABASE_TYPE`. Configure an
+explicit `TASKPILOT_DATABASE_URL` (for example,
+`postgresql+psycopg://user:password@host/db`) when using the business engine;
+SQLite remains valid for local LangGraph checkpoints and does not enable
+business persistence. The URL is a secret setting and is never logged.
+
+The TaskPilot Alembic environment lives in `migrations/` and owns only the
+`taskpilot` schema. A release/deployment step applies it with:
+
+```powershell
+uv run alembic upgrade head
+```
+
+Application startup does not run migrations. The first revision (`t021_organization`)
+creates `taskpilot`, `taskpilot.alembic_version`, and `taskpilot.organizations`;
+the second revision (`t022_user`) adds `taskpilot.users`; the third revision
+(`t022a_membership`) adds `taskpilot.memberships`; the fourth
+(`t023_auth_session`) adds `taskpilot.auth_sessions`. Downgrading removes only the
+objects the target revision owns, so `alembic downgrade t022a_membership` drops the
+session table while leaving users, memberships, and organizations intact, and
+`alembic downgrade t022_user` additionally drops memberships. The environment's
+pre-reflection ownership filter prevents LangGraph/public tables from becoming
+autogenerate targets. `OrganizationRepository`, `UserRepository`, and
+`MembershipRepository`, and `AuthSessionRepository` accept an `AsyncSession`,
+flush writes, and leave commit/rollback to the service transaction boundary.
+`uv run alembic check` reports "No new upgrade operations detected" when the ORM
+metadata matches the migrated database.
+
+### Authentication (T023)
+
+Passwords are Argon2id hashes from `pwdlib` (`persistence/passwords.py`).
+`service/session.py` issues opaque sessions: the raw base64url token is returned
+once, and only its SHA-256 digest is stored in `taskpilot.auth_sessions`. Login
+fails with one generic error for unknown email, wrong password, inactive user,
+and no eligible membership, and a session is bound to exactly one user and one
+membership.
+
+For a user with several eligible organizations, `AuthService.login` accepts an
+optional `organization_id` selector. With no selector it issues automatically
+when exactly one membership is eligible and returns
+`OrganizationSelectionRequired` (code `ORGANIZATION_SELECTION_REQUIRED` plus the
+sorted eligible organization IDs) when several are; the result holds no token or
+session. Passing the selector issues a session bound to that verified
+membership, and switching organizations is simply another `login` call with the
+target selector.
+
+### Request authentication (T024)
+
+Protected TaskPilot endpoints depend on `service.auth_dependency.require_principal`,
+which resolves `Authorization: Bearer <opaque-token>` into a server-derived
+`CurrentPrincipal`. Every request re-reads the session, user, membership, and
+organization, so revocation, expiry, deactivation, and role changes take effect
+immediately. Any failure returns one generic 401 `{"detail": "Not authenticated"}`
+with `WWW-Authenticate: Bearer`, and no principal is constructed. The dependency
+opens and closes its own session per request and never commits. Overriding
+`service.auth_dependency.get_session_factory` (its `Depends` provider) is the
+supported way for tests to point the dependency at a specific database.
+
+```python
+from typing import Annotated
+
+from fastapi import Depends
+
+from service.session import CurrentPrincipal
+
+
+@app.get("/api/v1/me")
+async def me(principal: Annotated[CurrentPrincipal, Depends(require_principal)]): ...
+```
+
+### Authorization (T025)
+
+Protected operations use the single policy boundary in `service/authorization`
+instead of comparing roles inline:
+
+- `require_authenticated(principal)` fails closed with 401 when no server-derived principal exists; authorization never turns a missing credential into 403.
+- `require_active_membership(principal)` is the explicit policy seam named by the helper contract. T024 already proves an active membership before a principal exists, so it performs no second lookup.
+- `require_role(principal, allowed_roles)` returns 403 when the current membership role is not in the operation's allowed set. Roles are an explicit set match with no hierarchy, so a `member`-only operation rejects an `owner`.
+- `require_resource_tenant(principal, resource_organization_id)` returns 404 for a resource outside the principal's organization, identical to a nonexistent resource.
+- The FastAPI wrappers `require_authenticated_principal`, `require_role_dependency([...])`, and `require_resource_tenant_dependency(...)` convert the same decisions into `HTTPException`.
+
+Tenant-owned lookups must carry the tenant predicate in the query itself
+(`WHERE id = :id AND organization_id = :principal_organization_id`, as in
+`OrganizationRepository.get_in_principal_tenant`) so a foreign row is not found
+rather than fetched and compared in Python, and tenant existence must be
+resolved before any role check. `APPROVAL_DECISION_ROLES` freezes the documented
+owner/admin approval gate; no approval records exist yet.
+
+### Security matrix (T026)
+
+The authoritative negative matrix is
+`tests/persistence/test_security_matrix_integration.py`. It uses the same
+disposable PostgreSQL database as the persistence suite:
+
+```powershell
+$env:TASKPILOT_TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test'
+uv run pytest tests/persistence -q
+```
+
+Without that variable the persistence and security suites skip, so a green run
+does not prove the authentication or tenant rules.
+
+Create the first organization owner with the controlled CLI. The password is
+read from a hidden prompt and must be entered twice; `--password` and positional
+plaintext are rejected:
+
+```powershell
+uv run python scripts/bootstrap_owner.py --organization-name "Acme" --email owner@example.com
+```
+
+The organization name and owner email may also come from
+`TASKPILOT_BOOTSTRAP_ORGANIZATION_NAME` and `TASKPILOT_BOOTSTRAP_EMAIL`, or from
+interactive prompts. The password has no flag, positional, or environment-variable
+form: it is always read from two hidden prompts, so no automation shortcut can
+bypass the confirmation. Re-running against an exact active owner state is a
+no-op. Argument errors and database failures are reported with fixed messages
+that never echo the supplied values, the SQL, or the bind parameters.
+
+The persistence tests are PostgreSQL-only and run only when a disposable test
+database is configured. The URL must name a database containing `test`; the
+suite creates and drops uniquely named databases for each scenario and never
+touches the base database:
+
+```powershell
+$env:TASKPILOT_TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test'
+uv run pytest tests/persistence -q
+```
 
 After Docker/dependencies are ready, the repository also contains optional upstream
 confidence checks:
@@ -160,10 +287,13 @@ docker compose up -d                     BLOCKED: Docker Desktop Linux Engine na
 
 The touched documentation files pass their focused Markdown check:
 `uv run pymarkdown scan docs/DEVELOPER_GUIDE.md docs/TROUBLESHOOTING.md`. The full
-scan remains non-zero only because of pre-existing formatting violations in
-untouched files such as `docs/AGENT_DESIGN.md`, `docs/API_CONVENTIONS.md`,
-`docs/DATABASE_DESIGN.md`, `docs/DEPLOYMENT_RUNBOOK.md`,
-`docs/OBSERVABILITY_EVAL.md`, `docs/SECURITY_HITL.md`, and `docs/USER_GUIDE.md`.
+scan is still non-zero, but only because of pre-existing formatting violations in
+files this phase did not touch: as of 2026-09-18 the remaining 22 are in
+`docs/AGENT_DESIGN.md` (5), `docs/CONTEXT_ENGINEERING.md` (1),
+`docs/DEPLOYMENT_RUNBOOK.md` (3), and `docs/OBSERVABILITY_EVAL.md` (13).
+`docs/API_CONVENTIONS.md`, `docs/SECURITY_HITL.md`, and `docs/USER_GUIDE.md` were
+fixed here because T027 edits them; the rest is untouched debt for a separate
+formatting-only change.
 
 ## Historical Phase 0.5 verification (2026-09-10)
 

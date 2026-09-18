@@ -2,6 +2,10 @@
 
 > Codex must keep this synchronized with implemented behavior.
 
+## Status (2026-09-18)
+
+Everything below describes the target V1 workflow, not what the repository can do today. There is currently no login endpoint, no task API, no run/step view, and no approval UI. Phase 2 delivered the identity and tenancy layers only: the PostgreSQL `taskpilot` tables, opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the commands that do exist.
+
 ## What TaskPilot does
 
 TaskPilot accepts a concrete work task, plans steps, uses approved tools/skills, verifies results, and shows the execution trace.
@@ -33,6 +37,7 @@ Better:
 
 Never approve an action you do not understand.
 The UI should show:
+
 - action
 - target
 - sanitized arguments

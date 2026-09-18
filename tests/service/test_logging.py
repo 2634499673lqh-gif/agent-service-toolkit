@@ -83,6 +83,27 @@ def test_redaction_removes_secrets_from_captured_logs(caplog) -> None:
     assert "[REDACTED]" in output
 
 
+def test_legacy_auth_secret_is_redacted_from_logs(caplog) -> None:
+    """T026 secret row: the configured legacy ``AUTH_SECRET`` is redacted in logs.
+
+    The value is registered from the settings object - the same path application
+    startup uses - not by naming it explicitly here.
+    """
+
+    from core.settings import Settings
+
+    legacy_secret = "legacy-auth-secret-value"
+    configure_logging(Settings(USE_FAKE_MODEL=True, AUTH_SECRET=legacy_secret, _env_file=None))
+
+    legacy_logger = logging.getLogger("service.test.legacy_auth_secret")
+    with caplog.at_level(logging.INFO, logger=legacy_logger.name):
+        legacy_logger.info("AUTH_SECRET=%s", legacy_secret)
+        legacy_logger.info("Authorization: Bearer %s", legacy_secret)
+
+    assert legacy_secret not in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+
 @pytest.mark.asyncio
 async def test_request_context_is_reset_after_middleware() -> None:
     from fastapi import Request

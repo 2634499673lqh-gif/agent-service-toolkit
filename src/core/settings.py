@@ -134,6 +134,11 @@ class Settings(BaseSettings):
     )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES
     SQLITE_DB_PATH: str = "checkpoints.db"
 
+    # TaskPilot business persistence is an independent PostgreSQL-only URL.
+    # It is intentionally separate from DATABASE_TYPE, which selects the
+    # upstream LangGraph checkpoint backend.
+    TASKPILOT_DATABASE_URL: SecretStr | None = None
+
     # PostgreSQL Configuration
     POSTGRES_USER: str | None = None
     POSTGRES_PASSWORD: SecretStr | None = None
@@ -168,6 +173,7 @@ class Settings(BaseSettings):
         # never leak model choices into one another.
         self.AVAILABLE_MODELS = set()
         self._validate_database_config()
+        self._validate_taskpilot_database_config()
         self._validate_optional_configuration()
 
         api_keys = {
@@ -329,6 +335,15 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "MongoDB authentication settings must be provided together: " + ", ".join(auth)
                 )
+
+    def _validate_taskpilot_database_config(self) -> None:
+        """Validate an explicitly configured TaskPilot business database URL."""
+
+        if not self._has_value(self.TASKPILOT_DATABASE_URL):
+            return
+        raw_url = self.TASKPILOT_DATABASE_URL.get_secret_value()  # type: ignore[union-attr]
+        if not raw_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise ValueError("TASKPILOT_DATABASE_URL must use PostgreSQL (postgresql[+psycopg]://)")
 
     def _validate_optional_configuration(self) -> None:
         """Reject partial opt-in configuration while preserving optional fallbacks."""

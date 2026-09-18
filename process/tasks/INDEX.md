@@ -1,13 +1,27 @@
-# Phase 1 Task Card Index
+# Task Card Index
+
+## Phase 1
+
+See the historical Phase 1 cards T010–T016.
+
+## Phase 2 Task Cards — Identity / Organization / RBAC / Tenant Isolation
 
 | Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? |
 |---|---|---|---|---|---|
-| T010 | Branding/attribution | LOW_COST | None | None | No |
-| T011 | Safe env template | LOW_COST | None | T010 context | No |
-| T012 | Settings validation | STANDARD | STRONG_REVIEW_REQUIRED | T011 | Yes |
-| T013 | Request correlation middleware | LOW_COST | STRONG_REVIEW_REQUIRED | T012 | Yes |
-| T014 | Structured logging/redaction | STANDARD | STRONG_REVIEW_REQUIRED | T013 | Yes |
-| T015 | Migration ownership ADR | STRONG_REVIEW_REQUIRED | STRONG_REVIEW_REQUIRED | None | Phase exit |
-| T016 | Verified developer commands | LOW_COST | None | T010-T015 docs | Phase exit |
+| T020 | Identity, tenancy, authentication and business persistence architecture gate | STRONG | STRONG_REVIEW_REQUIRED | Phase 1 | No (design evidence) |
+| T021 | SQLAlchemy async foundation, Organization schema and Alembic migration | STANDARD | STRONG_REVIEW_REQUIRED | T020 | Focused + shared persistence |
+| T022 | User schema, password field and email constraints | STANDARD | STRONG_REVIEW_REQUIRED | T020, T021 | Focused + shared persistence |
+| T022A | Membership schema, role enum, active membership and repositories | STANDARD | STRONG_REVIEW_REQUIRED | T021, T022 | Focused + shared persistence |
+| T023 | Opaque authentication session/token service, Argon2id login and bootstrap | STANDARD | STRONG_REVIEW_REQUIRED | T021, T022, T022A | Auth-focused; full at gate |
+| T024 | CurrentPrincipal FastAPI dependency and request session lifecycle | STANDARD | STRONG_REVIEW_REQUIRED | T023 | Auth/API-focused |
+| T025 | Central authorization helper and tenant policy | STANDARD | STRONG_REVIEW_REQUIRED | T024 | Authorization matrix; full at gate |
+| T026 | Negative authentication, tenant, transaction and migration tests | STANDARD | STRONG_REVIEW_REQUIRED | T023–T025 | Yes |
+| T027 | Security/API/database documentation synchronization | LOW_COST | None | T020–T026 | Focused docs checks |
 
-Recommended order: T010 → T011 → T012 → T013 → T014 → T015 → T016. T015 is documentation/architecture verification only; it must not add Alembic, ORM, or business tables. The first safe low-cost task is T010.
+Recommended order: T020 (Strong Review) -> T021 -> T022 -> T022A -> T023 -> T024 -> T025 -> T026 -> T027. T020 is authoritative; implementation cards may not change identity, token, migration, transaction, tenant, or error semantics without a new accepted ADR.
+
+## Phase 2 completion status (2026-09-18)
+
+T020 was accepted as ADR-004. T021–T026 are implemented, reviewed and committed; T027 synchronizes the documentation with the implementation. No Phase 3 task has started: there is no Task/TaskRun/TaskStep domain, no approval records, and no TaskPilot HTTP endpoint yet.
+
+The Phase 2 definitions of done were verified at the T026 gate: `uv run pytest` (full suite, including the disposable-PostgreSQL persistence and security suites when `TASKPILOT_TEST_DATABASE_URL` is set), `uv run ruff format --check .`, `uv run ruff check --output-format concise`, `uv run pyrefly check`, `uv lock --check`, and `git diff --check`.
