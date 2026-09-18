@@ -1813,3 +1813,172 @@ Learner notes:
 - Do not worry yet about the Task-owned resources that will reuse this pattern.
 
 Suggested next step: focused re-review of the T025 diff, then T026.
+
+### 2026-09-18 — T026: Phase 2 authoritative security and persistence matrix
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-2-identity-rbac`
+- Baseline HEAD: `f9e3a98 feat: add TaskPilot authorization boundaries` (T025),
+  the approved and committed T025 implementation.
+- Working tree before changes: clean (`git status --short` produced no output).
+
+Task Card interpretation:
+- Scope: `process/tasks/T026.md` is a tests-only card ("Tests only; do not alter
+  production behavior to satisfy tests"). It owns the authoritative negative
+  security, transaction and persistence matrix.
+- Boundary: T023/T024/T025 keep their approved designs and focused suites. T026
+  adds the matrix rows those suites do not prove and does not rewrite them.
+- Forbidden: Task domain/CRUD, approval schema or records, permission or role
+  tables, policy engine, JWT, refresh tokens, organization-switch endpoint,
+  migrations/schema, and any T027 documentation work.
+- Conflicts/gaps: two matrix rows cannot be implemented as written.
+  (1) The role/approval row names unauthorized approval and duplicate decision,
+  but no frozen Phase 2 card introduces approval records; only the frozen
+  `APPROVAL_DECISION_ROLES` gate is exercised, and record lookup plus
+  duplicate-decision idempotency stay deferred exactly as T025 recorded.
+  (2) The persistence row names the "production forward-only policy and
+  separately reviewed destructive downgrade", which is a release-process rule;
+  the testable half (no application code path can migrate or downgrade) is
+  asserted, and the process half stays with T027.
+
+Matrix to test map:
+- Authentication - valid, missing, malformed, unknown, expired, revoked,
+  inactive user/membership/organization, legacy bearer, generic failure, and
+  the explicit active-session + inactive-organization case with no principal
+  and no protected-resource access:
+  `test_security_matrix_integration.py::test_authentication_matrix_fails_closed_without_reaching_a_resource`
+  and `::test_active_session_with_inactive_organization_is_401_and_touches_nothing`.
+- Tenant - same-tenant allow, cross-tenant 404, identical nonexistent 404,
+  forged user/organization/role claims, the DB-scoped SQL predicate, and a
+  buggy lookup that still fails closed:
+  `::test_tenant_matrix_allows_same_tenant_and_hides_other_tenants`,
+  `::test_forged_identity_inputs_cannot_select_the_taskpilot_scope`, and
+  `::test_buggy_repository_result_cannot_turn_a_foreign_row_into_access`.
+- `/threads` and AG-UI identity attempts:
+  `::test_threads_query_identity_cannot_select_the_taskpilot_scope` and
+  `::test_agui_configurable_identity_cannot_select_the_taskpilot_scope`.
+- Role/approval - allowed owner/admin/member operations, denied role, approval
+  gate, and 401-never-403 without a principal:
+  `::test_role_and_approval_matrix_is_decided_by_the_server_derived_role` and
+  `::test_unauthenticated_requests_never_reach_a_role_decision`.
+- Secrets - password, hash, token and digest absent from responses and
+  structured logs, bootstrap log secrecy, legacy secret redaction:
+  `::test_credentials_never_appear_in_responses_or_structured_logs`,
+  `test_postgres_integration.py::test_bootstrap_never_logs_the_password_or_the_stored_hash`,
+  `tests/service/test_logging.py::test_legacy_auth_secret_is_redacted_from_logs`.
+- Persistence - fresh database, existing upgrade, revision metadata, LangGraph
+  coexistence, one-revision development/test downgrade, rollback on error,
+  independent sessions and cleanup were already proven by the T021-T023 rows in
+  `test_postgres_integration.py` and are unchanged; the forward-only production
+  policy is now asserted by
+  `test_foundation.py::test_production_code_never_imports_the_migration_toolchain`.
+
+What changed:
+- `tests/persistence/test_security_matrix_integration.py` (new, 10 tests): one
+  disposable PostgreSQL database per test, real FastAPI request handling, the
+  real T024 dependency and T025 guards, and the real upstream `/threads` and
+  `/agui` routers mounted beside the TaskPilot routes. Every protected route
+  body appends to an access list, so "no principal and no protected access" is
+  asserted instead of inferred from a status code. A `/tenant-confirmed/{id}`
+  route additionally applies the frozen `require_resource_tenant` confirmation
+  after the scoped lookup, so an injected buggy repository returning a foreign
+  row is proven to fail closed with the same 404.
+- `tests/persistence/test_postgres_integration.py`: one new test proving a real
+  bootstrap writes neither the plaintext password nor the stored Argon2 hash to
+  the structured logs, even when the persisted user row is debug-logged.
+- `tests/service/test_logging.py`: one new test proving the configured legacy
+  `AUTH_SECRET` is redacted through settings-derived secret registration.
+- `tests/persistence/test_foundation.py`: one new AST test proving no module
+  under `src/` imports the Alembic toolchain, so application startup can never
+  migrate or downgrade the schema.
+- `process/PROGRESS_LOG.md` (this entry).
+- No production file, dependency, schema, migration, or `AUTH_SECRET` behavior
+  changed, so no other document became stale; documentation stays T027's scope.
+
+Why each new file/helper was necessary:
+- The matrix module exists because the `/threads`/AG-UI identity rows and the
+  no-protected-access row need a composition (upstream routers + TaskPilot
+  chain + disposable database) that no existing suite builds; adding them to the
+  T024/T025 suites would have meant editing approved files and blurring task
+  ownership.
+- `_RecordingCheckpointer`, `_build_upstream_agui_agent` and `_apply_guard` are
+  the smallest doubles needed to reach the real upstream handlers and the frozen
+  guard contract. No production abstraction was added.
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_security_matrix_integration.py -q` with
+  live PostgreSQL -> PASS (10 passed, 0 skipped, 10 disposable databases).
+- `uv run pytest tests/service/test_auth_session.py tests/service/test_current_principal.py
+  tests/service/test_authorization.py tests/service/test_bootstrap.py tests/service/test_auth.py -q`
+  -> PASS (145 passed).
+- `uv run pytest tests/persistence -q` with live PostgreSQL -> PASS (87 passed,
+  0 skipped).
+- `uv run pytest -q` with live PostgreSQL -> PASS (436 passed, 4 skipped, 86
+  warnings; the 4 skips are the unrelated `--run-docker` gates).
+- `uv run ruff format --check .`, `uv run ruff check --output-format concise`,
+  `uv run pyrefly check` (0 errors), `uv lock --check`, `git diff --check` ->
+  PASS.
+- Markdown: T026 changed no file matched by the Markdown gate
+  (`^(README\.md|docs/.*\.md)$` in `.pre-commit-config.yaml`, and
+  `uv run pymarkdown scan README.md docs/` in `.github/workflows/test.yml`);
+  `process/*.md` is outside that pattern. That command currently reports 43
+  violations across `docs/`, all pre-existing: `git status` shows no docs file
+  in the T026 diff. Recorded below rather than fixed here, because docs
+  synchronization is T027's scope.
+
+Security notes:
+- The authentication matrix asserts the action, not only the status: rejected
+  credentials produce zero protected-route executions, and only the valid
+  credential produces one.
+- Tenant visibility is asserted at three levels: the tenant predicate in the
+  executed SQL, the recorded `(resource, scope)` pair handed to the repository,
+  and the foreign row that really exists while staying invisible.
+- The tenant invariant also holds when the primary enforcement is broken: a
+  repository double that returns another tenant's row still produces the same
+  404 through the service-side confirmation, with no protected access.
+- The `/threads` and AG-UI tests show the caller claims still reaching upstream
+  LangGraph scoping - the unchanged upstream trust model - while the TaskPilot
+  principal, tenant, scope and responses stay derived from the opaque token.
+- No response or captured structured log contains the plaintext password, the
+  Argon2 hash, the raw token, or its digest.
+
+Known limitations:
+- Approval record lookup and duplicate-decision idempotency remain untestable
+  because V1 has no approval records; only the frozen role gate is covered.
+- The matrix keeps T025's approved route shape (scoped lookup, then role check)
+  for the role-gated routes, and adds one `/tenant-confirmed/{id}` route that
+  also applies the frozen `require_resource_tenant` confirmation. A future
+  Task-owned route should keep the SQL predicate as the primary enforcement and
+  apply the confirmation as the second line of defence, as that route does.
+- The four persistence integration modules still each carry their own
+  disposable-database helper. Consolidating them is a test-infrastructure
+  refactor and was deliberately not part of T026.
+- The "separately reviewed destructive production downgrade" half of the
+  persistence row is a release-process rule; T026 asserts only that no
+  application code path can migrate or downgrade.
+- Pre-existing baseline: `uv run pymarkdown scan README.md docs/` reports 43
+  MD012/MD022/MD032 violations in `docs/` (for example `docs/USER_GUIDE.md:36`
+  and `docs/API_CONVENTIONS.md`). None are in a file T026 touched and none were
+  introduced here; T027 should decide whether to fix them during the docs sync.
+
+Learner notes:
+- Problem solved: Phase 2 now has one suite that answers "does the security
+  boundary actually hold end to end?" with evidence from the database and the
+  real HTTP layer, instead of a collection of separated unit checks.
+- Read `tests/persistence/test_security_matrix_integration.py` (start with the
+  authentication matrix test and the tenant matrix test), then
+  `src/service/auth_dependency.py`, `src/service/authorization.py`, and
+  `OrganizationRepository.get_in_principal_tenant`.
+- Key concept: a security test must assert the decision, not the status code -
+  record who reached the protected body, which scope reached the database, and
+  which tenant rows the SQL could see.
+- Exercise: delete the `organization_id` predicate from
+  `get_in_principal_tenant` and watch the tenant matrix fail while the
+  401/403 cases keep passing.
+- Do not worry yet about approval records, Task CRUD, or consolidating the
+  disposable-database helpers.
+
+Suggested next step: Strong Review of the T026 diff, then T027 documentation
+synchronization.

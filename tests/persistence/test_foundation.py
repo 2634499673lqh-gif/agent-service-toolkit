@@ -1,7 +1,9 @@
+import ast
 import asyncio
 import sys
 import traceback
 from datetime import UTC
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
@@ -227,6 +229,33 @@ def test_business_url_normalizes_postgresql_and_rejects_sqlite() -> None:
     assert normalized.startswith("postgresql+psycopg://user:secret@localhost/taskpilot")
     with pytest.raises(ValueError, match="PostgreSQL"):
         normalize_business_database_url("sqlite+aiosqlite:///business.db")
+
+
+def test_production_code_never_imports_the_migration_toolchain() -> None:
+    """T026 persistence row: migrations stay an out-of-band, forward-only step.
+
+    ADR-004 decision 6: production deploys run ``alembic upgrade head`` as a
+    release/job step before application startup, and application startup never
+    auto-migrates.  Downgrade exists only as the development/test one-revision
+    verification procedure, so no production module may import the migration
+    toolchain and no startup path can migrate or downgrade the schema.
+    """
+
+    source_root = Path(__file__).resolve().parents[2] / "src"
+    offenders: list[str] = []
+    for path in sorted(source_root.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            else:
+                continue
+            if any(module.split(".")[0] == "alembic" for module in modules):
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert offenders == []
 
 
 def test_migration_reflection_filters_only_taskpilot() -> None:

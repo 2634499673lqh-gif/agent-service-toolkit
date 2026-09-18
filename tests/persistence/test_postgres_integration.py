@@ -1,6 +1,7 @@
 """Disposable PostgreSQL verification for TaskPilot migration coexistence."""
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -42,6 +43,7 @@ from service.bootstrap import (
     BootstrapOutcome,
     bootstrap_owner,
 )
+from service.logging import configure_logging
 from service.session import (
     ORGANIZATION_SELECTION_REQUIRED,
     SESSION_TTL,
@@ -1401,6 +1403,37 @@ async def test_bootstrap_creates_owner_then_is_an_idempotent_no_op(
             select(Organization).where(Organization.name == organization_name)
         )
         assert len(list(organizations)) == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_never_logs_the_password_or_the_stored_hash(
+    migrated_engine: AsyncEngine, caplog: pytest.LogCaptureFixture
+) -> None:
+    """T026 secret row: a real bootstrap leaks neither plaintext nor hash to logs."""
+
+    session_factory = create_session_factory(migrated_engine)
+    configure_logging()
+
+    with caplog.at_level(logging.DEBUG):
+        async with get_business_session(session_factory) as session:
+            result = await bootstrap_owner(
+                session,
+                organization_name="Logging Org",
+                email="logging-owner@example.com",
+                password=PASSWORD,
+            )
+        assert result.outcome is BootstrapOutcome.CREATED
+        async with get_business_session(session_factory) as session:
+            user = await UserRepository(session).get_by_email("logging-owner@example.com")
+        assert user is not None
+        # Exactly what a leaky debug log of the persisted row would emit.
+        logging.getLogger("tests.t026.bootstrap").debug("user=%r", user)
+
+    assert PASSWORD not in caplog.text
+    assert user.password_hash.startswith("$argon2id$")
+    assert user.password_hash not in caplog.text
+    assert "$argon2id$" not in caplog.text
+    assert "password_hash" not in caplog.text
 
 
 @pytest.mark.asyncio
