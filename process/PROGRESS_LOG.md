@@ -2327,3 +2327,80 @@ Learner notes:
   retries, and application-level idempotency.
 
 Suggested next task: T032 Strong Review, then T034 TaskRun repository/service.
+
+### 2026-09-19 — T034: Tenant-scoped repositories and transaction boundary
+
+Status: IMPLEMENTED — READY FOR T034 STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `1f02975 feat: add TaskPilot task run persistence`.
+- Working tree before T034 implementation: clean.
+
+What changed:
+- Added `TaskRepository` primitives to add/flush Tasks, load one Task inside
+  a trusted organization scope, and list Tasks inside that scope.
+- Added `TaskRunRepository` primitives to add/flush runs, load a run through a
+  tenant-scoped join to its Task, and list complete historical run records in
+  run-number order.
+- Kept the caller-owned `AsyncSession` and transaction boundary intact:
+  repositories flush but never commit, rollback, close, or replace sessions.
+- Added unit SQL-shape evidence and live PostgreSQL behavioral tests proving
+  own-tenant visibility, foreign/nonexistent invisibility, TaskRun-through-Task
+  scoping, and preserved run history.
+- Updated the architecture, database design, README, and progress log to
+  describe the T034 boundary.
+- No lifecycle transition service, HTTP API, TaskStep, idempotency, runtime
+  binding, or new dependency/framework was added.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/persistence/__init__.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (29 passed,
+  1 existing pytest cache warning).
+- `uv run pytest --basetemp .pytest-tmp-t034 tests/persistence/test_foundation.py tests/persistence/test_postgres_integration.py -q` with live PostgreSQL -> PASS (51 passed, 33 warnings).
+- `uv run pytest --basetemp .pytest-tmp-t034 -q` with live PostgreSQL -> PASS
+  (444 passed, 4 skipped, 92 warnings).
+- `uv run ruff format` on changed Python files -> PASS; `uv run ruff format
+  --check .` -> PASS (116 files already formatted).
+- `uv run ruff check .` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors; 18 suppressed, 5 warnings).
+- `uv lock --check` -> PASS.
+- `uv run pymarkdown scan README.md docs/ARCHITECTURE.md docs/DATABASE_DESIGN.md` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` -> PASS;
+  no new upgrade operations detected; `t032_task_run (head)` is the single head.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- T034 supplies composable persistence/query primitives only. T035 owns legal
+  Task/TaskRun transitions, active-state synchronization, and lifecycle
+  transactions.
+- The repository-local PostgreSQL test harness is required for live tenant
+  isolation evidence. Docker CLI is not available in this environment, but
+  the reachable local PostgreSQL server passed the integration tests.
+
+Learner notes:
+- Problem solved: Task and TaskRun queries now enforce tenant visibility in
+  SQL, so foreign and nonexistent resources are both not found at the
+  repository boundary.
+- Read `src/persistence/repositories.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`,
+  `src/persistence/engine.py`, and `docs/DATABASE_DESIGN.md`.
+- Key concept: repository scope is a trusted server-side organization input;
+  it is a SQL predicate, not a Python post-query authorization check.
+- Exercise: query a foreign TaskRun ID with the local organization scope, then
+  query a nonexistent ID; observe that both return `None` through the same
+  production repository method.
+- Ignore for now: lifecycle state transitions, HTTP status mapping, TaskStep,
+  idempotency, and LangGraph runtime binding.
+
+Suggested next task: T034 Strong Review, then T035 Task lifecycle transition service.

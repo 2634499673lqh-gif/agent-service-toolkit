@@ -69,7 +69,7 @@ redaction are deferred to T014.
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
 | Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | No TaskPilot HTTP endpoint yet; Task-owned resources and approval records are still missing | 2 (done) / 3 |
-| Task/run/step lifecycle | T031/T032 Task and TaskRun persistence foundations; FastAPI/Pydantic patterns | TaskStep schema, repositories, transitions, cancellation, idempotency | 3 |
+| Task/run/step lifecycle | T031/T032 persistence foundations plus T034 tenant-scoped Task/TaskRun repositories; FastAPI/Pydantic patterns | TaskStep schema, lifecycle transitions, cancellation, idempotency | 3 |
 | Planner/executor/verifier/recovery | Demo tool-loop graphs; `StateGraph`, `ToolNode` | Typed state/plan/verdict, bounded retry/replan and acceptance verification | 4 |
 | Checkpoint/resume | Conversation checkpoint plus interrupt demo; `memory/*` | Bind to authorized durable TaskRuns and recovery semantics | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
@@ -96,10 +96,10 @@ Bootstrap order is PostgreSQL, TaskPilot Alembic migrations, LangGraph saver/sto
 
 Implemented and reviewed:
 
-- T021 provides `src/persistence/` with TaskPilot-owned SQLAlchemy metadata, an async psycopg engine/session factory, and the Organization repository. Alembic uses `migrations/env.py` and `taskpilot` schema version metadata; its `include_name` pre-reflection filter plus defensive `include_object` filter exclude public/LangGraph tables from autogenerate.
+- T021 provides `src/persistence/` with TaskPilot-owned SQLAlchemy metadata, an async psycopg engine/session factory, and the Organization repository. T034 adds tenant-scoped Task/TaskRun repositories; TaskRun queries derive tenant ownership through an explicit SQL join to Task. Alembic uses `migrations/env.py` and `taskpilot` schema version metadata; its `include_name` pre-reflection filter plus defensive `include_object` filter exclude public/LangGraph tables from autogenerate.
 - T022/T022A/T023 add `users`, `memberships`, and `auth_sessions` through four linear revisions (`t021_organization`, `t022_user`, `t022a_membership`, `t023_auth_session`), with Argon2id password hashes, a canonical `normalized_email`, the frozen `owner|admin|member` role set, and SHA-256 session-token digests.
 - T023 login issues opaque 24-hour sessions bound to one user and one membership, with generic credential failure and a controlled CLI bootstrap. T024 resolves the request-scoped `CurrentPrincipal` and re-reads all state per request. T025 provides the single authorization boundary with fixed 401/403/404 semantics. T026 supplies the authoritative negative security matrix.
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: any TaskPilot HTTP endpoint (`/api/v1`, login, `/me`), TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032 provide only Task and TaskRun persistence foundations; repositories, lifecycle service, APIs, and runtime remain later work. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.
+Not implemented: any TaskPilot HTTP endpoint (`/api/v1`, login, `/me`), TaskStep records, lifecycle transition service, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence plus tenant-scoped query primitives; lifecycle service, APIs, and runtime remain later work. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.

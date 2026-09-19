@@ -32,6 +32,8 @@ from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
+    TaskRepository,
+    TaskRunRepository,
     UserRepository,
 )
 
@@ -476,6 +478,37 @@ async def test_repository_flushes_without_commit() -> None:
     session_session.flush.assert_awaited_once_with()
     session_session.commit.assert_not_called()
 
+    task_session = Mock()
+    task_session.flush = AsyncMock()
+    task_repository = TaskRepository(task_session)
+    task = Task(
+        organization_id=UUID("33333333-3333-4333-8333-333333333333"),
+        created_by_user_id=UUID("44444444-4444-4444-8444-444444444444"),
+        title="Repository task",
+    )
+
+    assert await task_repository.add(task) is task
+    task_session.add.assert_called_once_with(task)
+    task_session.flush.assert_awaited_once_with()
+    task_session.commit.assert_not_called()
+    task_session.rollback.assert_not_called()
+    task_session.close.assert_not_called()
+
+    task_run_session = Mock()
+    task_run_session.flush = AsyncMock()
+    task_run_repository = TaskRunRepository(task_run_session)
+    task_run = TaskRun(
+        task_id=task.id or UUID("55555555-5555-4555-8555-555555555555"),
+        run_number=1,
+    )
+
+    assert await task_run_repository.add(task_run) is task_run
+    task_run_session.add.assert_called_once_with(task_run)
+    task_run_session.flush.assert_awaited_once_with()
+    task_run_session.commit.assert_not_called()
+    task_run_session.rollback.assert_not_called()
+    task_run_session.close.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_auth_session_repository_looks_up_by_digest_only() -> None:
@@ -577,3 +610,48 @@ async def test_principal_tenant_organization_lookup_is_scoped_in_the_database() 
     # and then compared in Python.
     assert sql.count("taskpilot.organizations.id") >= 2
     assert "where" in sql
+
+
+@pytest.mark.asyncio
+async def test_task_repositories_keep_tenant_scope_in_the_database() -> None:
+    task_id = UUID("55555555-5555-4555-8555-555555555555")
+    task_run_id = UUID("66666666-6666-4666-8666-666666666666")
+    organization_id = UUID("77777777-7777-4777-8777-777777777777")
+
+    task_session = Mock()
+    task_session.scalar = AsyncMock(return_value=None)
+    task_session.scalars = AsyncMock(return_value=[])
+    task_repository = TaskRepository(task_session)
+
+    assert await task_repository.get_in_principal_tenant(task_id, organization_id) is None
+    task_statement = task_session.scalar.await_args.args[0]
+    task_sql = str(task_statement.compile(compile_kwargs={"literal_binds": True})).casefold()
+    assert "taskpilot.tasks.id" in task_sql
+    assert "taskpilot.tasks.organization_id" in task_sql
+
+    assert await task_repository.list_for_organization(organization_id) == []
+    list_sql = str(
+        task_session.scalars.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "taskpilot.tasks.organization_id" in list_sql
+
+    task_run_session = Mock()
+    task_run_session.scalar = AsyncMock(return_value=None)
+    task_run_session.scalars = AsyncMock(return_value=[])
+    task_run_repository = TaskRunRepository(task_run_session)
+
+    assert await task_run_repository.get_in_principal_tenant(task_run_id, organization_id) is None
+    task_run_statement = task_run_session.scalar.await_args.args[0]
+    task_run_sql = str(
+        task_run_statement.compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.tasks" in task_run_sql
+    assert "taskpilot.task_runs.id" in task_run_sql
+    assert "taskpilot.tasks.organization_id" in task_run_sql
+
+    assert await task_run_repository.list_for_task_in_organization(task_id, organization_id) == []
+    task_run_list_sql = str(
+        task_run_session.scalars.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.tasks" in task_run_list_sql
+    assert "taskpilot.tasks.organization_id" in task_run_list_sql

@@ -28,6 +28,8 @@ from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
+    TaskRepository,
+    TaskRunRepository,
     UserRepository,
 )
 
@@ -41,7 +43,9 @@ __all__ = [
     "OrganizationRepository",
     "Role",
     "Task",
+    "TaskRepository",
     "TaskRun",
+    "TaskRunRepository",
     "TaskRunStatus",
     "TaskStatus",
     "User",

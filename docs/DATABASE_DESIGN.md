@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 identity architecture and the T021–T023 schema, plus the Phase 3 T031/T032 Task domain persistence foundations. ADR-004 and ADR-005 are authoritative.
+This document records the Phase 2 identity architecture and the T021–T023 schema, plus the Phase 3 T031/T032/T034 Task domain persistence and repository foundations. ADR-004 and ADR-005 are authoritative.
 
 ## Ownership and bootstrap
 
@@ -41,8 +41,8 @@ Task has no TaskRun. Status is stored as readable lowercase text and is
 constrained to `draft`, `queued`, `running`, `succeeded`, `failed`, or
 `cancelled`. Organization and creator foreign keys use `RESTRICT`, and the
 organization, creator, and status columns are indexed for later tenant-scoped
-queries. TaskRun, lifecycle transitions, repositories, and APIs remain owned
-by later Phase 3 tasks.
+queries. T034 adds tenant-scoped repository queries while lifecycle transitions
+and APIs remain owned by later Phase 3 tasks.
 
 ## TaskRun persistence foundation (T032)
 
@@ -55,6 +55,16 @@ within a Task and terminal history can contain multiple rows. PostgreSQL also
 owns a partial unique index over `task_id` for `pending` and `running` rows;
 this enforces at most one active run per Task. T035 still owns legal lifecycle
 transitions and synchronization between Task and TaskRun states.
+
+## Tenant-scoped repository boundary (T034)
+
+`TaskRepository` requires a trusted organization scope for Task lookups and
+listings. `TaskRunRepository` joins `task_runs` to `tasks` and applies the
+organization predicate to the Task row; TaskRun does not duplicate
+`organization_id`. Foreign or nonexistent resources therefore return the same
+`None`/empty result at the repository visibility boundary. Repository `add`
+operations flush into the caller-owned transaction but never commit, rollback,
+close, or replace the caller's `AsyncSession`.
 
 T022 implements `users`; the second migration is
 `migrations/versions/20260916_01_user.py` and its revision is `t022_user`

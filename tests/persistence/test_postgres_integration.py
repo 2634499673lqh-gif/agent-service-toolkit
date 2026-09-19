@@ -44,6 +44,8 @@ from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
+    TaskRepository,
+    TaskRunRepository,
     UserRepository,
 )
 from persistence.tokens import generate_token, hash_token
@@ -914,6 +916,79 @@ async def test_task_run_persistence_and_active_run_constraints(
         async with get_business_session(session_factory) as session:
             async with session.begin():
                 await session.execute(delete(Task).where(Task.id == task.id))
+
+
+@pytest.mark.asyncio
+async def test_task_repositories_hide_foreign_resources_and_preserve_run_history(
+    migrated_engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    organization_a = Organization(name="Repository Tenant A")
+    organization_b = Organization(name="Repository Tenant B")
+    user_a = User(email="repository-a@example.com", password_hash="opaque-test-hash")
+    user_b = User(email="repository-b@example.com", password_hash="opaque-test-hash")
+
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization_a)
+            await OrganizationRepository(session).add(organization_b)
+            await UserRepository(session).add(user_a)
+            await UserRepository(session).add(user_b)
+            task_a = Task(
+                organization_id=organization_a.id,
+                created_by_user_id=user_a.id,
+                title="Tenant A task",
+            )
+            task_b = Task(
+                organization_id=organization_b.id,
+                created_by_user_id=user_b.id,
+                title="Tenant B task",
+            )
+            await TaskRepository(session).add(task_a)
+            await TaskRepository(session).add(task_b)
+            run_a_two = TaskRun(task_id=task_a.id, run_number=2, status=TaskRunStatus.FAILED)
+            await TaskRunRepository(session).add(run_a_two)
+            run_a_one = TaskRun(
+                task_id=task_a.id,
+                run_number=1,
+                status=TaskRunStatus.SUCCEEDED,
+            )
+            await TaskRunRepository(session).add(run_a_one)
+            foreign_run = TaskRun(
+                task_id=task_b.id,
+                run_number=1,
+                status=TaskRunStatus.CANCELLED,
+            )
+            await TaskRunRepository(session).add(foreign_run)
+
+    async with get_business_session(session_factory) as session:
+        task_repository = TaskRepository(session)
+        assert (
+            await task_repository.get_in_principal_tenant(task_a.id, organization_a.id) is not None
+        )
+        assert await task_repository.get_in_principal_tenant(task_b.id, organization_a.id) is None
+        assert await task_repository.get_in_principal_tenant(uuid4(), organization_a.id) is None
+        assert [
+            task.id for task in await task_repository.list_for_organization(organization_a.id)
+        ] == [task_a.id]
+
+        task_run_repository = TaskRunRepository(session)
+        own_run = await task_run_repository.get_in_principal_tenant(run_a_two.id, organization_a.id)
+        assert own_run is not None
+        assert own_run.task_id == task_a.id
+        assert (
+            await task_run_repository.get_in_principal_tenant(foreign_run.id, organization_a.id)
+            is None
+        )
+        assert await task_run_repository.get_in_principal_tenant(uuid4(), organization_a.id) is None
+        history = await task_run_repository.list_for_task_in_organization(
+            task_a.id, organization_a.id
+        )
+        assert [run.run_number for run in history] == [1, 2]
+        assert (
+            await task_run_repository.list_for_task_in_organization(task_a.id, organization_b.id)
+            == []
+        )
 
 
 @pytest.mark.asyncio
