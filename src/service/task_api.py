@@ -1,4 +1,4 @@
-"""Protected `/api/v1/tasks` routes for T036."""
+"""Protected `/api/v1/tasks` routes for T036–T038."""
 
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
+from schema.task_run_api import TaskRunResponse
 from service.auth_dependency import PrincipalDependency, get_session_factory
 from service.authorization import RESOURCE_NOT_FOUND_DETAIL, AuthorizationError
 from service.task_lifecycle import (
@@ -15,6 +16,7 @@ from service.task_lifecycle import (
     TaskLifecycleInconsistentStateError,
     TaskNotFoundError,
 )
+from service.task_run_service import TaskRunService
 from service.task_service import TaskService
 
 TASK_LIFECYCLE_CONFLICT_DETAIL = "Task lifecycle conflict"
@@ -119,6 +121,47 @@ async def cancel_task(
             detail=TASK_LIFECYCLE_CONFLICT_DETAIL,
         ) from None
     return TaskResponse.model_validate(task)
+
+
+@task_router.post(
+    "/{task_id}/runs",
+    response_model=TaskRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_task_run(
+    task_id: UUID,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> TaskRunResponse:
+    try:
+        task_run = await TaskRunService(session).start_task(principal, task_id)
+    except TaskNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=RESOURCE_NOT_FOUND_DETAIL,
+        ) from None
+    except (TaskLifecycleConflictError, TaskLifecycleInconsistentStateError):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=TASK_LIFECYCLE_CONFLICT_DETAIL,
+        ) from None
+    return TaskRunResponse.model_validate(task_run)
+
+
+@task_router.get("/{task_id}/runs/{run_id}", response_model=TaskRunResponse)
+async def get_task_run(
+    task_id: UUID,
+    run_id: UUID,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> TaskRunResponse:
+    task_run = await TaskRunService(session).get_run(principal, task_id, run_id)
+    if task_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=RESOURCE_NOT_FOUND_DETAIL,
+        )
+    return TaskRunResponse.model_validate(task_run)
 
 
 __all__ = ["TASK_LIFECYCLE_CONFLICT_DETAIL", "get_task_session", "task_router"]

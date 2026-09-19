@@ -113,6 +113,25 @@ class TaskRunRepository:
         )
         return await self.session.scalar(statement)
 
+    async def get_for_task_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> TaskRun | None:
+        """Load one run only when it belongs to the requested visible Task."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
     async def get_for_update_in_principal_tenant(
         self, task_run_id: UUID, principal_organization_id: UUID
     ) -> TaskRun | None:

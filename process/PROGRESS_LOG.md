@@ -2565,8 +2565,8 @@ runtime/LangGraph execution, or lifecycle state machine outside T035 was added.
 
 Known limitations:
 - Cancellation remains persistence-only and does not interrupt external work.
-- Login, TaskRun HTTP APIs, TaskStep, approvals, runtime execution, and
-  application-level idempotency remain deferred.
+- Login, later TaskRun runtime operations, TaskStep, approvals, runtime
+  execution, and application-level idempotency remain deferred.
 
 Learner notes:
 - Problem solved: authenticated users can update permitted Task metadata and
@@ -2579,3 +2579,57 @@ Learner notes:
 - Exercise: add a test proving a member cannot update or cancel another
   member's Task while an admin can.
 - Ignore for now: TaskRun HTTP routes, runtime interruption, and idempotency.
+
+### 2026-09-19 — T038: TaskRun start/inspect API
+
+Status: IMPLEMENTED — READY FOR T038 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `POST /api/v1/tasks/{task_id}/runs` for tenant-scoped start/retry.
+- Added `GET /api/v1/tasks/{task_id}/runs/{run_id}` for tenant-scoped persisted
+  TaskRun inspection.
+- Delegated all Task/TaskRun lifecycle state changes, run numbering, row locks,
+  transaction commit/rollback, and retry legality to the T035 lifecycle service.
+- Allowed start only from `DRAFT` or `FAILED`; illegal and inconsistent states
+  map to a stable HTTP 409 response.
+- Added a TaskRun response containing only persisted identity, task ID, run
+  number, status, and timestamps; no runtime metadata or idempotency contract.
+- Added real PostgreSQL HTTP coverage for authentication, tenant isolation,
+  foreign/nonexistent equivalence, DRAFT start, FAILED retry history, illegal
+  restart states, and TaskRun response shape.
+- Updated API, architecture, security, README, user-guide, and progress docs.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/schema/task_run_api.py`
+- `src/service/task_api.py`
+- `src/service/task_run_service.py`
+- `tests/service/test_task_run_api_postgres.py`
+- `README.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_HITL.md`
+- `docs/USER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T038. TaskStep, runtime execution, planner/executor/
+verifier behavior, application-level idempotency, and external side effects
+remain deferred.
+
+Known limitations:
+- T038 persists lifecycle state only; it does not invoke an LLM or interrupt
+  external work.
+- Login, TaskStep, approvals, runtime execution, and application-level
+  idempotency remain deferred.
+
+Learner notes:
+- Problem solved: authenticated callers can start/retry tenant-visible Tasks
+  and inspect persisted TaskRun history without bypassing T035 lifecycle rules.
+- Read `src/service/task_api.py`, `src/service/task_run_service.py`,
+  `src/service/task_lifecycle.py`, `src/persistence/repositories.py`, and
+  `tests/service/test_task_run_api_postgres.py`.
+- Key concept: API code adapts HTTP to the lifecycle service; it does not own
+  state transitions, run numbering, locking, or transaction commits.
+- Exercise: add a concurrent HTTP start test proving one winner and one 409
+  after the existing domain-level concurrency test.
+- Ignore for now: TaskStep, runtime graphs, tool execution, and idempotency.
