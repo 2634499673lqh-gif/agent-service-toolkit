@@ -139,9 +139,11 @@ T026 is a tests-only card; it changed no production behavior and is the authorit
 ## Known deferrals
 
 - No approval records, approval tables, permission tables, role tables, or policy engine exist in V1. Only the frozen `APPROVAL_DECISION_ROLES` gate (`owner`/`admin`) is implemented, and duplicate-decision idempotency is untestable until the approval domain is introduced.
-- T036 now provides protected Task create/list/get routes under `/api/v1/tasks`.
-  Login remains outside HTTP scope; principal resolution and authorization use
-  the existing service and FastAPI-dependency layers.
+- T036/T037 now provide protected Task create/list/get/update/cancel routes under
+  `/api/v1/tasks`. Login remains outside HTTP scope; principal resolution and
+  authorization use the existing service and FastAPI-dependency layers. Admins
+  manage tenant Tasks; members are limited to Tasks they created, and owners do
+  not inherit admin task permissions.
 - No Task, TaskRun, TaskStep, planner/executor/verifier, or TaskPilot observability/audit domain exists.
 - The security matrix and the persistence suites require a disposable PostgreSQL test database; without `TASKPILOT_TEST_DATABASE_URL` they skip, which is not evidence of success.
 - Destructive production migration downgrade remains a separately reviewed process step, not an automated or routine recovery mechanism.

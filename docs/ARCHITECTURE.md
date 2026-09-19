@@ -68,8 +68,8 @@ redaction are deferred to T014.
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
-| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | Task create/list/get is implemented in T036; Task-owned mutation/run APIs and approval records remain missing | 2 (done) / 3 |
-| Task/run/step lifecycle | T031/T032 persistence foundations plus T034 tenant-scoped Task/TaskRun repositories; FastAPI/Pydantic patterns | TaskStep schema, lifecycle transitions, cancellation, idempotency | 3 |
+| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task create/list/get/update/cancel APIs are implemented; TaskRun APIs and approval records remain missing | 2 (done) / 3 |
+| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, and T037 cancellation API | TaskStep schema, TaskRun HTTP APIs, idempotency | 3 |
 | Planner/executor/verifier/recovery | Demo tool-loop graphs; `StateGraph`, `ToolNode` | Typed state/plan/verdict, bounded retry/replan and acceptance verification | 4 |
 | Checkpoint/resume | Conversation checkpoint plus interrupt demo; `memory/*` | Bind to authorized durable TaskRuns and recovery semantics | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
@@ -102,4 +102,4 @@ Implemented and reviewed:
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, and T036 provides tenant-safe Task create/list/get routes under `/api/v1/tasks`; Task mutation/run APIs and runtime remain later work. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.
+Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, and T036/T037 provide tenant-safe Task create/list/get/update/cancel routes under `/api/v1/tasks`; TaskRun APIs and runtime remain later work. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.

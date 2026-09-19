@@ -2526,3 +2526,56 @@ Status: READY FOR FOCUSED T035 RE-REVIEW (uncommitted)
 - Added fresh persisted PostgreSQL assertions for both QUEUED/PENDING and
   RUNNING/RUNNING cancellation.
 - Updated T035 transaction-boundary documentation and tests.
+
+### 2026-09-19 — T037: Task update/cancel API
+
+Status: IMPLEMENTED — READY FOR T037 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `PATCH /api/v1/tasks/{task_id}` for mutable `title` and `description`
+  fields only; server-owned identity and lifecycle fields are ignored or
+  rejected by the request model.
+- Added `POST /api/v1/tasks/{task_id}/cancel`, delegating persistence-only
+  cancellation to the T035 `TaskLifecycleService`.
+- Applied the frozen tenant/role policy: admins manage any Task in their active
+  organization; members manage only Tasks they created; owners do not inherit
+  admin task permissions.
+- Mapped foreign/nonexistent resources to 404, same-tenant insufficient access
+  to 403, and lifecycle conflicts/inconsistent persisted states to a stable 409.
+- Added real PostgreSQL HTTP tests for authentication, ownership/role policy,
+  tenant isolation, update persistence, draft/queued/running cancellation,
+  repeated cancellation, and terminal conflicts.
+- Updated API, architecture, security, README, user-guide, and progress docs.
+
+Files changed:
+- `src/schema/task_api.py`
+- `src/service/authorization.py`
+- `src/service/task_api.py`
+- `src/service/task_service.py`
+- `tests/service/test_task_api_t037_postgres.py`
+- `README.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_HITL.md`
+- `docs/USER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T037. No TaskRun API, TaskStep, idempotency,
+runtime/LangGraph execution, or lifecycle state machine outside T035 was added.
+
+Known limitations:
+- Cancellation remains persistence-only and does not interrupt external work.
+- Login, TaskRun HTTP APIs, TaskStep, approvals, runtime execution, and
+  application-level idempotency remain deferred.
+
+Learner notes:
+- Problem solved: authenticated users can update permitted Task metadata and
+  cancel Tasks without bypassing tenant or lifecycle rules.
+- Read `src/service/task_api.py`, `src/service/task_service.py`,
+  `src/service/task_lifecycle.py`, `src/service/authorization.py`, and
+  `tests/service/test_task_api_t037_postgres.py`.
+- Key concept: authorization first resolves a tenant-scoped resource, then
+  applies same-tenant policy; lifecycle mutation remains owned by T035.
+- Exercise: add a test proving a member cannot update or cancel another
+  member's Task while an admin can.
+- Ignore for now: TaskRun HTTP routes, runtime interruption, and idempotency.

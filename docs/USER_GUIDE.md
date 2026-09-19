@@ -4,7 +4,7 @@
 
 ## Status (2026-09-18)
 
-Everything below describes the target V1 workflow beyond the currently implemented surface. There is no login endpoint, run/step view, or approval UI; T036 does provide protected Task create/list/get routes under `/api/v1/tasks`. Phase 2 delivered the identity and tenancy layers: the PostgreSQL `taskpilot` tables, opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the commands that do exist.
+Everything below describes the target V1 workflow beyond the currently implemented surface. There is no login endpoint, run/step view, or approval UI; T036/T037 provide protected Task create/list/get/update/cancel routes under `/api/v1/tasks`. Phase 2 delivered the identity and tenancy layers: the PostgreSQL `taskpilot` tables, opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the available commands.
 
 ## What TaskPilot does
 

@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from persistence.models import TaskStatus
 
@@ -37,4 +37,24 @@ class TaskResponse(BaseModel):
     updated_at: datetime
 
 
-__all__ = ["TaskCreateRequest", "TaskResponse"]
+class TaskUpdateRequest(BaseModel):
+    """Client-controlled mutable Task fields for a partial update."""
+
+    title: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def title_must_not_be_blank_or_null(cls, value: str | None) -> str:
+        if value is None or not value.strip():
+            raise ValueError("title must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def update_must_include_a_field(self) -> "TaskUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one mutable field is required")
+        return self
+
+
+__all__ = ["TaskCreateRequest", "TaskResponse", "TaskUpdateRequest"]
