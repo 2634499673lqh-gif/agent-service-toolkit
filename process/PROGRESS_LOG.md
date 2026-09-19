@@ -2448,6 +2448,72 @@ Learner notes:
   failed while run #2 is pending.
 - Ignore for now: HTTP wiring, runtime execution, TaskStep, and idempotency.
 
+### 2026-09-19 — T036: Task create/list/get API
+
+Status: IMPLEMENTED — READY FOR T036 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added protected `POST /api/v1/tasks`, `GET /api/v1/tasks`, and
+  `GET /api/v1/tasks/{task_id}` routes using the server-derived
+  `CurrentPrincipal`.
+- Added typed request/response models and a small Task application service.
+- Creation derives organization and creator from the principal, commits through
+  the service boundary, starts in `DRAFT`, and creates no TaskRun.
+- Reads use the tenant-scoped TaskRepository; foreign and nonexistent Tasks both
+  return the fixed 404 response.
+- Added real PostgreSQL HTTP/security coverage for authentication, spoofed
+  identity fields, tenant-scoped listing, foreign/nonexistent equivalence, and
+  persisted creation state.
+- Updated API, architecture, README, user-guide, and progress documentation.
+
+Files changed:
+- `src/schema/task_api.py`
+- `src/service/task_api.py`
+- `src/service/task_service.py`
+- `src/service/service.py`
+- `tests/service/test_task_api_postgres.py`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/USER_GUIDE.md`
+- `docs/SECURITY_HITL.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T036. No TaskRun API, Task mutation/cancellation API,
+TaskStep, idempotency, runtime execution, or new dependency was added.
+Task API models are imported directly from `schema.task_api`; they are
+intentionally not re-exported from `schema` to keep package initialization
+acyclic.
+
+Commands/tests run:
+- `uv run pytest tests/service/test_task_api_postgres.py -q` -> PASS (1 passed).
+- Focused identity/lifecycle/persistence regression -> PASS (98 unit tests and
+  72 PostgreSQL integration tests passed; the one combined run was separated so
+  the business-database environment variable could not affect settings tests).
+- `uv run pytest -q` with `TASKPILOT_TEST_DATABASE_URL` only -> PASS (455 passed,
+  4 skipped).
+- `uv run alembic upgrade head`, `uv run alembic check`, and import sanity
+  checks -> PASS; no circular import reproduced.
+- Ruff format/check, `uv run pyrefly check`, `uv lock --check`, focused
+  Markdown scans, and `git diff --check` -> PASS.
+
+Known limitations:
+- Login remains a service/CLI concern; Task mutation/run APIs, TaskStep,
+  idempotency, runtime execution, approvals, and observability remain later
+  Phase 3/4 work.
+
+Learner notes:
+- Problem solved: authenticated callers can create and read only Tasks in their
+  current organization, without trusting client-supplied identity fields.
+- Read `src/service/task_api.py`, `src/service/task_service.py`,
+  `src/schema/task_api.py`, `tests/service/test_task_api_postgres.py`, and
+  `src/service/auth_dependency.py`.
+- Key concept: the route authenticates a principal, the service owns the use
+  case, and the repository enforces tenant scope in the query.
+- Exercise: add a test proving a malformed UUID returns FastAPI's validation
+  response without reaching the repository.
+- Ignore for now: TaskRun HTTP operations, runtime graphs, and approvals.
+
 ### 2026-09-19 — T035 blocker-only fix B1–B3
 
 Status: READY FOR FOCUSED T035 RE-REVIEW (uncommitted)

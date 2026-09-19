@@ -1,6 +1,10 @@
 # API Conventions
 
-TaskPilot currently exposes **no** HTTP endpoint of its own. The retained upstream routes (`/invoke`, `/stream`, `/history`, `/threads`, `/feedback`, `/info`, `/health`, `/agui/*`) are unchanged, and `/api/v1` exists only as the planned prefix below. Login, principal resolution, and authorization are implemented as service and FastAPI-dependency layers, not as routes.
+TaskPilot now exposes the T036 Task create/list/get surface under `/api/v1/tasks`.
+The retained upstream routes (`/invoke`, `/stream`, `/history`, `/threads`,
+`/feedback`, `/info`, `/health`, `/agui/*`) are unchanged. Login remains a
+service/CLI concern; principal resolution and authorization use the existing
+FastAPI dependencies.
 
 Planned prefix: `/api/v1`.
 
@@ -9,14 +13,14 @@ Planned prefix: `/api/v1`.
 - POST `/auth/login`
 - GET `/me`
 
-## Tasks (planned, not implemented)
+## Tasks (T036 implemented)
 
 - POST `/tasks`
 - GET `/tasks`
 - GET `/tasks/{task_id}`
-- POST `/tasks/{task_id}/runs`
-- GET `/tasks/{task_id}/runs/{run_id}`
-- POST `/tasks/{task_id}/runs/{run_id}/cancel`
+- POST `/tasks/{task_id}/runs` *(planned T038)*
+- GET `/tasks/{task_id}/runs/{run_id}` *(planned T038)*
+- POST `/tasks/{task_id}/runs/{run_id}/cancel` *(planned later)*
 
 ## Approvals (planned, not implemented)
 
@@ -42,6 +46,12 @@ Exact endpoints should follow the existing codebase conventions after Phase 0.
 - idempotency key for retryable create/action endpoints where needed
 - no direct DB calls in route handlers
 - cross-tenant or nonexistent resources answer `404`, not `403`, to hide existence; this is now the frozen decision documented below
+
+T036 implements only `POST /api/v1/tasks`, `GET /api/v1/tasks`, and
+`GET /api/v1/tasks/{task_id}`. Creation accepts `title` and optional
+`description`; organization and creator are derived from `CurrentPrincipal`.
+New Tasks are persisted as `draft` with no TaskRun. Run and mutation endpoints
+remain assigned to later Phase 3 tasks.
 
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 
