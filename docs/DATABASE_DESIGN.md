@@ -31,6 +31,19 @@ flushes but never commits; service code owns transaction commit/rollback.
 - `memberships`: UUID4 `id`, unique `(user_id, organization_id)`, constrained role enum `owner|admin|member`, `is_active`, UTC `created_at`, `updated_at`, explicit foreign keys.
 - `auth_sessions`: UUID4 `id`, indexed SHA-256 token hash, user/membership foreign keys, `expires_at`, `revoked_at`, UTC timestamps. Raw tokens are never stored.
 
+## Task domain foundation (T031)
+
+`tasks` is the first Phase 3 business table. Each row stores a UUID4 `id`,
+server-derived `organization_id`, server-derived `created_by_user_id`, a
+non-blank `title`, optional `description`, the user-visible `status`, and
+UTC `created_at`/`updated_at` timestamps. New rows default to `DRAFT`; a new
+Task has no TaskRun. Status is stored as readable lowercase text and is
+constrained to `draft`, `queued`, `running`, `succeeded`, `failed`, or
+`cancelled`. Organization and creator foreign keys use `RESTRICT`, and the
+organization, creator, and status columns are indexed for later tenant-scoped
+queries. TaskRun, lifecycle transitions, repositories, and APIs remain owned
+by later Phase 3 tasks.
+
 T022 implements `users`; the second migration is
 `migrations/versions/20260916_01_user.py` and its revision is `t022_user`
 (`down_revision = t021_organization`). `email` keeps the trimmed display
@@ -100,4 +113,4 @@ The first Organization + owner User + owner Membership is created only by `scrip
 
 ## Verification (T021–T026)
 
-The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.
+The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session` -> `t031_task`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.

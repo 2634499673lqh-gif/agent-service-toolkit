@@ -4,7 +4,7 @@ TaskPilot is a production-oriented task-execution platform for knowledge work. T
 
 ## Current scope
 
-The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy: a PostgreSQL-only `taskpilot` schema (`organizations`, `users`, `memberships`, `auth_sessions`), Argon2id passwords, opaque revocable sessions, a server-derived request principal, a centralized authorization boundary with fixed 401/403/404 semantics, tenant-scoped lookups, and a negative security matrix. These are service, dependency, and persistence layers: **no TaskPilot HTTP endpoint exists yet**, and Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approvals, and TaskPilot observability tables are still absent. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and the phase boundary.
+The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy, and the T031 Task persistence foundation: a PostgreSQL-only `taskpilot` schema (`organizations`, `users`, `memberships`, `auth_sessions`, `tasks`), Argon2id passwords, opaque revocable sessions, a server-derived request principal, a centralized authorization boundary with fixed 401/403/404 semantics, tenant-scoped lookups, and a negative security matrix. These are service, dependency, and persistence layers: **no TaskPilot HTTP endpoint exists yet**, and TaskRun/TaskStep records, planner/executor/verifier behavior, approvals, and TaskPilot observability tables are still absent. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and the phase boundary.
 
 ## Getting started
 

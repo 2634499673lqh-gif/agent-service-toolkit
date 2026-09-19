@@ -62,14 +62,14 @@ redaction are deferred to T014.
 - SQLite checkpoint: lightweight local-development checkpoint; the long-term store is process-local `InMemoryStore` and is not durable across restarts.
 - PostgreSQL LangGraph persistence: `AsyncPostgresSaver` and `AsyncPostgresStore` create and upgrade library-managed checkpoint/Store schemas via `setup()`.
 - MongoDB: optional checkpointer only (`docker/compose.mongo.yaml`); no Mongo Store.
-- At the Phase 1 baseline there were no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. Phase 2 (T021–T023) now adds exactly four business tables - `organizations`, `users`, `memberships`, and `auth_sessions` - and nothing else; `src/schema/task_data.py` remains Streamlit background-task display data, not the TaskPilot domain.
+- At the Phase 1 baseline there were no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. Phase 2 (T021–T023) added the identity tables `organizations`, `users`, `memberships`, and `auth_sessions`; T031 now adds the persistence-only `tasks` table. `src/schema/task_data.py` remains Streamlit background-task display data, not the TaskPilot domain.
 
 ## Current feature inventory and TaskPilot V1 gap
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
 | Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | No TaskPilot HTTP endpoint yet; Task-owned resources and approval records are still missing | 2 (done) / 3 |
-| Task/run/step lifecycle | None; FastAPI/Pydantic patterns | Domain schema, migrations, repositories, transitions, cancellation, idempotency | 3 |
+| Task/run/step lifecycle | T031 Task persistence foundation; FastAPI/Pydantic patterns | TaskRun/TaskStep schema, migrations, repositories, transitions, cancellation, idempotency | 3 |
 | Planner/executor/verifier/recovery | Demo tool-loop graphs; `StateGraph`, `ToolNode` | Typed state/plan/verdict, bounded retry/replan and acceptance verification | 4 |
 | Checkpoint/resume | Conversation checkpoint plus interrupt demo; `memory/*` | Bind to authorized durable TaskRuns and recovery semantics | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
@@ -102,4 +102,4 @@ Implemented and reviewed:
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: any TaskPilot HTTP endpoint (`/api/v1`, login, `/me`), Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.
+Not implemented: any TaskPilot HTTP endpoint (`/api/v1`, login, `/me`), TaskRun/TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031 provides only the Task persistence foundation; repositories, lifecycle service, APIs, and runtime remain later work. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.

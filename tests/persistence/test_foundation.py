@@ -16,7 +16,16 @@ from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
-from persistence.models import AuthSession, Membership, Organization, Role, User, utc_now
+from persistence.models import (
+    AuthSession,
+    Membership,
+    Organization,
+    Role,
+    Task,
+    TaskStatus,
+    User,
+    utc_now,
+)
 from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
@@ -38,11 +47,63 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.users",
         "taskpilot.memberships",
         "taskpilot.auth_sessions",
+        "taskpilot.tasks",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
     assert Membership.__table__.schema == "taskpilot"
     assert AuthSession.__table__.schema == "taskpilot"
+    assert Task.__table__.schema == "taskpilot"
+
+
+def test_task_status_and_defaults_are_frozen() -> None:
+    assert [status.value for status in TaskStatus] == [
+        "draft",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    task = Task(
+        organization_id=UUID("11111111-1111-4111-8111-111111111111"),
+        created_by_user_id=UUID("22222222-2222-4222-8222-222222222222"),
+        title="Research task",
+    )
+    assert task.status is TaskStatus.DRAFT
+    assert task.description is None
+    assert task.id is None
+    assert task.created_at is None
+    assert task.updated_at is None
+
+
+def test_task_metadata_declares_tenant_creator_and_status_constraints() -> None:
+    table = Task.__table__
+    assert table.c.id.type.python_type is UUID
+    assert table.c.organization_id.nullable is False
+    assert table.c.created_by_user_id.nullable is False
+    assert table.c.title.nullable is False
+    assert table.c.description.nullable is True
+    assert table.c.status.nullable is False
+    assert table.c.status.server_default is not None
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert {constraint.name for constraint in table.constraints if constraint.name} == {
+        "ck_tasks_task_title_not_blank",
+        "ck_tasks_task_status_valid",
+        "pk_tasks",
+        "fk_tasks_organization_id_organizations",
+        "fk_tasks_created_by_user_id_users",
+    }
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert foreign_keys["organization_id"].target_fullname == "taskpilot.organizations.id"
+    assert foreign_keys["created_by_user_id"].target_fullname == "taskpilot.users.id"
+    assert all(fk.ondelete == "RESTRICT" for fk in foreign_keys.values())
+    assert {index.name for index in table.indexes} == {
+        "ix_tasks_organization_id",
+        "ix_tasks_created_by_user_id",
+        "ix_tasks_status",
+    }
 
 
 def test_role_enum_matches_the_frozen_v1_role_set() -> None:

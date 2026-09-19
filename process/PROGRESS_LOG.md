@@ -2170,3 +2170,76 @@ Suggested next task: T030 Strong Review. Do not start T031 until ADR-005 and its
 - No production code, tests, dependencies, or migrations changed.
 - Validation: `git diff --check`; stale-contract search and diff review remain to be reported with the final review.
 - Learner focus: distinguish business Task state from execution-attempt TaskRun state, and distinguish domain concurrency invariants from application idempotency.
+
+### 2026-09-18 — T031: Task schema and migration
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `e817df4 docs: freeze Phase 3 task domain architecture`.
+- Working tree before implementation: clean.
+
+What changed:
+- Added the `Task` ORM model and `TaskStatus` enum with the frozen six-state
+  user-visible lifecycle. New tasks default to `DRAFT` and contain no run.
+- Added tenant and creator provenance columns as non-null PostgreSQL foreign
+  keys to `organizations` and `users`, with `RESTRICT` delete behavior.
+- Added non-blank title, optional description, readable lowercase status,
+  UTC timestamps, explicit indexes, and PostgreSQL check constraints.
+- Added the linear Alembic revision `t031_task`, registered the model in the
+  metadata and migration environment, and updated the relevant architecture,
+  database, and README status statements.
+- No TaskRun, TaskStep, repository, lifecycle service, API, runtime, or
+  application idempotency behavior was added.
+
+Files changed:
+- `src/persistence/models.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260918_01_task.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (26 passed).
+- `uv run pytest tests/persistence/test_postgres_integration.py -q` with live
+  PostgreSQL -> PASS (19 passed, 27 warnings).
+- `uv run pytest -q` with live PostgreSQL -> PASS (439 passed, 4 skipped,
+  87 warnings).
+- `uv run ruff format --check .` -> PASS (115 files already formatted).
+- `uv run ruff check --output-format concise` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors).
+- `uv lock --check` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` against
+  PostgreSQL -> PASS; no new upgrade operations detected.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- The T031 card does not define a public API or lifecycle service; those stay
+  with T034–T038. The schema intentionally does not contain TaskRun fields.
+- Alembic requires an explicit PostgreSQL URL; application startup still does
+  not auto-migrate.
+
+Learner notes:
+- Problem solved: TaskPilot now has a durable tenant-owned Task record whose
+  initial state and provenance are enforced at the persistence boundary.
+- Read `src/persistence/models.py`,
+  `migrations/versions/20260918_01_task.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`, and
+  `docs/DATABASE_DESIGN.md`.
+- Key concept: an ORM default and a database server default must describe the
+  same invariant, while tenant ownership still belongs in explicit columns and
+  foreign keys.
+- Exercise: create one Task in a PostgreSQL transaction, query it back, then
+  try inserting an invalid status and deleting its organization; observe the
+  database reject both operations.
+- Ignore for now: TaskRun numbering, lifecycle transitions, HTTP routes,
+  planner/executor/verifier behavior, and idempotency.
+
+Suggested next task: T031 Strong Review, then T032 TaskRun schema and migration.
