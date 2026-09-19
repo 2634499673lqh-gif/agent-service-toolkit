@@ -2633,3 +2633,68 @@ Learner notes:
 - Exercise: add a concurrent HTTP start test proving one winner and one 409
   after the existing domain-level concurrency test.
 - Ignore for now: TaskStep, runtime graphs, tool execution, and idempotency.
+
+### 2026-09-19 — Phase 3 Final Audit B1: stale locked Task refresh
+
+Status: FIXED — READY FOR FOCUSED PHASE 3 RE-AUDIT (uncommitted)
+
+What changed:
+- Reproduced the audit interleaving against PostgreSQL: one Session preloaded a
+  `DRAFT` Task, another Session committed `QUEUED` plus a `PENDING` TaskRun,
+  and cancellation in the first Session incorrectly committed `CANCELLED`
+  while leaving the run `PENDING`.
+- Added `populate_existing=True` to the tenant-scoped Task `SELECT ... FOR
+  UPDATE`, so every T035 lifecycle branch uses the current database state from
+  the locked row even when that Task identity was already loaded.
+- Added a deterministic PostgreSQL regression using independent Sessions and a
+  fresh final database read. It asserts one historical cancelled run and no
+  `PENDING` or `RUNNING` run after cancellation.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `tests/service/test_task_lifecycle_postgres.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- Pre-fix focused B1 test -> expected FAIL: fresh state was Task `CANCELLED`,
+  Run `PENDING`.
+- Post-fix focused B1 test -> PASS (1 passed).
+- Affected T035/T036/T037/T038 and persistence regression -> PASS (67 passed).
+- Full pytest with `TASKPILOT_TEST_DATABASE_URL` -> PASS (460 passed, 4
+  skipped, 102 warnings); mandatory Phase 3 PostgreSQL tests executed.
+- Ruff tracked-Python format check and lint -> PASS (127 tracked files already formatted,
+  all checks passed). Direct repository-root traversal remains affected by the
+  pre-existing inaccessible `.pytest-tmp-*` directories.
+- Pyrefly -> PASS (0 errors; 18 suppressed, 6 warnings not shown).
+- `uv lock --check` -> PASS.
+- Alembic heads/history and fresh disposable PostgreSQL upgrade/current/check
+  -> PASS; `t032_task_run` is the single head and no schema drift was found.
+- Direct `schema`, `schema.task_api`, `schema.task_run_api`, and application
+  imports with the repository's `src` layout -> PASS.
+
+Security/transaction review:
+- Tenant predicates and T037 admin/member/owner authorization are unchanged.
+- Repositories still query/add/flush only; `TaskLifecycleService` remains the
+  sole lifecycle commit/rollback owner and the outer dependency owns close.
+- No migration, API, dependency, runtime, recovery, idempotency, or distributed
+  locking change was introduced.
+
+Known limitations:
+- Cancellation remains persistence-only and does not interrupt external work,
+  as required by ADR-005. No B1-related blocker remains.
+
+Learner notes:
+- Problem solved: a database row lock does not itself refresh an ORM object
+  already present in a Session; cancellation now branches on locked database
+  truth instead of stale identity-map state.
+- Read `src/persistence/repositories.py`, `src/service/task_lifecycle.py`,
+  `src/service/task_service.py`, and
+  `tests/service/test_task_lifecycle_postgres.py`.
+- Key concept: `SELECT ... FOR UPDATE` serializes access, while
+  `populate_existing` separately repopulates an existing ORM identity.
+- Exercise: temporarily remove `populate_existing`, run the focused B1 test,
+  and inspect the final Task and TaskRun statuses; then restore the line.
+- Do not worry yet about TaskStep, runtime interruption, application
+  idempotency, distributed locks, or automatic recovery.
+
+Suggested next task: focused Phase 3 Final Audit B1 re-audit only.

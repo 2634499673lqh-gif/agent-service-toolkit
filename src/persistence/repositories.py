@@ -61,6 +61,7 @@ class TaskRepository:
                 Task.organization_id == principal_organization_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
 

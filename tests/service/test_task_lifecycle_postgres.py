@@ -24,6 +24,7 @@ from persistence.models import (
     TaskStatus,
     User,
 )
+from persistence.repositories import TaskRepository
 from service.task_lifecycle import (
     TaskLifecycleConflictError,
     TaskLifecycleInconsistentStateError,
@@ -207,6 +208,57 @@ async def test_postgres_queued_and_running_cancellation_are_persisted(
         assert task.status is TaskStatus.CANCELLED
         assert len(runs) == 1
         assert runs[0].status is TaskRunStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_postgres_cancel_refreshes_preloaded_task_after_concurrent_start(
+    session_factory, seeded_task
+) -> None:
+    organization_id, _, task_id = seeded_task
+
+    async with session_factory() as cancellation_session:
+        preloaded_task = await TaskRepository(cancellation_session).get_in_principal_tenant(
+            task_id, organization_id
+        )
+        assert preloaded_task is not None
+        assert preloaded_task.status is TaskStatus.DRAFT
+
+        async with session_factory() as start_session:
+            started_run = await TaskLifecycleService(start_session).start_task(
+                task_id, organization_id
+            )
+            assert started_run.status is TaskRunStatus.PENDING
+
+        async with session_factory() as committed_session:
+            committed_task = await committed_session.get_one(Task, task_id)
+            committed_runs = list(
+                (
+                    await committed_session.scalars(
+                        select(TaskRun).where(TaskRun.task_id == task_id)
+                    )
+                ).all()
+            )
+            assert committed_task.status is TaskStatus.QUEUED
+            assert len(committed_runs) == 1
+            assert committed_runs[0].status is TaskRunStatus.PENDING
+
+        await TaskLifecycleService(cancellation_session).cancel_task(task_id, organization_id)
+
+    async with session_factory() as verification_session:
+        final_task = await verification_session.get_one(Task, task_id)
+        final_runs = list(
+            (
+                await verification_session.scalars(
+                    select(TaskRun).where(TaskRun.task_id == task_id)
+                )
+            ).all()
+        )
+        assert final_task.status is TaskStatus.CANCELLED
+        assert len(final_runs) == 1
+        assert final_runs[0].status is TaskRunStatus.CANCELLED
+        assert all(
+            run.status not in (TaskRunStatus.PENDING, TaskRunStatus.RUNNING) for run in final_runs
+        )
 
 
 @pytest.mark.asyncio
