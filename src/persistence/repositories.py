@@ -4,12 +4,20 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.identity import canonicalize_email
-from persistence.models import AuthSession, Membership, Organization, Task, TaskRun, User
+from persistence.models import (
+    AuthSession,
+    Membership,
+    Organization,
+    Task,
+    TaskRun,
+    TaskRunStatus,
+    User,
+)
 
 
 class TaskRepository:
@@ -40,6 +48,30 @@ class TaskRepository:
             Task.organization_id == principal_organization_id,
         )
         return await self.session.scalar(statement)
+
+    async def get_for_update_in_principal_tenant(
+        self, task_id: UUID, principal_organization_id: UUID
+    ) -> Task | None:
+        """Load and lock one visible Task for a lifecycle transaction."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update()
+        )
+        return await self.session.scalar(statement)
+
+    async def next_run_number(self, task_id: UUID) -> int:
+        """Return the next run number; callers lock the owning Task first."""
+
+        statement = select(func.coalesce(func.max(TaskRun.run_number), 0) + 1).where(
+            TaskRun.task_id == task_id
+        )
+        value = await self.session.scalar(statement)
+        return int(value or 1)
 
     async def list_for_organization(self, organization_id: UUID) -> list[Task]:
         """List only Tasks owned by one trusted organization scope."""
@@ -78,6 +110,39 @@ class TaskRunRepository:
                 TaskRun.id == task_run_id,
                 Task.organization_id == principal_organization_id,
             )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_update_in_principal_tenant(
+        self, task_run_id: UUID, principal_organization_id: UUID
+    ) -> TaskRun | None:
+        """Load and lock one visible TaskRun for a lifecycle transaction."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update()
+        )
+        return await self.session.scalar(statement)
+
+    async def get_active_for_update(
+        self,
+        task_id: UUID,
+        status: TaskRunStatus,
+    ) -> TaskRun | None:
+        """Load and lock the sole active run expected by a Task state."""
+
+        statement = (
+            select(TaskRun)
+            .where(
+                TaskRun.task_id == task_id,
+                TaskRun.status == status,
+            )
+            .with_for_update()
         )
         return await self.session.scalar(statement)
 

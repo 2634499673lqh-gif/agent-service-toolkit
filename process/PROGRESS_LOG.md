@@ -2404,3 +2404,59 @@ Learner notes:
   idempotency, and LangGraph runtime binding.
 
 Suggested next task: T034 Strong Review, then T035 Task lifecycle transition service.
+
+### 2026-09-19 — T035: Task lifecycle transition service
+
+Status: IMPLEMENTED — READY FOR T035 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `TaskLifecycleService` with explicit start/retry, begin-running,
+  success, failure, and persistence-only cancellation operations.
+- Added the smallest repository locking/query primitives needed for tenant-scoped
+  lifecycle decisions, serialized run-number allocation, and active-run checks.
+- Added focused transition, conflict, cancellation, and fail-closed unit tests.
+- Synchronized database and architecture documentation with the service boundary.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/service/task_lifecycle.py`
+- `tests/service/test_task_lifecycle.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `process/DECISION_LOG.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_task_lifecycle.py -q` -> PASS (5 passed).
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (29 passed).
+- Ruff format/check and `uv run pyrefly check` -> PASS.
+
+Known limitations:
+- T035 has no HTTP API, TaskStep, runtime interruption, automatic recovery, or
+  application-level idempotency. PostgreSQL concurrency evidence remains part
+  of the complete validation pass before strong review.
+
+Learner notes:
+- Problem solved: Task and its active execution attempt now move together under
+  explicit, tenant-scoped lifecycle rules.
+- Read `src/service/task_lifecycle.py`, `src/persistence/repositories.py`,
+  `tests/service/test_task_lifecycle.py`, and `docs/DATABASE_DESIGN.md`.
+- Key concept: lock the aggregate root (Task) before deciding a transition;
+  the service owns domain rules and the business transaction while the caller
+  owns session close.
+- Exercise: add a test for retrying a failed Task and verify run #1 remains
+  failed while run #2 is pending.
+- Ignore for now: HTTP wiring, runtime execution, TaskStep, and idempotency.
+
+### 2026-09-19 — T035 blocker-only fix B1–B3
+
+Status: READY FOR FOCUSED T035 RE-REVIEW (uncommitted)
+
+- Aligned `TaskLifecycleService` with accepted ADR-005: successful lifecycle
+  operations commit atomically, failures roll back and propagate, and the
+  service never closes the supplied session.
+- Added deterministic two-session PostgreSQL start contention using a test-only
+  pre-lock barrier; the production row-locking design remains unchanged.
+- Added fresh persisted PostgreSQL assertions for both QUEUED/PENDING and
+  RUNNING/RUNNING cancellation.
+- Updated T035 transaction-boundary documentation and tests.

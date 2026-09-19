@@ -173,7 +173,7 @@ Explicitly still absent after Phase 2: TaskPilot HTTP endpoints (`/api/v1`, logi
 
 Date: 2026-09-18
 
-Status: proposed; architecture gate is the focused Planning Strong Review. Once approved, ADR-005 is Accepted and Phase 3 implementation starts at T031.
+Status: Accepted; the architecture gate was the focused Planning Strong Review, and Phase 3 implementation starts at T031.
 
 ### Decisions
 

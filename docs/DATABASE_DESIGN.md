@@ -41,8 +41,9 @@ Task has no TaskRun. Status is stored as readable lowercase text and is
 constrained to `draft`, `queued`, `running`, `succeeded`, `failed`, or
 `cancelled`. Organization and creator foreign keys use `RESTRICT`, and the
 organization, creator, and status columns are indexed for later tenant-scoped
-queries. T034 adds tenant-scoped repository queries while lifecycle transitions
-and APIs remain owned by later Phase 3 tasks.
+queries. T034 adds tenant-scoped repository queries, and T035 adds the
+service-owned lifecycle transitions. The lifecycle service commits successful
+operations and rolls back failures; the caller still owns session close.
 
 ## TaskRun persistence foundation (T032)
 
@@ -63,8 +64,18 @@ listings. `TaskRunRepository` joins `task_runs` to `tasks` and applies the
 organization predicate to the Task row; TaskRun does not duplicate
 `organization_id`. Foreign or nonexistent resources therefore return the same
 `None`/empty result at the repository visibility boundary. Repository `add`
-operations flush into the caller-owned transaction but never commit, rollback,
-close, or replace the caller's `AsyncSession`.
+operations flush into the service-owned business transaction but never commit,
+rollback, close, or replace the caller's `AsyncSession`.
+
+## Lifecycle service (T035)
+
+`TaskLifecycleService` locks the visible Task row before each decision, allocates
+the next run number under that lock, and synchronizes the required active
+TaskRun transition. It supports explicit start/retry, begin, success, failure,
+and persistence-only cancellation. It never claims to interrupt external
+runtime work and never closes the caller's session. Successful lifecycle
+operations commit atomically and failed operations roll back through the
+service boundary.
 
 T022 implements `users`; the second migration is
 `migrations/versions/20260916_01_user.py` and its revision is `t022_user`

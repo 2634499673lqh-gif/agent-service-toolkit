@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -6,6 +8,15 @@ from langchain_core.messages import AIMessage
 from langgraph.types import StateSnapshot
 
 from service import app
+
+
+def pytest_asyncio_loop_factories(config, item):
+    """Use psycopg-compatible selector loops for Windows async integration tests."""
+
+    del config, item
+    if sys.platform == "win32":
+        return {"selector": asyncio.SelectorEventLoop}
+    return {"default": asyncio.get_event_loop_policy().new_event_loop}
 
 
 @pytest.fixture
