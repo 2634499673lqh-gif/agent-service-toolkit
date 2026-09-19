@@ -20,6 +20,8 @@ from persistence.models import (  # noqa: F401 - register model metadata
     Membership,
     Organization,
     Task,
+    TaskRun,
+    TaskRunStatus,
     TaskStatus,
     User,
 )

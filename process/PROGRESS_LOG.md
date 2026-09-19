@@ -2243,3 +2243,87 @@ Learner notes:
   planner/executor/verifier behavior, and idempotency.
 
 Suggested next task: T031 Strong Review, then T032 TaskRun schema and migration.
+
+### 2026-09-19 — T032: TaskRun schema and migration
+
+Status: IMPLEMENTED — READY FOR T032 STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `8f3df41 feat: add TaskPilot task persistence`.
+- Working tree before T032 implementation: clean.
+
+What changed:
+- Added the `TaskRun` ORM model and `TaskRunStatus` enum for one durable
+  execution attempt with `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, and
+  `CANCELLED` states.
+- Added per-Task positive `run_number` values with a database uniqueness
+  constraint, allowing multiple terminal historical runs.
+- Added a PostgreSQL partial unique index that permits at most one active
+  (`PENDING` or `RUNNING`) run per Task.
+- Added the linear Alembic revision `t032_task_run`, registered the model in
+  metadata, and synchronized architecture, database, and README documentation.
+- Added model-contract and PostgreSQL integration coverage for defaults,
+  foreign keys, constraints, ordering, active-run enforcement, downgrade, and
+  re-upgrade behavior.
+- No TaskStep, repository/service, lifecycle orchestration, API, runtime,
+  planner/executor/verifier, application idempotency, or automatic retry
+  behavior was added.
+
+Files changed:
+- `src/persistence/models.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260919_01_task_run.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (28 passed).
+- `uv run pytest tests/persistence/test_postgres_integration.py -q` with live
+  PostgreSQL -> PASS (21 passed, 32 warnings).
+- `uv run pytest --basetemp .pytest-tmp-t032 -q` with live PostgreSQL -> PASS
+  (442 passed, 4 skipped, 91 warnings). The default-temp run encountered
+  environment permissions in `C:\Users\Lin\AppData\Local\Temp`; the explicit
+  repository-local temp directory passed.
+- `uv run ruff format --check .` -> PASS (116 files already formatted).
+- `uv run ruff check .` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors; 18 suppressed, 5 warnings).
+- `uv lock --check` -> PASS.
+- `uv run pymarkdown scan README.md docs/ARCHITECTURE.md docs/DATABASE_DESIGN.md` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` against
+  PostgreSQL -> PASS; no new upgrade operations detected.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- T032 provides the persistence invariant only. T035 owns legal lifecycle
+  transitions and synchronization between `Task.status` and `TaskRun.status`.
+- Application-level idempotency, TaskStep, repositories/services, APIs,
+  runtime interruption, and automatic retries remain outside this task.
+- The environment did not provide the Docker CLI; validation used the
+  reachable local PostgreSQL server and the repository's existing disposable
+  database integration setup.
+
+Learner notes:
+- Problem solved: TaskPilot can now persist each execution attempt, retain
+  terminal history, number attempts per Task, and reject concurrent active runs
+  at the database boundary.
+- Read `src/persistence/models.py`,
+  `migrations/versions/20260919_01_task_run.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`, and
+  `docs/DATABASE_DESIGN.md`.
+- Key concept: a partial unique index expresses a conditional concurrency
+  invariant directly in PostgreSQL; it is different from application
+  idempotency and from lifecycle transition logic.
+- Exercise: insert one pending run and one terminal run for a Task, then try
+  inserting a second pending run and run number zero; observe both database
+  constraints reject the invalid writes.
+- Ignore for now: TaskStep, HTTP APIs, planner/executor/verifier behavior,
+  retries, and application-level idempotency.
+
+Suggested next task: T032 Strong Review, then T034 TaskRun repository/service.

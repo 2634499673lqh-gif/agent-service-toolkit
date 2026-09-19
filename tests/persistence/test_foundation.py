@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint
 
 from core.settings import Settings
 from persistence.base import Base
@@ -22,6 +22,8 @@ from persistence.models import (
     Organization,
     Role,
     Task,
+    TaskRun,
+    TaskRunStatus,
     TaskStatus,
     User,
     utc_now,
@@ -48,12 +50,72 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.memberships",
         "taskpilot.auth_sessions",
         "taskpilot.tasks",
+        "taskpilot.task_runs",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
     assert Membership.__table__.schema == "taskpilot"
     assert AuthSession.__table__.schema == "taskpilot"
     assert Task.__table__.schema == "taskpilot"
+    assert TaskRun.__table__.schema == "taskpilot"
+
+
+def test_task_run_status_defaults_and_ordering_contract() -> None:
+    assert [status.value for status in TaskRunStatus] == [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    task_run = TaskRun(
+        task_id=UUID("11111111-1111-4111-8111-111111111111"),
+        run_number=1,
+    )
+    assert task_run.status is TaskRunStatus.PENDING
+    assert task_run.run_number == 1
+    assert task_run.id is None
+    assert task_run.created_at is None
+    assert task_run.updated_at is None
+
+
+def test_task_run_metadata_declares_task_fk_and_active_run_index() -> None:
+    table = TaskRun.__table__
+    assert table.c.id.type.python_type is UUID
+    assert table.c.task_id.nullable is False
+    assert table.c.run_number.nullable is False
+    assert table.c.status.nullable is False
+    assert table.c.status.server_default is not None
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert {constraint.name for constraint in table.constraints if constraint.name} == {
+        "ck_task_runs_task_run_number_positive",
+        "ck_task_runs_task_run_status_valid",
+        "pk_task_runs",
+        "uq_task_runs_task_run_number",
+        "fk_task_runs_task_id_tasks",
+    }
+    unique_columns = {
+        tuple(constraint.columns.keys())
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("task_id", "run_number") in unique_columns
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert set(foreign_keys) == {"task_id"}
+    assert foreign_keys["task_id"].target_fullname == "taskpilot.tasks.id"
+    assert foreign_keys["task_id"].ondelete == "RESTRICT"
+    indexes = {index.name: index for index in table.indexes if isinstance(index, Index)}
+    assert set(indexes) == {
+        "ix_task_runs_task_id",
+        "ix_task_runs_status",
+        "uq_task_runs_one_active_per_task",
+    }
+    assert indexes["uq_task_runs_one_active_per_task"].unique is True
+    assert (
+        str(indexes["uq_task_runs_one_active_per_task"].dialect_options["postgresql"]["where"])
+        == "status IN ('pending', 'running')"
+    )
 
 
 def test_task_status_and_defaults_are_frozen() -> None:
