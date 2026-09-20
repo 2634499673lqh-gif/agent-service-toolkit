@@ -2,6 +2,54 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-20 — T045: Verifier schema
+
+Status: IMPLEMENTED — READY FOR T045 STRONG REVIEW (uncommitted)
+
+- Added the minimal JSON-serializable runtime-only `VerificationResult` schema
+  with the frozen `PASS`/`FAIL` verdict type.
+- Enforced a required non-blank reason, bounded evidence strings, at most eight
+  evidence items, allowed empty evidence, and forbidden extra fields.
+- Added focused validation and JSON round-trip tests.
+
+Scope remains limited to T045. No verifier node, classifier, retry/replan
+runtime, LangGraph graph, persistence, API, authority fields, or dependency
+was added. PostgreSQL is not applicable to this pure schema task.
+
+Files changed:
+
+- `src/schema/verifier.py`
+- `src/schema/__init__.py`
+- `tests/schema/test_verifier.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+
+- Focused T045 tests: `18 passed`.
+- T041–T044 and schema/runtime regression: `62 passed`.
+- Full pytest: `445 passed, 81 skipped`.
+- Ruff check/format, Pyrefly, `uv lock --check`, import smoke, and
+  `git diff --check`: PASS.
+
+Known limitations: this task validates verifier data only; verifier model/node,
+structured-output repair, failure classification, recovery, and runtime graph
+behavior remain deferred to later tasks.
+
+Learner notes:
+
+- Problem solved: verifier output now has a bounded, JSON-safe contract that
+  cannot carry authorization or future recovery decisions.
+- Read `src/schema/verifier.py`, `tests/schema/test_verifier.py`,
+  `src/schema/planner.py`, and `src/runtime/executor.py`.
+- Key concept: a runtime schema validates data shape and trust boundaries; it
+  does not decide workflow routing or persisted lifecycle state.
+- Exercise: add a test proving an `organization_id` or `role` field is rejected,
+  then inspect the Pydantic error for `extra_forbidden`.
+- Ignore for now: verifier model calls, repair loops, classifiers, retries,
+  replans, LangGraph, and persistence.
+
+Suggested next task: T045 Strong Review, then T046 — Verifier node.
+
 ### 2026-09-20 — T041: Planner schema
 
 Status: IMPLEMENTED — READY FOR T041 STRONG REVIEW (uncommitted)

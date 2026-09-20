@@ -14,12 +14,15 @@ from schema.schema import (
     UserThreads,
     UserThreadsInput,
 )
+from schema.verifier import VerificationResult, VerificationVerdict
 
 __all__ = [
     "AgentInfo",
     "AllModelEnum",
     "Plan",
     "PlanStep",
+    "VerificationResult",
+    "VerificationVerdict",
     "UserInput",
     "ChatMessage",
     "ServiceMetadata",
