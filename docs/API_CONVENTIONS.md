@@ -71,6 +71,16 @@ inspection is tenant-scoped through the owning Task and exposes only persisted
 identity, run number, lifecycle status, and timestamps. No runtime metadata or
 application idempotency contract is exposed.
 
+## Phase 4 planned runtime boundary (ADR-006/T040; not implemented)
+
+Phase 4 introduces an internal `TaskRuntimeService.execute_run(...)`-style
+entry point for a tenant-validated TaskRun. It does not add an HTTP route and
+does not change the meaning of `POST /api/v1/tasks/{task_id}/runs`: that route
+continues to create/start a durable TaskRun according to T035/T038. The runtime
+delegates Task/TaskRun transitions to T035 and keeps retry/replan internal to
+the graph. No TaskStep API, approval API, worker endpoint, HTTP idempotency
+contract, or external side effect is authorized by Phase 4.
+
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 
 TaskPilot `/api/v1` endpoints require the new opaque session credential and a server-derived `CurrentPrincipal`; the legacy `AUTH_SECRET` bearer is not accepted as identity. `CurrentPrincipal` contains user, membership, organization, role, and session IDs loaded from the database. Request body/query/header identity fields are ignored for authorization.

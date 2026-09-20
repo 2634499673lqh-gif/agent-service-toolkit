@@ -2,6 +2,80 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-20 — Phase 4 Planning Acceptance Status
+
+Status: APPROVED / COMPLETE
+
+Independent Planning Strong Review approved ADR-006 and T040. The Phase 4
+planning contract is now accepted; T041 is the first executable implementation
+task. No runtime implementation is marked started or complete.
+
+### 2026-09-20 — Phase 4 blocker-only planning correction
+
+Status: CORRECTED — READY FOR FOCUSED PHASE 4 PLANNING RE-REVIEW
+
+Resolved the four independent Strong Review blockers without changing the
+already-approved Phase 4 boundaries:
+
+- Reconciled all live ROADMAP task IDs through Phase 11 to canonical
+  TASK_BACKLOG IDs and documented the complete old→canonical mapping,
+  including split mappings such as old T058 → T070/T072.
+- Expanded ADR-006/T040 with exact JSON AgentState fields, types,
+  initialization/mutation rules, Plan/PlanStep bounds, executor and verifier
+  result contracts, classifier literals, routing, and finite-budget proof.
+- Froze the trusted `TaskRuntimeService.execute_run(...)` boundary, PENDING /
+  RUNNING / terminal sequence, stale-state revalidation, and lifecycle-race
+  behavior.
+- Froze concurrent/repeated resume invariants: duplicate deterministic graph
+  work is allowed, exactly-once node execution is not claimed, and T035 alone
+  decides one consistent terminal business state.
+- Updated T041–T051 acceptance contracts and T051 audit evidence requirements.
+
+No production source, migration, dependency, or lockfile changed. Runtime and
+PostgreSQL tests remain intentionally deferred because this correction is
+planning-only.
+
+Suggested next task: focused independent Planning Strong Re-review.
+
+### 2026-09-20 — Phase 4 Planning Fix — Agent Runtime Contract
+
+Status: PLANNING ARTIFACTS CREATED — READY FOR INDEPENDENT PLANNING STRONG REVIEW
+
+What changed:
+- Added proposed ADR-006 and implementation-ready T040–T051 Task Cards.
+- Canonicalized Phase 4 as T040–T051, including read-only T051 Final Audit,
+  with a linear dependency DAG and no duplicate IDs.
+- Resolved T033 explicitly: PlanStep is runtime-only; persistent TaskStep ORM,
+  migration, repository, API, and lifecycle remain deferred.
+- Froze internal runtime entry, unchanged Phase 3 enums and T035 lifecycle
+  ownership, minimal serializable AgentState, one retry and one replan budgets,
+  tenant-trusted checkpoint identity/resume, independent persistence, and
+  side-effect-free scope.
+- Reconciled backlog, roadmap, task index, architecture/API/README docs.
+
+Files changed: TASK_BACKLOG.md, ROADMAP.md, README.md,
+docs/ARCHITECTURE.md, docs/API_CONVENTIONS.md, process/DECISION_LOG.md,
+process/tasks/INDEX.md, process/tasks/T033.md, process/tasks/T040.md through
+T051.md, and this log.
+
+Historical pre-approval limitation (superseded): ADR-006 and T040 required
+Planning Strong Review before Phase 4 production work.
+
+Learner notes:
+- Problem solved: Phase 4 now has one implementation authority instead of
+  conflicting task numbers and an unfrozen runtime boundary.
+- Read ADR-006, T040, T050, `src/service/task_lifecycle.py`, and
+  `docs/ARCHITECTURE.md`.
+- Key concept: durable TaskRun lifecycle and runtime graph/checkpoint state are
+  separate boundaries; checkpoint identity is correlation, never authorization.
+- Exercise: trace fail-once through T035 `succeed_run`, then compare always-fail
+  exhaustion through T035 `fail_run`.
+- Do not worry yet about TaskStep tables, workers, approvals, providers, or
+  HTTP idempotency.
+
+Historical suggested next task (completed): independent Planning Strong Review
+of ADR-006/T040.
+
 ### 2026-09-11 — T014: Structured Logging and Secret Redaction
 
 Status: DONE — ready for Strong Review

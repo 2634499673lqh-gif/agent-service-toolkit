@@ -42,3 +42,31 @@ The Phase 2 definitions of done were verified at the T026 gate: `uv run pytest` 
 | T039 | Integration tests and documentation | STANDARD | STRONG_REVIEW_REQUIRED | T030–T038 | Full suite |
 
 Dependency graph: `T031 → T032 → T034 → T035 → T036 → T037 → T038 → T039`. T030 is the approved planning gate; T033 is deferred and not an executable dependency. T039 is the Phase 3 final audit gate.
+
+## Phase 4 Task Cards — Agent runtime
+
+| Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? |
+|---|---|---|---|---|---|
+| T040 | Phase 4 runtime architecture / AgentState contract | STRONG, planning only | APPROVED / COMPLETE | T039, ADR-005 | No runtime |
+| T041 | Planner schema | LOW_COST | STRONG_REVIEW_REQUIRED | T040 | Focused schema |
+| T042 | Planner node | STANDARD | STRONG_REVIEW_REQUIRED | T041 | Focused deterministic |
+| T043 | Executor interface | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T042 | Focused contract |
+| T044 | Deterministic execution path | LOW_COST | STRONG_REVIEW_REQUIRED | T043 | Focused deterministic |
+| T045 | Verifier schema | LOW_COST | STRONG_REVIEW_REQUIRED | T044 | Focused schema |
+| T046 | Verifier node | STANDARD | STRONG_REVIEW_REQUIRED | T045 | Focused PASS/FAIL |
+| T047 | Failure classifier | STANDARD | STRONG_REVIEW_REQUIRED | T046 | Table-driven |
+| T048 | Bounded retry | STANDARD | STRONG_REVIEW_REQUIRED | T047 | Recovery scenarios |
+| T049 | Bounded replan | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T048 | Recovery scenarios |
+| T050 | Checkpoint / resume | STRONG | STRONG_REVIEW_REQUIRED | T049 | PostgreSQL/LangGraph integration |
+| T051 | Phase 4 Final Audit (read-only) | STRONG | STRONG_REVIEW_REQUIRED | T040–T050 | Full suite at gate |
+
+Recommended execution order is the linear DAG `T040 → T041 → T042 → T043 → T044 → T045 → T046 → T047 → T048 → T049 → T050 → T051`. T040/ADR-006 is approved and complete; T041 is the first executable implementation task. Phase 4 adds no TaskStep persistence, new HTTP endpoint, worker, approval, HTTP idempotency, external side effect, or Task/TaskRun state.
+
+Current status: T041 is NOT STARTED and is the executable next task.
+
+Later-phase numbering follows the granular `TASK_BACKLOG.md` authority. The former compact roadmap labels are preserved as intent mappings there; no later work is deleted.
+
+For Phases 5–11, `TASK_BACKLOG.md` is the canonical task-card numbering
+source; ROADMAP.md now lists the same canonical IDs and titles. Historical
+compact roadmap IDs appear only in the explicitly labeled mapping table and
+are not live task assignments.

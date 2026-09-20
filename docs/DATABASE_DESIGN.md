@@ -140,6 +140,14 @@ FastAPI dependencies acquire and close an async SQLAlchemy session. A service co
 
 Future task, run, approval, knowledge, memory, and audit tables must carry explicit organization ownership and follow the same FK, index, timestamp, and tenant-filter rules. The existing LangGraph SQLite/PostgreSQL adapters remain conversation/checkpoint infrastructure, not TaskPilot business persistence.
 
+Phase 4 planning (proposed ADR-006/T040) preserves this boundary: no
+TaskStep table or migration is introduced; LangGraph checkpoint/store tables
+remain independently initialized and owned. A checkpoint thread identifier
+derived from a tenant-validated TaskRun is correlation data only, never a
+tenant or authorization selector. Runtime services use discrete TaskPilot
+transactions through T035 and do not hold a PostgreSQL transaction open across
+graph/model execution.
+
 ## Administrative bootstrap
 
 The first Organization + owner User + owner Membership is created only by `scripts/bootstrap_owner.py`, which delegates to `service.bootstrap_cli` and `service.bootstrap`. The password is read exclusively from two hidden interactive `getpass` prompts - there is no flag, positional, or environment-variable form - and `--password` plus positional plaintext are rejected before any database work. Exact complete active state is an idempotent no-op; partial/conflicting/inactive state fails closed without repair, overwrite, password reset, or role elevation. Organization, User, password hash, and Membership share one business transaction: commit once or roll back all. No global consumed flag is used, and no HTTP registration endpoint exists.

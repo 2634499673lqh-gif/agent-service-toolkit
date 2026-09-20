@@ -190,3 +190,180 @@ Status: Accepted; the architecture gate was the focused Planning Strong Review, 
 ### Migration and verification
 
 The executable order is Task → TaskRun, then tenant repositories, lifecycle service, APIs, and final audit. T033 is `DEFERRED`: TaskStep persistence belongs to Phase 4 runtime design and is not an executable Phase 3 dependency. Production startup never auto-migrates; release/job migration remains the owner. SQLite is not a TaskPilot business backend.
+
+## ADR-006 — TaskPilot Phase 4 Agent Runtime Architecture
+
+Date: 2026-09-20
+
+Status: Accepted. Planning Strong Review approved ADR-006 and T040 on
+2026-09-20. T041 is the first executable Phase 4 implementation task.
+
+### Context
+
+Phase 3 provides tenant-scoped `Task`/`TaskRun` persistence and the T035
+lifecycle service, but no runtime contract. The Phase 4 gate must be the
+smallest deterministic Planner → Executor → Verifier graph with bounded
+recovery and durable checkpoint/resume, without inventing TaskStep persistence,
+new HTTP APIs, workers, external effects, or new business states.
+
+### Decisions
+
+1. **Scope and topology.** Phase 4 is an internal `TaskRuntimeService` over a
+   bounded LangGraph topology: planner → executor → verifier, with classifier
+   routes for one retry or one replan, then terminal success/failure. T040 is
+   the architecture gate; T041–T051 implement and audit this contract.
+2. **AgentState.** Use a minimal typed, serializable state containing
+   `task_id`, `task_run_id`, a sanitized task input snapshot, validated `plan`,
+   current plan position, deterministic execution result, verifier result,
+   normalized failure classification, `retry_count`, `replan_count`, and an
+   internal terminal outcome. It contains no `AsyncSession`, ORM/repository/
+   principal objects, secrets, or caller-controlled authorization truth.
+3. **PlanStep vs TaskStep.** `PlanStep` is an in-memory/runtime schema only.
+   Phase 4 adds no TaskStep ORM, migration, repository, API, FK, index, or
+   lifecycle. TaskRun remains the durable attempt boundary.
+4. **Lifecycle.** Runtime entry first validates trusted organization scope plus
+   task/run through tenant-scoped SQL, then calls T035 `begin_run`; on success
+   it calls T035 `succeed_run`, and on unrecoverable/exhausted failure it calls
+   T035 `fail_run`. Runtime never directly mutates status. Existing Task and
+   TaskRun enums remain unchanged; retry/replan are internal graph concepts.
+5. **API and effects.** Existing `POST /api/v1/tasks/{task_id}/runs` keeps
+   T038 create/start semantics. No new REST endpoint, worker queue, approval,
+   HTTP idempotency, provider, skill/tool registry, shell/filesystem/network
+   side effect, or real external action is introduced.
+6. **Budgets.** Retry budget is one retry; replan budget is one replan. Counts
+   are checkpoint-serializable and never reset by replan. Fail-once then
+   succeed, always-fail exhaustion, replan success, and replan exhaustion are
+   deterministic acceptance scenarios.
+7. **Checkpoint and resume.** TaskPilot owns PostgreSQL `taskpilot` business
+   schema/migrations; LangGraph independently owns its checkpoint/store tables.
+   Checkpoint identity is correlation-only and derived from the validated run,
+   canonically `taskpilot-run:<task_run_id>`. PENDING may start through T035;
+   RUNNING may resume the same thread; terminal runs cannot resume. Missing or
+   corrupt checkpoint fails closed through T035 `fail_run`, never by inventing
+   progress or using checkpoint data as tenant/role authority.
+8. **Transactions and concurrency.** Repositories query/add/flush only;
+   services own discrete commit/rollback and do not close supplied sessions.
+   No PostgreSQL transaction remains open across model/runtime execution, and
+   no distributed transaction is claimed between LangGraph and TaskPilot.
+   Locked reads must refresh stale ORM identity before branching. Tests use
+   independent sessions and fresh final reads for concurrent resume, repeated
+   resume, cancellation races, exhaustion, and stale-state cases.
+9. **Security.** `CurrentPrincipal`-derived organization scope and the
+   tenant-scoped Task/TaskRun lookup are the trust boundary. Checkpoint data,
+   plan output, and verifier evidence never grant authorization or select a
+   tenant, user, membership, or role. Foreign and nonexistent resources keep
+   Phase 3 visibility semantics.
+
+### Canonical runtime contracts
+
+**AgentState JSON contract.** All fields are JSON/checkpoint serializable:
+
+| Field | Type | Initial value | Mutation rule |
+|---|---|---|---|
+| `task_id` | canonical UUID string | required input | immutable |
+| `task_run_id` | canonical UUID string | required input | immutable |
+| `task_input` | `{title: non-empty string, max 255 chars; description: string \| null}` | sanitized snapshot | immutable; no tenant/user/role data |
+| `plan` | `Plan \| null` | `null` | set only by planner/replan after validation |
+| `plan_position` | integer `>= 0` | `0` | advances for execution; reset only on accepted replacement Plan |
+| `execution_result` | `ExecutionResult \| null` | `null` | set by executor; cleared on accepted replan |
+| `verification` | `VerificationResult \| null` | `null` | set by verifier; cleared on accepted replan |
+| `failure` | `RuntimeFailure \| null` | `null` | set to sanitized normalized failure; cleared on accepted replan |
+| `retry_count` | integer `>= 0` | `0` | monotonic per TaskRun; incremented before the one retry; never reset |
+| `replan_count` | integer `>= 0` | `0` | monotonic per TaskRun; incremented before the one replan; never reset |
+| `terminal_outcome` | `SUCCEEDED \| FAILED \| null` | `null` | set once by runtime; not a persisted Task/TaskRun enum |
+
+No session, ORM object, repository, CurrentPrincipal, secret, role,
+organization authority, or checkpoint object may enter AgentState.
+
+**Plan contract.** `Plan` contains `steps: non-empty list[PlanStep]` with a
+maximum of 8 steps. `PlanStep` contains `position: positive integer` and
+`instruction: non-empty string of at most 500 characters`. Positions must be
+exactly `1..N` in order with no duplicates or gaps. Empty plans, duplicate or
+out-of-range positions, extra authority/tool fields, and overlong strings are
+invalid. The first invalid planner result receives exactly one repair attempt;
+the repair sees only validation failure plus the original planner output and
+sanitized planning context. A second invalid result is a terminal normalized
+`planner_output_invalid` failure; it does not enter replan. Repair is not a
+replan.
+
+**Executor contract.** The executor receives a validated `PlanStep` plus the
+sanitized `task_input`; it receives no authorization context. It returns:
+`ExecutionResult(step_position: positive int, success: bool, output: string of
+at most 2000 characters | null, error_code: normalized string of at most 64
+characters | null, error_message: sanitized string of at most 500 characters |
+null)`. Success requires output
+and forbids error fields. Failure requires `error_code`, forbids raw exception
+objects, and may have a sanitized message. T044 implements one deterministic
+side-effect-free operation: a bounded instruction is transformed into a
+deterministic result, with an explicit injected fail-once/always-fail test
+double.
+
+**Verifier contract.** `VerificationResult` is
+`verdict: PASS | FAIL`, `reason: non-empty sanitized string of at most 500
+characters`, and `evidence: list of at most 8 sanitized strings of at most 500
+characters each` (empty evidence is allowed for either verdict). There is no
+criteria field. Malformed verifier output gets
+exactly one repair attempt under the same bounded structured-output rule; a
+second invalid result is terminal `verifier_output_invalid`. PASS routes to
+success. FAIL routes to the classifier and may replan only when explicitly
+classified recoverable.
+
+**Failure contract and routing.** `FailureClassification` is exactly
+`RETRY | REPLAN | TERMINAL`. `RuntimeFailure` contains only
+`classification`, `code` of at most 64 characters, and `sanitized_message` of
+at most 500 characters. Retryable
+deterministic execution failure → RETRY; explicitly recoverable plan/verifier
+inadequacy → REPLAN; unknown, unsafe, malformed-after-repair, policy-invalid,
+or unsupported failure → TERMINAL.
+
+**Budget semantics and termination.** `RETRY_BUDGET = 1` means one additional
+executor attempt after the initial failure. On RETRY, if `retry_count < 1`,
+increment before routing to executor; otherwise fail terminally. The initial
+execution is not a retry. `REPLAN_BUDGET = 1` means one replacement Plan after
+the initial Plan. On REPLAN, if `replan_count < 1`, increment before planner,
+accept a valid replacement, reset `plan_position` to `0`, and clear execution,
+verification, and failure fields; otherwise fail terminally. Neither counter
+ever decreases or resets the other. Both budgets are finite, so no retry/replan
+cycle can be infinite and no new TaskRun is created.
+
+**Routing table.** Initial → planner; valid Plan → executor; executor success
+→ verifier; executor failure → classifier; verifier PASS → runtime success →
+T035 `succeed_run`; verifier FAIL → classifier; classifier RETRY → retry budget
+→ executor; classifier REPLAN → replan budget → planner; classifier TERMINAL →
+runtime failure → T035 `fail_run`; exhausted retry/replan → terminal failure;
+planner/verifier invalid after repair → terminal failure.
+
+**Trusted entry and lifecycle sequence.** The internal boundary is
+`TaskRuntimeService.execute_run(session: AsyncSession, *, organization_id:
+UUID, task_id: UUID, task_run_id: UUID) -> RuntimeExecutionResult`. A trusted
+caller supplies `organization_id` (an HTTP CurrentPrincipal is converted to it
+outside AgentState). Runtime performs tenant-scoped SQL validation that the
+TaskRun belongs to the Task and organization. For PENDING it calls T035
+`begin_run`, waits for its commit, then executes/resumes the graph and calls
+T035 `succeed_run` or `fail_run`. For RUNNING it does not call `begin_run`;
+it validates, derives the checkpoint ID, resumes, and delegates completion to
+T035. Terminal runs raise a stable internal runtime conflict; graph execution
+does not resume.
+
+**Resume and race invariants.** One deterministic thread ID is used per
+TaskRun. Concurrent resumes of the same RUNNING run may duplicate graph work;
+exactly-once node execution is not promised. At most one T035 terminal
+transition can commit; later completion fails closed and cannot overwrite the
+committed terminal state. Repeated resume uses the latest valid checkpoint and
+does not intentionally restart initial input. If cancellation commits first,
+later runtime completion fails closed and preserves CANCELLED; if runtime
+completion commits first, later cancellation follows existing terminal rules.
+Missing/corrupt checkpoint on RUNNING is unrecoverable and attempts T035
+`fail_run`; if another terminal transition wins, that state is preserved. No
+live interruption, lease, distributed lock, or exactly-once external effect is
+claimed.
+
+### Consequences and deferred scope
+
+This yields an implementation-ready, deterministic runtime while preserving
+Phase 3 lifecycle authority and persistence ownership. TaskStep audit tables,
+background workers, live interruption, HITL/approval, application idempotency,
+provider credentials, generic tool/skill registries, exactly-once external
+effects, observability schemas, and new Task/TaskRun states remain later-phase
+work. The ADR was accepted after independent Planning Strong Review; the
+contract substance above is now the implementation authority.

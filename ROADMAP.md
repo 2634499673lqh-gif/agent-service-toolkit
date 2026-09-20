@@ -10,8 +10,7 @@ Tasks:
 - T000 baseline inventory
 - T001 run current tests/build
 - T002 map request/agent/data flow
-- T003 identify reusable modules
-- T004 write gap analysis and architecture decision
+- T003 architecture delta ADR and gap analysis
 
 Exit:
 - no major speculative refactor
@@ -24,11 +23,13 @@ Exit:
 Goal: stable config, documentation discipline, migrations, logging IDs.
 
 Tasks:
-- T010 TaskPilot naming/README while preserving upstream attribution/license
-- T011 settings/env validation
-- T012 request_id structured logging
-- T013 DB migration baseline
-- T014 developer commands/scripts
+- T010 repository branding and attribution
+- T011 environment template audit
+- T012 settings validation
+- T013 request correlation ID
+- T014 structured logging redaction
+- T015 migration baseline verification
+- T016 developer command documentation
 
 Exit:
 - local startup reproducible
@@ -81,14 +82,22 @@ Exit:
 
 ## Phase 4 — Agent Runtime [STRONG MODEL]
 
-Tasks:
-- T040 AgentState contract
-- T041 Planner structured output
-- T042 Executor node
-- T043 Verifier contract
-- T044 failure classifier/retry/replan
-- T045 checkpoint/resume
-- T046 deterministic runtime tests
+Tasks (canonical IDs; ADR-006/T040 is the planning gate):
+- T040 Phase 4 runtime architecture / AgentState contract
+- T041 Planner schema
+- T042 Planner node
+- T043 Executor interface
+- T044 deterministic execution path
+- T045 Verifier schema
+- T046 Verifier node
+- T047 failure classifier
+- T048 bounded retry
+- T049 bounded replan
+- T050 checkpoint / resume
+- T051 Phase 4 Final Audit (read-only)
+
+Recommended order: `T040 → T041 → T042 → T043 → T044 → T045 → T046 → T047 → T048 → T049 → T050 → T051`.
+Phase 4 is an internal runtime service, not a new HTTP API. `POST /api/v1/tasks/{task_id}/runs` retains T038 creation/start semantics; the runtime consumes a tenant-validated TaskRun through an internal service entry point. Task and TaskRun enums remain those frozen by ADR-005. TaskStep persistence, HITL, HTTP idempotency, worker queues, and real external effects remain deferred.
 
 Exit:
 - one complete task can execute through graph
@@ -96,16 +105,7 @@ Exit:
 
 ## Phase 5 — Skills, Tools, Context [STRONG DESIGN + STANDARD/ECONOMY IMPLEMENTATION]
 
-Tasks:
-- T050 Skill manifest + registry
-- T051 research skill
-- T052 document-analysis skill
-- T053 tabular-analysis skill
-- T054 typed tool registry
-- T055 context builder
-- T056 user memory
-- T057 org knowledge retrieval
-- T058 context budget/tests
+Tasks: see the canonical backlog IDs T060–T074.
 
 Exit:
 - planner selects a skill
@@ -114,13 +114,7 @@ Exit:
 
 ## Phase 6 — Human-in-the-loop & Safety [STRONG MODEL]
 
-Tasks:
-- T060 risk policy
-- T061 approval persistence/API
-- T062 graph interrupt/pause
-- T063 approve/reject/resume
-- T064 exactly-once protection for approved side effects
-- T065 audit/security tests
+Tasks: see the canonical backlog IDs T080–T088.
 
 Exit:
 - L2 action cannot execute before approval
@@ -129,12 +123,15 @@ Exit:
 ## Phase 7 — Observability [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
 Tasks:
-- T070 trace/event schema
-- T071 structured correlation
-- T072 agent/tool/model metrics
-- T073 token/cost adapter
-- T074 trace query API
-- T075 basic trace UI
+- T090 trace data model decision
+- T091 AgentRun persistence
+- T092 ToolCall persistence
+- T093 correlation propagation
+- T094 latency/status/error metrics
+- T095 token usage adapter
+- T096 cost estimator
+- T097 trace query API
+- T098 redaction tests
 
 Exit:
 - one task can be reconstructed from trace
@@ -143,18 +140,28 @@ Exit:
 ## Phase 8 — Evaluation [STRONG DESIGN + ECONOMY IMPLEMENTATION]
 
 Tasks:
-- T080 eval schema/dataset
-- T081 deterministic fixtures
-- T082 evaluator runner
-- T083 workflow/accuracy/recovery metrics
-- T084 regression report
-- T085 CI smoke gate
+- T100 eval schema decision
+- T101 deterministic fixture set
+- T102 workflow eval runner
+- T103 metrics calculation
+- T104 machine-readable report
+- T105 human-readable report
+- T106 CI cheap smoke eval
 
 Exit:
 - same eval suite can be rerun
 - results are versioned/comparable
 
 ## Phase 9 — Product UI [STANDARD/ECONOMY]
+
+Tasks:
+- T110 existing UI gap assessment
+- T111 task create form
+- T112 task list/detail
+- T113 run/step timeline
+- T114 approval queue/detail
+- T115 trace timeline
+- T116 error/loading states
 
 First stabilize existing Streamlit UI.
 Optional second step: add Next.js/React when APIs are stable.
@@ -174,14 +181,14 @@ Exit:
 ## Phase 10 — Concurrency & Deployment Hardening [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
 Tasks:
-- T100 long-running work queue decision
-- T101 Redis/worker only if needed
-- T102 rate limiting/backpressure
-- T103 health/readiness
-- T104 Docker Compose production-like local stack
-- T105 CI
-- T106 security config/CORS/secrets
-- T107 load/concurrency smoke test
+- T120 concurrency architecture review
+- T121 DB pool/transaction review
+- T122 background worker integration (only if approved)
+- T123 rate limiting/backpressure
+- T124 health/readiness
+- T125 Docker Compose hardening
+- T126 CI pipeline
+- T127 concurrency smoke test
 
 Exit:
 - multiple simultaneous demo users do not corrupt state
@@ -190,15 +197,67 @@ Exit:
 ## Phase 11 — Documentation, Demo, Final Audit [STRONG REVIEW + ECONOMY DOC WORK]
 
 Tasks:
-- T110 user guide
-- T111 developer guide
-- T112 architecture diagrams
-- T113 code reading order final
-- T114 troubleshooting/runbook
-- T115 demo data/scenarios
-- T116 security audit
-- T117 architecture audit
-- T118 final test/eval report
+- T130 User Guide audit
+- T131 Developer Guide audit
+- T132 Code Reading Order audit
+- T133 Architecture/security audit
+- T134 Critical/high fixes
+- T135 Demo script/data
+- T136 Final eval/test report
 
 Exit:
 - a new learner can clone, start, understand, and demo the project from docs alone
+
+## Historical compact-roadmap mapping (not live task assignments)
+
+The following old roadmap labels are retained only to preserve planning
+history; the canonical live IDs are those listed above and in
+`TASK_BACKLOG.md`:
+
+| Old roadmap ID | Canonical ID(s) | Preserved intent |
+|---|---|---|
+| T004 | T003 | Gap analysis and architecture decision folded into the architecture ADR |
+| T050 | T060 | Skill manifest decision |
+| T051 | T062 | Research skill |
+| T052 | T063 | Document-analysis skill |
+| T053 | T064 | Tabular-analysis skill |
+| T054 | T065 | Typed tool interface |
+| T055 | T071 | Context builder |
+| T056 | T073 | User memory |
+| T057 | T074 | Organization knowledge retrieval |
+| T058 | T070, T072 | Split into ContextEnvelope schema and context budget trimming |
+| T060 | T080 | Risk policy |
+| T061 | T081, T082, T083, T084 | Split into approval persistence, service, list/detail, and decision APIs |
+| T062 | T085 | LangGraph interrupt integration |
+| T063 | T086 | Resume after approval |
+| T064 | T087 | Approved side-effect idempotency |
+| T065 | T088 | HITL audit events |
+| T070 | T090 | Trace data model decision |
+| T071 | T093 | Correlation propagation |
+| T072 | T094 | Latency/status/error metrics |
+| T073 | T095 | Token usage adapter |
+| T074 | T097 | Trace query API |
+| T075 | T098 | Redaction tests |
+| T080 | T100 | Evaluation schema decision |
+| T081 | T101 | Deterministic fixture set |
+| T082 | T102 | Workflow evaluator |
+| T083 | T103 | Metrics calculation |
+| T084 | T104 | Machine-readable regression report |
+| T085 | T106 | CI smoke evaluation |
+| T100 | T120 | Concurrency architecture review |
+| T101 | T122 | Background worker decision/integration |
+| T102 | T123 | Rate limiting/backpressure |
+| T103 | T124 | Health/readiness |
+| T104 | T125 | Docker Compose hardening |
+| T105 | T126 | CI pipeline |
+| T106 | T121, T123 | Split into DB pool/transaction review and security/backpressure hardening |
+| T107 | T127 | Concurrency smoke test |
+| T110 | T130 | User Guide audit |
+| T111 | T131 | Developer Guide audit |
+| T112 | T132 | Architecture/code-reading documentation |
+| T113 | T132 | Code Reading Order audit |
+| T114 | T131 | Troubleshooting/developer runbook documentation |
+| T115 | T135 | Demo script/data |
+| T116 | T133 | Security audit |
+| T117 | T133 | Architecture audit |
+| T118 | T136 | Final test/evaluation report |

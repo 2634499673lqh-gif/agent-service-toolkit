@@ -134,51 +134,43 @@ Implement start/inspect integration, retry rules, run numbering, and concurrency
 ### T039 — Phase 3 integration and documentation audit [B after T038]
 Complete security/lifecycle/migration evidence and planning synchronization.
 
-## Phase 4 — Agent runtime
+## Phase 4 — Agent runtime (planning contract frozen by ADR-006/T040)
 
-### T040 — AgentState design [A]
-Goal: exact typed state contract and persistence boundaries.
-Output: state fields + what must NOT be stored.
+### T040 — Phase 4 runtime architecture / AgentState contract [A]
+Planning-only architecture gate. Freeze the typed serializable AgentState, graph topology, Task/TaskRun integration, TaskStep deferral, runtime entry, recovery budgets, checkpoint identity/resume trust, persistence ownership, transactions, concurrency, security boundary, and deferred scope. No production code.
 
 ### T041 — Planner schema [C after T040]
-Goal: Pydantic structured Plan/PlanStep output only.
-Acceptance: schema tests and invalid output tests.
+Implement the minimal typed Plan/PlanStep runtime schema and structural validation. PlanStep is not a persisted TaskStep entity; invalid structured output has a bounded repair/fail rule.
 
-### T042 — Planner node [B]
-Goal: model call producing valid structured plan.
-Acceptance: mocked unit tests; parse/repair behavior explicit.
+### T042 — Planner node [B after T041]
+Implement the deterministic/mockable planner node that emits a validated Plan without granting authorization or tool authority.
 
-### T043 — Executor interface [A/B]
-Goal: define one-step execution contract, no side effects yet.
-Acceptance: deterministic executor test.
+### T043 — Executor interface [A/B after T042]
+Define the narrow typed executor boundary for one deterministic, side-effect-free step; no generic tool or skill registry.
 
-### T044 — Simple deterministic tool path [C]
-Goal: execute one mock/calculation tool end to end.
-Acceptance: result stored in state/step.
+### T044 — Deterministic execution path [C after T043]
+Implement exactly one deterministic normal execution path using dependency injection; no provider, shell, filesystem, network, or external side effect.
 
-### T045 — Verifier schema [C]
-Goal: structured verdict/criteria/evidence contract.
-Tests only for schema/validation.
+### T045 — Verifier schema [C after T044]
+Implement the minimal typed verifier result with PASS/FAIL and required criteria/evidence/reason fields only.
 
-### T046 — Verifier node [B]
-Goal: verify output against acceptance criteria.
-Acceptance: mocked PASS/FAIL cases.
+### T046 — Verifier node [B after T045]
+Implement the verifier node and deterministic PASS/FAIL behavior; evidence is not authorization truth.
 
-### T047 — Failure classifier [B]
-Goal: normalized error categories.
-Acceptance: table-driven tests.
+### T047 — Failure classifier [B after T046]
+Define the small explicit retry/replan/terminal classification contract and sanitize internal failures from user-facing output.
 
-### T048 — Retry budget [B]
-Goal: bounded retry for retryable tool failure.
-Acceptance: fail-once succeeds; always-fail terminates.
+### T048 — Bounded retry [B after T047]
+Implement a one-retry budget with fail-once success and always-fail exhaustion scenarios; retry count is checkpoint state, not HTTP idempotency.
 
-### T049 — Replan route [A/B]
-Goal: bounded replan for plan/context failures.
-Acceptance: no infinite loops.
+### T049 — Bounded replan [A/B after T048]
+Implement a one-replan budget with deterministic success and exhaustion; counters cannot reset and no new TaskRun is created.
 
-### T050 — Checkpoint/resume [A]
-Goal: persist/resume graph state safely.
-Acceptance: process interruption/resumption test.
+### T050 — Checkpoint / resume [A after T049]
+Bind LangGraph checkpoint identity to the tenant-validated TaskRun, define resume/corruption fail-closed behavior, and preserve independent TaskPilot/LangGraph persistence ownership.
+
+### T051 — Phase 4 Final Audit [A, read-only after T050]
+Collect implementation evidence for the accepted ADR/T040 contract, deterministic planner/executor/verifier/recovery behavior, TaskRun lifecycle/security/concurrency, checkpoint/resume, persistence separation, static checks, and deferred-scope compliance. No implementation work.
 
 ## Phase 5 — Skill / tool / context
 
