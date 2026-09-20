@@ -47,6 +47,51 @@ Scope remains limited to T043. No deterministic executor, provider, tool/skill
 registry, classifier, retry/replan, persistence, API, or external effect was
 added. PostgreSQL is not applicable to this interface/schema task.
 
+### 2026-09-20 — T044: Deterministic execution path
+
+Status: IMPLEMENTED — READY FOR T044 STRONG REVIEW (uncommitted)
+
+- Added one side-effect-free `DeterministicExecutor` implementation using the
+  committed T043 interface and result contract.
+- Added stable bounded text transformation from sanitized task input and
+  `PlanStep` data.
+- Added explicit per-instance `none`, `fail_once`, and `always_fail` behavior
+  for deterministic recovery tests; no global failure state was introduced.
+- Added repeatability, bounds, normalized failure, and Protocol compatibility
+  tests.
+
+Scope remains limited to T044. No verifier, classifier, retry/replan runtime,
+LangGraph graph, persistence, API, provider, tool registry, or external effect
+was added.
+
+Files changed:
+
+- `src/runtime/executor.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_deterministic_executor.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+
+- Focused T044 tests: `5 passed`.
+- T041/T042/T043 regression: `39 passed`.
+- Runtime/schema regression: `54 passed`.
+- Full pytest: `427 passed, 81 skipped`.
+- Ruff, Ruff format, Pyrefly, `uv lock --check`, import smoke, and
+  `git diff --check`: PASS.
+
+Result: T044 is implemented and ready for independent Strong Review.
+
+Known limitations: the executor intentionally formats bounded runtime data;
+semantic task execution, verification, recovery, persistence, and external
+effects remain deferred to later tasks.
+
+Learner notes: the production executor is deliberately pure and instance-local;
+`fail_once` state is explicit and is not a retry or failure-classification
+framework.
+
+Suggested next task: T045 — Verifier schema. Do not implement it as part of T044.
+
 ### 2026-09-20 — Phase 4 Planning Acceptance Status
 
 Status: APPROVED / COMPLETE

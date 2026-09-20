@@ -1,6 +1,6 @@
 """Typed executor boundary and result contract for Phase 4 T043."""
 
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -50,4 +50,45 @@ class Executor(Protocol):
     async def execute(self, step: PlanStep, task_input: PlannerTaskInput) -> ExecutionResult: ...
 
 
-__all__ = ["ExecutionResult", "Executor"]
+class DeterministicExecutor:
+    """One bounded, side-effect-free execution path for T044."""
+
+    _FAILURE_CODE = "deterministic_execution_failed"
+    _FAILURE_MESSAGE = "Deterministic execution failed."
+
+    def __init__(
+        self,
+        *,
+        failure_mode: Literal["none", "fail_once", "always_fail"] = "none",
+    ) -> None:
+        self._failure_mode = failure_mode
+        self._fail_once_used = False
+
+    async def execute(self, step: PlanStep, task_input: PlannerTaskInput) -> ExecutionResult:
+        """Return a stable result without invoking external systems."""
+
+        if self._should_fail():
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code=self._FAILURE_CODE,
+                error_message=self._FAILURE_MESSAGE,
+            )
+
+        output = (
+            f"Task: {task_input.title}\n"
+            f"Description: {task_input.description or ''}\n"
+            f"Step {step.position}: {step.instruction}"
+        )[:2000]
+        return ExecutionResult(step_position=step.position, success=True, output=output)
+
+    def _should_fail(self) -> bool:
+        if self._failure_mode == "always_fail":
+            return True
+        if self._failure_mode == "fail_once" and not self._fail_once_used:
+            self._fail_once_used = True
+            return True
+        return False
+
+
+__all__ = ["DeterministicExecutor", "ExecutionResult", "Executor"]
