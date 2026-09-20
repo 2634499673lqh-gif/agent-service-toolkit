@@ -2,6 +2,21 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-20 — T041: Planner schema
+
+Status: IMPLEMENTED — READY FOR T041 STRONG REVIEW (uncommitted)
+
+- Added the minimal JSON-serializable runtime-only `Plan` and `PlanStep`
+  Pydantic schemas.
+- Enforced one-to-eight steps, positive positions, canonical `1..N` ordering,
+  non-blank instructions, the 500-character instruction limit, and forbidden
+  extra fields.
+- Added focused schema validation and JSON round-trip tests.
+
+Scope remains limited to T041. No planner node, repair loop, executor,
+verifier, recovery, persistence, API, authority fields, or dependency was
+added. PostgreSQL is not applicable to this pure schema task.
+
 ### 2026-09-20 — Phase 4 Planning Acceptance Status
 
 Status: APPROVED / COMPLETE

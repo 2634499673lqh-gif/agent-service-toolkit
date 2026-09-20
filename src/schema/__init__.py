@@ -1,4 +1,5 @@
 from schema.models import AllModelEnum
+from schema.planner import Plan, PlanStep
 from schema.schema import (
     AgentInfo,
     ChatHistory,
@@ -17,6 +18,8 @@ from schema.schema import (
 __all__ = [
     "AgentInfo",
     "AllModelEnum",
+    "Plan",
+    "PlanStep",
     "UserInput",
     "ChatMessage",
     "ServiceMetadata",
