@@ -28,12 +28,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from persistence.engine import create_async_engine, create_session_factory, get_business_session
-from persistence.models import AuthSession, Membership, Organization, Role, User
+from persistence.models import (
+    AuthSession,
+    Membership,
+    Organization,
+    Role,
+    Task,
+    TaskRun,
+    TaskRunStatus,
+    TaskStatus,
+    User,
+)
 from persistence.passwords import hash_password, verify_password
 from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
+    TaskRepository,
+    TaskRunRepository,
     UserRepository,
 )
 from persistence.tokens import generate_token, hash_token
@@ -58,7 +70,9 @@ T021_REVISION = "t021_organization"
 T022_REVISION = "t022_user"
 T022A_REVISION = "t022a_membership"
 T023_REVISION = "t023_auth_session"
-EXPECTED_REVISION = T023_REVISION
+T031_REVISION = "t031_task"
+T032_REVISION = "t032_task_run"
+EXPECTED_REVISION = T032_REVISION
 
 
 def _configured_test_url() -> str:
@@ -319,6 +333,9 @@ async def _assert_taskpilot_schema(
             expected_tables.add("memberships")
         if sessions_expected:
             expected_tables.add("auth_sessions")
+        expected_tables.add("tasks")
+        if expected_revision == T032_REVISION:
+            expected_tables.add("task_runs")
     assert tables == expected_tables
     assert revision == expected_revision
     assert version_relation == "taskpilot.alembic_version"
@@ -443,6 +460,133 @@ async def _assert_taskpilot_schema(
     else:
         assert sessions_relation is None
 
+    task_connection = await engine.connect()
+    tasks_relation = await task_connection.scalar(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": "taskpilot.tasks"},
+    )
+    if expected_revision in {T031_REVISION, T032_REVISION}:
+        assert tasks_relation == "taskpilot.tasks"
+        task_columns = {
+            column["name"]: column
+            for column in await task_connection.run_sync(
+                lambda conn: inspect(conn).get_columns("tasks", schema="taskpilot")
+            )
+        }
+        assert set(task_columns) == {
+            "id",
+            "organization_id",
+            "created_by_user_id",
+            "title",
+            "description",
+            "status",
+            "created_at",
+            "updated_at",
+        }
+        assert str(task_columns["id"]["type"]) == "UUID"
+        assert str(task_columns["organization_id"]["type"]) == "UUID"
+        assert str(task_columns["created_by_user_id"]["type"]) == "UUID"
+        assert task_columns["description"]["nullable"] is True
+        assert task_columns["status"]["nullable"] is False
+        assert task_columns["created_at"]["type"].timezone is True
+        assert task_columns["updated_at"]["type"].timezone is True
+        task_checks = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_check_constraints("tasks", schema="taskpilot")
+        )
+        assert {constraint["name"] for constraint in task_checks} == {
+            "ck_tasks_task_title_not_blank",
+            "ck_tasks_task_status_valid",
+        }
+        task_indexes = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_indexes("tasks", schema="taskpilot")
+        )
+        assert {
+            "ix_tasks_organization_id",
+            "ix_tasks_created_by_user_id",
+            "ix_tasks_status",
+        } <= {index["name"] for index in task_indexes}
+        task_foreign_keys = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_foreign_keys("tasks", schema="taskpilot")
+        )
+        foreign_keys_by_column = {tuple(fk["constrained_columns"]): fk for fk in task_foreign_keys}
+        assert set(foreign_keys_by_column) == {
+            ("organization_id",),
+            ("created_by_user_id",),
+        }
+        assert foreign_keys_by_column[("organization_id",)]["referred_table"] == "organizations"
+        assert foreign_keys_by_column[("created_by_user_id",)]["referred_table"] == "users"
+        assert all(
+            fk["options"].get("ondelete") == "RESTRICT" for fk in foreign_keys_by_column.values()
+        )
+    else:
+        assert tasks_relation is None
+
+    task_runs_relation = await task_connection.scalar(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": "taskpilot.task_runs"},
+    )
+    if expected_revision == T032_REVISION:
+        assert task_runs_relation == "taskpilot.task_runs"
+        task_run_columns = {
+            column["name"]: column
+            for column in await task_connection.run_sync(
+                lambda conn: inspect(conn).get_columns("task_runs", schema="taskpilot")
+            )
+        }
+        assert set(task_run_columns) == {
+            "id",
+            "task_id",
+            "run_number",
+            "status",
+            "created_at",
+            "updated_at",
+        }
+        assert str(task_run_columns["id"]["type"]) == "UUID"
+        assert str(task_run_columns["task_id"]["type"]) == "UUID"
+        assert str(task_run_columns["run_number"]["type"]) == "INTEGER"
+        assert task_run_columns["run_number"]["nullable"] is False
+        assert task_run_columns["status"]["nullable"] is False
+        assert task_run_columns["created_at"]["type"].timezone is True
+        assert task_run_columns["updated_at"]["type"].timezone is True
+        task_run_checks = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_check_constraints("task_runs", schema="taskpilot")
+        )
+        assert {constraint["name"] for constraint in task_run_checks} == {
+            "ck_task_runs_task_run_number_positive",
+            "ck_task_runs_task_run_status_valid",
+        }
+        task_run_unique_constraints = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_unique_constraints("task_runs", schema="taskpilot")
+        )
+        assert {
+            (constraint["name"], tuple(constraint["column_names"]))
+            for constraint in task_run_unique_constraints
+        } == {("uq_task_runs_task_run_number", ("task_id", "run_number"))}
+        task_run_indexes = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_indexes("task_runs", schema="taskpilot")
+        )
+        task_run_index_by_name = {index["name"]: index for index in task_run_indexes}
+        assert {
+            "ix_task_runs_task_id",
+            "ix_task_runs_status",
+            "uq_task_runs_one_active_per_task",
+        } <= set(task_run_index_by_name)
+        assert task_run_index_by_name["uq_task_runs_one_active_per_task"]["unique"] is True
+        assert "pending" in task_run_index_by_name["uq_task_runs_one_active_per_task"][
+            "dialect_options"
+        ].get("postgresql_where", "")
+        task_run_foreign_keys = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_foreign_keys("task_runs", schema="taskpilot")
+        )
+        assert len(task_run_foreign_keys) == 1
+        assert task_run_foreign_keys[0]["constrained_columns"] == ["task_id"]
+        assert task_run_foreign_keys[0]["referred_schema"] == "taskpilot"
+        assert task_run_foreign_keys[0]["referred_table"] == "tasks"
+        assert task_run_foreign_keys[0]["options"].get("ondelete") == "RESTRICT"
+    else:
+        assert task_runs_relation is None
+    await task_connection.close()
+
 
 @pytest.mark.asyncio
 async def test_scenario_a_langgraph_then_taskpilot_and_downgrade() -> None:
@@ -454,6 +598,23 @@ async def test_scenario_a_langgraph_then_taskpilot_and_downgrade() -> None:
             await _run_alembic(config, "upgrade", "head")
             await _assert_taskpilot_schema(engine)
             await _langgraph_read(database_url, "scenario-a")
+            # T032 -> T031 must remove only the TaskRun table and active-run index.
+            await _run_alembic(config, "downgrade", T031_REVISION)
+            await _assert_taskpilot_schema(
+                engine,
+                expected_revision=T031_REVISION,
+                expected_tables={
+                    "alembic_version",
+                    "organizations",
+                    "users",
+                    "memberships",
+                    "auth_sessions",
+                    "tasks",
+                },
+            )
+            await _langgraph_read(database_url, "scenario-a")
+            await _run_alembic(config, "upgrade", "head")
+            await _assert_taskpilot_schema(engine)
             # T023 -> T022A must remove only the session table.
             await _run_alembic(config, "downgrade", T022A_REVISION)
             await _assert_taskpilot_schema(
@@ -611,6 +772,223 @@ async def test_transactions_sessions_and_name_constraints(migrated_engine: Async
             async with get_business_session(session_factory) as session:
                 async with session.begin():
                     await OrganizationRepository(session).add(Organization(name=invalid_name))
+
+
+@pytest.mark.asyncio
+async def test_task_persistence_defaults_and_database_constraints(
+    migrated_engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    organization = Organization(name="Task Org")
+    user = User(email="task-owner@example.com", password_hash="opaque-test-hash")
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization)
+            await UserRepository(session).add(user)
+            task = Task(
+                organization_id=organization.id,
+                created_by_user_id=user.id,
+                title="Persist a task",
+            )
+            session.add(task)
+            await session.flush()
+            assert task.status is TaskStatus.DRAFT
+            assert task.created_at.tzinfo is not None
+            assert task.updated_at.tzinfo is not None
+
+    async with get_business_session(session_factory) as session:
+        loaded = await session.scalar(select(Task).where(Task.id == task.id))
+        assert loaded is not None
+        assert loaded.status is TaskStatus.DRAFT
+        assert loaded.organization_id == organization.id
+        assert loaded.created_by_user_id == user.id
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO taskpilot.tasks "
+                        "(id, organization_id, created_by_user_id, title, status) "
+                        "VALUES (:id, :organization_id, :created_by_user_id, :title, :status)"
+                    ),
+                    {
+                        "id": uuid4(),
+                        "organization_id": organization.id,
+                        "created_by_user_id": user.id,
+                        "title": "Invalid status",
+                        "status": "unknown",
+                    },
+                )
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    delete(Organization).where(Organization.id == organization.id)
+                )
+
+
+@pytest.mark.asyncio
+async def test_task_run_persistence_and_active_run_constraints(
+    migrated_engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    organization = Organization(name="TaskRun Org")
+    user = User(email="task-run-owner@example.com", password_hash="opaque-test-hash")
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization)
+            await UserRepository(session).add(user)
+            task = Task(
+                organization_id=organization.id,
+                created_by_user_id=user.id,
+                title="Run a task",
+            )
+            session.add(task)
+            await session.flush()
+            pending_run = TaskRun(task_id=task.id, run_number=1)
+            succeeded_run = TaskRun(
+                task_id=task.id,
+                run_number=2,
+                status=TaskRunStatus.SUCCEEDED,
+            )
+            failed_run = TaskRun(
+                task_id=task.id,
+                run_number=3,
+                status=TaskRunStatus.FAILED,
+            )
+            session.add_all([pending_run, succeeded_run, failed_run])
+            await session.flush()
+            assert pending_run.status is TaskRunStatus.PENDING
+            assert pending_run.created_at.tzinfo is not None
+            assert pending_run.updated_at.tzinfo is not None
+
+    async with get_business_session(session_factory) as session:
+        stored_runs = list(
+            await session.scalars(
+                select(TaskRun).where(TaskRun.task_id == task.id).order_by(TaskRun.run_number)
+            )
+        )
+        assert [run.run_number for run in stored_runs] == [1, 2, 3]
+        assert [run.status for run in stored_runs] == [
+            TaskRunStatus.PENDING,
+            TaskRunStatus.SUCCEEDED,
+            TaskRunStatus.FAILED,
+        ]
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(TaskRun(task_id=task.id, run_number=2))
+                await session.flush()
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(TaskRun(task_id=task.id, run_number=0))
+                await session.flush()
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(TaskRun(task_id=task.id, run_number=4))
+                await session.flush()
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO taskpilot.task_runs "
+                        "(id, task_id, run_number, status) "
+                        "VALUES (:id, :task_id, :run_number, :status)"
+                    ),
+                    {
+                        "id": uuid4(),
+                        "task_id": task.id,
+                        "run_number": 5,
+                        "status": "unknown",
+                    },
+                )
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(delete(Task).where(Task.id == task.id))
+
+
+@pytest.mark.asyncio
+async def test_task_repositories_hide_foreign_resources_and_preserve_run_history(
+    migrated_engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    organization_a = Organization(name="Repository Tenant A")
+    organization_b = Organization(name="Repository Tenant B")
+    user_a = User(email="repository-a@example.com", password_hash="opaque-test-hash")
+    user_b = User(email="repository-b@example.com", password_hash="opaque-test-hash")
+
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization_a)
+            await OrganizationRepository(session).add(organization_b)
+            await UserRepository(session).add(user_a)
+            await UserRepository(session).add(user_b)
+            task_a = Task(
+                organization_id=organization_a.id,
+                created_by_user_id=user_a.id,
+                title="Tenant A task",
+            )
+            task_b = Task(
+                organization_id=organization_b.id,
+                created_by_user_id=user_b.id,
+                title="Tenant B task",
+            )
+            await TaskRepository(session).add(task_a)
+            await TaskRepository(session).add(task_b)
+            run_a_two = TaskRun(task_id=task_a.id, run_number=2, status=TaskRunStatus.FAILED)
+            await TaskRunRepository(session).add(run_a_two)
+            run_a_one = TaskRun(
+                task_id=task_a.id,
+                run_number=1,
+                status=TaskRunStatus.SUCCEEDED,
+            )
+            await TaskRunRepository(session).add(run_a_one)
+            foreign_run = TaskRun(
+                task_id=task_b.id,
+                run_number=1,
+                status=TaskRunStatus.CANCELLED,
+            )
+            await TaskRunRepository(session).add(foreign_run)
+
+    async with get_business_session(session_factory) as session:
+        task_repository = TaskRepository(session)
+        assert (
+            await task_repository.get_in_principal_tenant(task_a.id, organization_a.id) is not None
+        )
+        assert await task_repository.get_in_principal_tenant(task_b.id, organization_a.id) is None
+        assert await task_repository.get_in_principal_tenant(uuid4(), organization_a.id) is None
+        assert [
+            task.id for task in await task_repository.list_for_organization(organization_a.id)
+        ] == [task_a.id]
+
+        task_run_repository = TaskRunRepository(session)
+        own_run = await task_run_repository.get_in_principal_tenant(run_a_two.id, organization_a.id)
+        assert own_run is not None
+        assert own_run.task_id == task_a.id
+        assert (
+            await task_run_repository.get_in_principal_tenant(foreign_run.id, organization_a.id)
+            is None
+        )
+        assert await task_run_repository.get_in_principal_tenant(uuid4(), organization_a.id) is None
+        history = await task_run_repository.list_for_task_in_organization(
+            task_a.id, organization_a.id
+        )
+        assert [run.run_number for run in history] == [1, 2]
+        assert (
+            await task_run_repository.list_for_task_in_organization(task_a.id, organization_b.id)
+            == []
+        )
 
 
 @pytest.mark.asyncio

@@ -62,14 +62,14 @@ redaction are deferred to T014.
 - SQLite checkpoint: lightweight local-development checkpoint; the long-term store is process-local `InMemoryStore` and is not durable across restarts.
 - PostgreSQL LangGraph persistence: `AsyncPostgresSaver` and `AsyncPostgresStore` create and upgrade library-managed checkpoint/Store schemas via `setup()`.
 - MongoDB: optional checkpointer only (`docker/compose.mongo.yaml`); no Mongo Store.
-- At the Phase 1 baseline there were no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. Phase 2 (T021–T023) now adds exactly four business tables - `organizations`, `users`, `memberships`, and `auth_sessions` - and nothing else; `src/schema/task_data.py` remains Streamlit background-task display data, not the TaskPilot domain.
+- At the Phase 1 baseline there were no SQLAlchemy models, Alembic migrations, application business tables, or `Task`, `TaskRun`, `TaskStep`, user, organization, role, approval, trace-event or evaluation records. Phase 2 (T021–T023) added the identity tables `organizations`, `users`, `memberships`, and `auth_sessions`; T031 and T032 now add the persistence-only `tasks` and `task_runs` tables. `src/schema/task_data.py` remains Streamlit background-task display data, not the TaskPilot domain.
 
 ## Current feature inventory and TaskPilot V1 gap
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
-| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | No TaskPilot HTTP endpoint yet; Task-owned resources and approval records are still missing | 2 (done) / 3 |
-| Task/run/step lifecycle | None; FastAPI/Pydantic patterns | Domain schema, migrations, repositories, transitions, cancellation, idempotency | 3 |
+| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs and T038 tenant-scoped TaskRun start/inspect APIs are implemented; approval records remain missing | 2 (done) / 3 |
+| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, and T038 start/inspect integration | TaskStep schema, runtime execution, idempotency | 3 |
 | Planner/executor/verifier/recovery | Demo tool-loop graphs; `StateGraph`, `ToolNode` | Typed state/plan/verdict, bounded retry/replan and acceptance verification | 4 |
 | Checkpoint/resume | Conversation checkpoint plus interrupt demo; `memory/*` | Bind to authorized durable TaskRuns and recovery semantics | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
@@ -96,10 +96,10 @@ Bootstrap order is PostgreSQL, TaskPilot Alembic migrations, LangGraph saver/sto
 
 Implemented and reviewed:
 
-- T021 provides `src/persistence/` with TaskPilot-owned SQLAlchemy metadata, an async psycopg engine/session factory, and the Organization repository. Alembic uses `migrations/env.py` and `taskpilot` schema version metadata; its `include_name` pre-reflection filter plus defensive `include_object` filter exclude public/LangGraph tables from autogenerate.
+- T021 provides `src/persistence/` with TaskPilot-owned SQLAlchemy metadata, an async psycopg engine/session factory, and the Organization repository. T034 adds tenant-scoped Task/TaskRun repositories; TaskRun queries derive tenant ownership through an explicit SQL join to Task. Alembic uses `migrations/env.py` and `taskpilot` schema version metadata; its `include_name` pre-reflection filter plus defensive `include_object` filter exclude public/LangGraph tables from autogenerate.
 - T022/T022A/T023 add `users`, `memberships`, and `auth_sessions` through four linear revisions (`t021_organization`, `t022_user`, `t022a_membership`, `t023_auth_session`), with Argon2id password hashes, a canonical `normalized_email`, the frozen `owner|admin|member` role set, and SHA-256 session-token digests.
 - T023 login issues opaque 24-hour sessions bound to one user and one membership, with generic credential failure and a controlled CLI bootstrap. T024 resolves the request-scoped `CurrentPrincipal` and re-reads all state per request. T025 provides the single authorization boundary with fixed 401/403/404 semantics. T026 supplies the authoritative negative security matrix.
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: any TaskPilot HTTP endpoint (`/api/v1`, login, `/me`), Task/TaskRun/TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. `tests/persistence` and the T026 security matrix need a disposable PostgreSQL test database and skip without one.
+Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task create/list/get/update/cancel routes, and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`; runtime execution and application idempotency remain later work. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.

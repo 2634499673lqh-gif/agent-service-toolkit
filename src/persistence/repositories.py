@@ -4,12 +4,184 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.identity import canonicalize_email
-from persistence.models import AuthSession, Membership, Organization, User
+from persistence.models import (
+    AuthSession,
+    Membership,
+    Organization,
+    Task,
+    TaskRun,
+    TaskRunStatus,
+    User,
+)
+
+
+class TaskRepository:
+    """Tenant-scoped persistence operations for Tasks.
+
+    The caller supplies the server-derived organization scope explicitly. Every
+    tenant-owned lookup keeps that scope in SQL so a foreign Task is observed
+    as not found rather than fetched and checked in Python.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def add(self, task: Task) -> Task:
+        """Stage and flush a Task without committing its transaction."""
+
+        self.session.add(task)
+        await self.session.flush()
+        return task
+
+    async def get_in_principal_tenant(
+        self, task_id: UUID, principal_organization_id: UUID
+    ) -> Task | None:
+        """Load one Task only when it belongs to the trusted tenant scope."""
+
+        statement = select(Task).where(
+            Task.id == task_id,
+            Task.organization_id == principal_organization_id,
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_update_in_principal_tenant(
+        self, task_id: UUID, principal_organization_id: UUID
+    ) -> Task | None:
+        """Load and lock one visible Task for a lifecycle transaction."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
+
+    async def next_run_number(self, task_id: UUID) -> int:
+        """Return the next run number; callers lock the owning Task first."""
+
+        statement = select(func.coalesce(func.max(TaskRun.run_number), 0) + 1).where(
+            TaskRun.task_id == task_id
+        )
+        value = await self.session.scalar(statement)
+        return int(value or 1)
+
+    async def list_for_organization(self, organization_id: UUID) -> list[Task]:
+        """List only Tasks owned by one trusted organization scope."""
+
+        statement = (
+            select(Task)
+            .where(Task.organization_id == organization_id)
+            .order_by(Task.created_at, Task.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+
+class TaskRunRepository:
+    """Tenant-scoped persistence operations for TaskRun history."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def add(self, task_run: TaskRun) -> TaskRun:
+        """Stage and flush a TaskRun without committing its transaction."""
+
+        self.session.add(task_run)
+        await self.session.flush()
+        return task_run
+
+    async def get_in_principal_tenant(
+        self, task_run_id: UUID, principal_organization_id: UUID
+    ) -> TaskRun | None:
+        """Load a TaskRun only through its Task's trusted tenant scope."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_task_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> TaskRun | None:
+        """Load one run only when it belongs to the requested visible Task."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_update_in_principal_tenant(
+        self, task_run_id: UUID, principal_organization_id: UUID
+    ) -> TaskRun | None:
+        """Load and lock one visible TaskRun for a lifecycle transaction."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update()
+        )
+        return await self.session.scalar(statement)
+
+    async def get_active_for_update(
+        self,
+        task_id: UUID,
+        status: TaskRunStatus,
+    ) -> TaskRun | None:
+        """Load and lock the sole active run expected by a Task state."""
+
+        statement = (
+            select(TaskRun)
+            .where(
+                TaskRun.task_id == task_id,
+                TaskRun.status == status,
+            )
+            .with_for_update()
+        )
+        return await self.session.scalar(statement)
+
+    async def list_for_task_in_organization(
+        self, task_id: UUID, organization_id: UUID
+    ) -> list[TaskRun]:
+        """List all historical runs for a visible Task in run-number order."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.task_id == task_id,
+                Task.organization_id == organization_id,
+            )
+            .order_by(TaskRun.run_number, TaskRun.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
 
 
 class OrganizationRepository:

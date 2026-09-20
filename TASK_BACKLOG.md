@@ -100,43 +100,39 @@ Docs-only update for implemented auth behavior.
 
 ## Phase 3 — Task domain
 
-### T030 — Task state machine design [A]
-Goal: approve Task/Run/Step states, transitions, ownership and idempotency rules.
-Output: transition table + tests-to-write.
+Single planning gate: T030 Planning Strong Review approves ADR-005; ADR-005 then becomes Accepted. Production begins at T031.
 
-### T031 — Task ORM + migration [C after T030]
-Implement exact approved schema.
-Acceptance: migration + model constraints.
+Executable chain: `T031 → T032 → T034 → T035 → T036 → T037 → T038 → T039`.
 
-### T032 — TaskRun ORM + migration [C]
-Implement approved TaskRun relation/state fields.
+### T030 — Task domain and lifecycle architecture [A]
+Planning-only architecture milestone; no second freeze, schema, migration, runtime code, or tests.
 
-### T033 — TaskStep ORM + migration [C]
-Implement approved TaskStep relation/order/state fields.
+### T031 — Task schema and migration [B after T030]
+Implement approved Task persistence and migration.
 
-### T034 — Task repository [C/B]
-Goal: tenant-scoped create/get/list operations.
-Acceptance: repository tests include tenant filtering.
+### T032 — TaskRun schema and migration [C after T031]
+Implement approved TaskRun persistence and migration, including transactional one-active-run invariant.
 
-### T035 — Task transition service [B]
-Goal: legal transition enforcement.
-Acceptance: full transition matrix tests; illegal transitions rejected.
+### T033 — DEFERRED
+TaskStep persistence is deferred to Phase 4 runtime design and is not an executable dependency.
 
-### T036 — POST /tasks [C]
-Goal: create task endpoint using service layer.
-Acceptance: auth, validation, tenant ownership tests.
+### T034 — Tenant-scoped repositories [B after T032]
+Implement server-derived tenant predicates and service transaction boundaries.
 
-### T037 — GET /tasks [C]
-Goal: paginated/defined listing of permitted tasks.
-Acceptance: no cross-tenant rows.
+### T035 — Lifecycle transition service [B after T034]
+Implement Task/TaskRun legal transitions and persistence-only cancellation.
 
-### T038 — GET /tasks/{id} [C]
-Goal: return allowed task only.
-Acceptance: same-tenant and hidden cross-tenant behavior.
+### T036 — Task create/list/get API [C after T035]
+Implement typed routes with 401/403/404 and server-derived principal scope; no application-level idempotency.
 
-### T039 — Start TaskRun API [B]
-Goal: create/start run according to approved idempotency policy.
-Acceptance: duplicate/request semantics tested.
+### T037 — Task update/cancel API [C after T036]
+Implement sequential update/cancel behavior and lifecycle conflicts.
+
+### T038 — TaskRun start/inspect API [B after T037]
+Implement start/inspect integration, retry rules, run numbering, and concurrency safety; no Idempotency-Key.
+
+### T039 — Phase 3 integration and documentation audit [B after T038]
+Complete security/lifecycle/migration evidence and planning synchronization.
 
 ## Phase 4 — Agent runtime
 

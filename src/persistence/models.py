@@ -12,7 +12,9 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     text,
@@ -39,6 +41,17 @@ class Role(Enum):
     OWNER = "owner"
     ADMIN = "admin"
     MEMBER = "member"
+
+
+class TaskStatus(Enum):
+    """User-visible overall lifecycle state of a Task."""
+
+    DRAFT = "draft"
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Organization(Base):
@@ -286,4 +299,166 @@ class AuthSession(Base):
             f"AuthSession(id={self.id!r}, user_id={self.user_id!r}, "
             f"membership_id={self.membership_id!r}, expires_at={self.expires_at!r}, "
             f"revoked_at={self.revoked_at!r})"
+        )
+
+
+class Task(Base):
+    """Tenant-owned user task; execution attempts are stored by T032."""
+
+    __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("title ~ '[^[:space:]]'", name="task_title_not_blank"),
+        CheckConstraint(
+            "status IN ('draft', 'queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="task_status_valid",
+        ),
+        Index("ix_tasks_organization_id", "organization_id"),
+        Index("ix_tasks_created_by_user_id", "created_by_user_id"),
+        Index("ix_tasks_status", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_by_user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[TaskStatus] = mapped_column(
+        sa.Enum(
+            TaskStatus,
+            name="task_status",
+            native_enum=False,
+            length=16,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=TaskStatus.DRAFT,
+        server_default=text("'draft'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        organization_id: UUID,
+        created_by_user_id: UUID,
+        title: str,
+        description: str | None = None,
+        status: TaskStatus | str = TaskStatus.DRAFT,
+        **kwargs: Any,
+    ) -> None:
+        """Build a task with explicit server-derived ownership fields."""
+
+        if not isinstance(status, TaskStatus):
+            status = TaskStatus(status)
+        super().__init__(
+            organization_id=organization_id,
+            created_by_user_id=created_by_user_id,
+            title=title,
+            description=description,
+            status=status,
+            **kwargs,
+        )
+
+
+class TaskRunStatus(Enum):
+    """Lifecycle state of one durable Task execution attempt."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class TaskRun(Base):
+    """One ordered execution attempt belonging to exactly one Task."""
+
+    __tablename__ = "task_runs"
+    __table_args__ = (
+        CheckConstraint("run_number >= 1", name="task_run_number_positive"),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="task_run_status_valid",
+        ),
+        UniqueConstraint("task_id", "run_number", name="uq_task_runs_task_run_number"),
+        Index("ix_task_runs_task_id", "task_id"),
+        Index("ix_task_runs_status", "status"),
+        Index(
+            "uq_task_runs_one_active_per_task",
+            "task_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    task_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.tasks.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    run_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[TaskRunStatus] = mapped_column(
+        sa.Enum(
+            TaskRunStatus,
+            name="task_run_status",
+            native_enum=False,
+            length=16,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=TaskRunStatus.PENDING,
+        server_default=text("'pending'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        task_id: UUID,
+        run_number: int,
+        status: TaskRunStatus | str = TaskRunStatus.PENDING,
+        **kwargs: Any,
+    ) -> None:
+        """Build a run with an explicit task owner and ordered number."""
+
+        if not isinstance(status, TaskRunStatus):
+            status = TaskRunStatus(status)
+        super().__init__(
+            task_id=task_id,
+            run_number=run_number,
+            status=status,
+            **kwargs,
         )

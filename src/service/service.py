@@ -46,6 +46,7 @@ from schema import (
 )
 from service.agui import router as agui_router
 from service.logging import configure_logging, reset_request_id, set_request_id
+from service.task_api import task_router
 from service.threads import list_user_threads
 from service.utils import (
     REQUEST_ID_HEADER,
@@ -540,3 +541,4 @@ async def health_check():
 
 
 app.include_router(router)
+app.include_router(task_router)

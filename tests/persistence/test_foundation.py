@@ -9,18 +9,31 @@ from uuid import UUID
 
 import pytest
 from pydantic import SecretStr, ValidationError
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint
 
 from core.settings import Settings
 from persistence.base import Base
 from persistence.engine import normalize_business_database_url
 from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
-from persistence.models import AuthSession, Membership, Organization, Role, User, utc_now
+from persistence.models import (
+    AuthSession,
+    Membership,
+    Organization,
+    Role,
+    Task,
+    TaskRun,
+    TaskRunStatus,
+    TaskStatus,
+    User,
+    utc_now,
+)
 from persistence.repositories import (
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
+    TaskRepository,
+    TaskRunRepository,
     UserRepository,
 )
 
@@ -38,11 +51,123 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.users",
         "taskpilot.memberships",
         "taskpilot.auth_sessions",
+        "taskpilot.tasks",
+        "taskpilot.task_runs",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
     assert Membership.__table__.schema == "taskpilot"
     assert AuthSession.__table__.schema == "taskpilot"
+    assert Task.__table__.schema == "taskpilot"
+    assert TaskRun.__table__.schema == "taskpilot"
+
+
+def test_task_run_status_defaults_and_ordering_contract() -> None:
+    assert [status.value for status in TaskRunStatus] == [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    task_run = TaskRun(
+        task_id=UUID("11111111-1111-4111-8111-111111111111"),
+        run_number=1,
+    )
+    assert task_run.status is TaskRunStatus.PENDING
+    assert task_run.run_number == 1
+    assert task_run.id is None
+    assert task_run.created_at is None
+    assert task_run.updated_at is None
+
+
+def test_task_run_metadata_declares_task_fk_and_active_run_index() -> None:
+    table = TaskRun.__table__
+    assert table.c.id.type.python_type is UUID
+    assert table.c.task_id.nullable is False
+    assert table.c.run_number.nullable is False
+    assert table.c.status.nullable is False
+    assert table.c.status.server_default is not None
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert {constraint.name for constraint in table.constraints if constraint.name} == {
+        "ck_task_runs_task_run_number_positive",
+        "ck_task_runs_task_run_status_valid",
+        "pk_task_runs",
+        "uq_task_runs_task_run_number",
+        "fk_task_runs_task_id_tasks",
+    }
+    unique_columns = {
+        tuple(constraint.columns.keys())
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert ("task_id", "run_number") in unique_columns
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert set(foreign_keys) == {"task_id"}
+    assert foreign_keys["task_id"].target_fullname == "taskpilot.tasks.id"
+    assert foreign_keys["task_id"].ondelete == "RESTRICT"
+    indexes = {index.name: index for index in table.indexes if isinstance(index, Index)}
+    assert set(indexes) == {
+        "ix_task_runs_task_id",
+        "ix_task_runs_status",
+        "uq_task_runs_one_active_per_task",
+    }
+    assert indexes["uq_task_runs_one_active_per_task"].unique is True
+    assert (
+        str(indexes["uq_task_runs_one_active_per_task"].dialect_options["postgresql"]["where"])
+        == "status IN ('pending', 'running')"
+    )
+
+
+def test_task_status_and_defaults_are_frozen() -> None:
+    assert [status.value for status in TaskStatus] == [
+        "draft",
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+    ]
+    task = Task(
+        organization_id=UUID("11111111-1111-4111-8111-111111111111"),
+        created_by_user_id=UUID("22222222-2222-4222-8222-222222222222"),
+        title="Research task",
+    )
+    assert task.status is TaskStatus.DRAFT
+    assert task.description is None
+    assert task.id is None
+    assert task.created_at is None
+    assert task.updated_at is None
+
+
+def test_task_metadata_declares_tenant_creator_and_status_constraints() -> None:
+    table = Task.__table__
+    assert table.c.id.type.python_type is UUID
+    assert table.c.organization_id.nullable is False
+    assert table.c.created_by_user_id.nullable is False
+    assert table.c.title.nullable is False
+    assert table.c.description.nullable is True
+    assert table.c.status.nullable is False
+    assert table.c.status.server_default is not None
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert {constraint.name for constraint in table.constraints if constraint.name} == {
+        "ck_tasks_task_title_not_blank",
+        "ck_tasks_task_status_valid",
+        "pk_tasks",
+        "fk_tasks_organization_id_organizations",
+        "fk_tasks_created_by_user_id_users",
+    }
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert foreign_keys["organization_id"].target_fullname == "taskpilot.organizations.id"
+    assert foreign_keys["created_by_user_id"].target_fullname == "taskpilot.users.id"
+    assert all(fk.ondelete == "RESTRICT" for fk in foreign_keys.values())
+    assert {index.name for index in table.indexes} == {
+        "ix_tasks_organization_id",
+        "ix_tasks_created_by_user_id",
+        "ix_tasks_status",
+    }
 
 
 def test_role_enum_matches_the_frozen_v1_role_set() -> None:
@@ -353,6 +478,37 @@ async def test_repository_flushes_without_commit() -> None:
     session_session.flush.assert_awaited_once_with()
     session_session.commit.assert_not_called()
 
+    task_session = Mock()
+    task_session.flush = AsyncMock()
+    task_repository = TaskRepository(task_session)
+    task = Task(
+        organization_id=UUID("33333333-3333-4333-8333-333333333333"),
+        created_by_user_id=UUID("44444444-4444-4444-8444-444444444444"),
+        title="Repository task",
+    )
+
+    assert await task_repository.add(task) is task
+    task_session.add.assert_called_once_with(task)
+    task_session.flush.assert_awaited_once_with()
+    task_session.commit.assert_not_called()
+    task_session.rollback.assert_not_called()
+    task_session.close.assert_not_called()
+
+    task_run_session = Mock()
+    task_run_session.flush = AsyncMock()
+    task_run_repository = TaskRunRepository(task_run_session)
+    task_run = TaskRun(
+        task_id=task.id or UUID("55555555-5555-4555-8555-555555555555"),
+        run_number=1,
+    )
+
+    assert await task_run_repository.add(task_run) is task_run
+    task_run_session.add.assert_called_once_with(task_run)
+    task_run_session.flush.assert_awaited_once_with()
+    task_run_session.commit.assert_not_called()
+    task_run_session.rollback.assert_not_called()
+    task_run_session.close.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_auth_session_repository_looks_up_by_digest_only() -> None:
@@ -454,3 +610,48 @@ async def test_principal_tenant_organization_lookup_is_scoped_in_the_database() 
     # and then compared in Python.
     assert sql.count("taskpilot.organizations.id") >= 2
     assert "where" in sql
+
+
+@pytest.mark.asyncio
+async def test_task_repositories_keep_tenant_scope_in_the_database() -> None:
+    task_id = UUID("55555555-5555-4555-8555-555555555555")
+    task_run_id = UUID("66666666-6666-4666-8666-666666666666")
+    organization_id = UUID("77777777-7777-4777-8777-777777777777")
+
+    task_session = Mock()
+    task_session.scalar = AsyncMock(return_value=None)
+    task_session.scalars = AsyncMock(return_value=[])
+    task_repository = TaskRepository(task_session)
+
+    assert await task_repository.get_in_principal_tenant(task_id, organization_id) is None
+    task_statement = task_session.scalar.await_args.args[0]
+    task_sql = str(task_statement.compile(compile_kwargs={"literal_binds": True})).casefold()
+    assert "taskpilot.tasks.id" in task_sql
+    assert "taskpilot.tasks.organization_id" in task_sql
+
+    assert await task_repository.list_for_organization(organization_id) == []
+    list_sql = str(
+        task_session.scalars.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "taskpilot.tasks.organization_id" in list_sql
+
+    task_run_session = Mock()
+    task_run_session.scalar = AsyncMock(return_value=None)
+    task_run_session.scalars = AsyncMock(return_value=[])
+    task_run_repository = TaskRunRepository(task_run_session)
+
+    assert await task_run_repository.get_in_principal_tenant(task_run_id, organization_id) is None
+    task_run_statement = task_run_session.scalar.await_args.args[0]
+    task_run_sql = str(
+        task_run_statement.compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.tasks" in task_run_sql
+    assert "taskpilot.task_runs.id" in task_run_sql
+    assert "taskpilot.tasks.organization_id" in task_run_sql
+
+    assert await task_run_repository.list_for_task_in_organization(task_id, organization_id) == []
+    task_run_list_sql = str(
+        task_run_session.scalars.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.tasks" in task_run_list_sql
+    assert "taskpilot.tasks.organization_id" in task_run_list_sql

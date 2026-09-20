@@ -2120,3 +2120,581 @@ Learner notes:
 
 Suggested next step: commit T027, then start Phase 3 only when authorized, with
 T030 Task state-machine design. No Phase 3 work was started here.
+
+### 2026-09-18 — Phase 3 Task domain planning
+
+Status: PLANNING COMPLETE — no Phase 3 implementation started
+
+What changed:
+- Audited Phase 2 implementation truth: PostgreSQL TaskPilot schema, async SQLAlchemy/Alembic boundary, CurrentPrincipal and authorization helpers exist; Task/TaskRun/TaskStep, TaskPilot HTTP routes, approvals and Agent runtime domain do not exist.
+- Added ADR-005 for Task domain topology, tenant/actor ownership, lifecycle state machines, Task-to-LangGraph boundary, transaction/concurrency rules, API semantics and deferrals.
+- Expanded Phase 3 to T030–T039 and created implementation-ready cards with explicit dependencies, forbidden scope, migration gates, PostgreSQL integration and review gates.
+- Synchronized ROADMAP, TASK_BACKLOG and task index.
+
+Files changed:
+- ROADMAP.md
+- TASK_BACKLOG.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+- process/tasks/INDEX.md
+- process/tasks/T030.md through process/tasks/T039.md
+
+Commands/tests run:
+- Baseline Git checks → PASS: phase-3-task-domain, HEAD 7b9c473, clean before planning.
+- Read Phase 3 authoritative context and relevant Phase 2 persistence/auth/runtime code → PASS.
+- Runtime pytest → NOT RUN: planning-only task; no runtime changes.
+- Focused Markdown and diff checks recorded after edits.
+
+Architecture/security notes:
+- Task, TaskRun and TaskStep remain business records, never LangGraph checkpoint/thread/AgentState records.
+- All Task-owned access derives organization scope from CurrentPrincipal; caller identity and tenant fields are not authorization truth.
+- Approval, planner/executor/verifier, skills/tools/context, observability and UI remain deferred to their roadmap phases.
+
+Known limitations:
+- No Phase 3 production schema or API exists until the cards are separately authorized.
+
+Learner notes:
+- Problem solved: Phase 3 is now an executable design with explicit lifecycle and tenant boundaries rather than a list of table names.
+- Read `process/DECISION_LOG.md` ADR-005, `process/tasks/T030.md`, `src/persistence/models.py`, `src/service/authorization.py`, and `src/service/session.py`.
+- Key concept: a business Task can reference future agent execution without becoming a LangGraph thread.
+- Exercise: draw the Task → TaskRun → TaskStep ownership chain and mark where CurrentPrincipal.organization_id must appear in SQL.
+- Ignore for now: planner prompts, tools, approvals, queues, Redis and UI.
+
+Suggested next task: T030 Strong Review. Do not start T031 until ADR-005 and its transition/API/migration gates are accepted.
+
+
+## Phase 3 planning blocker fix — 2026-09-18
+
+- Corrected the six planning blockers: Task/TaskRun source of truth and lifecycle, persistence-only cancellation, deferred TaskStep/T033, deferred application-level idempotency, single ADR-005/T030 architecture gate, and the sequential executable DAG.
+- Planning files changed: ROADMAP.md, TASK_BACKLOG.md, process/DECISION_LOG.md, process/tasks/INDEX.md, and process/tasks/T030.md–T039.md.
+- No production code, tests, dependencies, or migrations changed.
+- Validation: `git diff --check`; stale-contract search and diff review remain to be reported with the final review.
+- Learner focus: distinguish business Task state from execution-attempt TaskRun state, and distinguish domain concurrency invariants from application idempotency.
+
+### 2026-09-18 — T031: Task schema and migration
+
+Status: IMPLEMENTED — READY FOR STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `e817df4 docs: freeze Phase 3 task domain architecture`.
+- Working tree before implementation: clean.
+
+What changed:
+- Added the `Task` ORM model and `TaskStatus` enum with the frozen six-state
+  user-visible lifecycle. New tasks default to `DRAFT` and contain no run.
+- Added tenant and creator provenance columns as non-null PostgreSQL foreign
+  keys to `organizations` and `users`, with `RESTRICT` delete behavior.
+- Added non-blank title, optional description, readable lowercase status,
+  UTC timestamps, explicit indexes, and PostgreSQL check constraints.
+- Added the linear Alembic revision `t031_task`, registered the model in the
+  metadata and migration environment, and updated the relevant architecture,
+  database, and README status statements.
+- No TaskRun, TaskStep, repository, lifecycle service, API, runtime, or
+  application idempotency behavior was added.
+
+Files changed:
+- `src/persistence/models.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260918_01_task.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (26 passed).
+- `uv run pytest tests/persistence/test_postgres_integration.py -q` with live
+  PostgreSQL -> PASS (19 passed, 27 warnings).
+- `uv run pytest -q` with live PostgreSQL -> PASS (439 passed, 4 skipped,
+  87 warnings).
+- `uv run ruff format --check .` -> PASS (115 files already formatted).
+- `uv run ruff check --output-format concise` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors).
+- `uv lock --check` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` against
+  PostgreSQL -> PASS; no new upgrade operations detected.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- The T031 card does not define a public API or lifecycle service; those stay
+  with T034–T038. The schema intentionally does not contain TaskRun fields.
+- Alembic requires an explicit PostgreSQL URL; application startup still does
+  not auto-migrate.
+
+Learner notes:
+- Problem solved: TaskPilot now has a durable tenant-owned Task record whose
+  initial state and provenance are enforced at the persistence boundary.
+- Read `src/persistence/models.py`,
+  `migrations/versions/20260918_01_task.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`, and
+  `docs/DATABASE_DESIGN.md`.
+- Key concept: an ORM default and a database server default must describe the
+  same invariant, while tenant ownership still belongs in explicit columns and
+  foreign keys.
+- Exercise: create one Task in a PostgreSQL transaction, query it back, then
+  try inserting an invalid status and deleting its organization; observe the
+  database reject both operations.
+- Ignore for now: TaskRun numbering, lifecycle transitions, HTTP routes,
+  planner/executor/verifier behavior, and idempotency.
+
+Suggested next task: T031 Strong Review, then T032 TaskRun schema and migration.
+
+### 2026-09-19 — T032: TaskRun schema and migration
+
+Status: IMPLEMENTED — READY FOR T032 STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `8f3df41 feat: add TaskPilot task persistence`.
+- Working tree before T032 implementation: clean.
+
+What changed:
+- Added the `TaskRun` ORM model and `TaskRunStatus` enum for one durable
+  execution attempt with `PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, and
+  `CANCELLED` states.
+- Added per-Task positive `run_number` values with a database uniqueness
+  constraint, allowing multiple terminal historical runs.
+- Added a PostgreSQL partial unique index that permits at most one active
+  (`PENDING` or `RUNNING`) run per Task.
+- Added the linear Alembic revision `t032_task_run`, registered the model in
+  metadata, and synchronized architecture, database, and README documentation.
+- Added model-contract and PostgreSQL integration coverage for defaults,
+  foreign keys, constraints, ordering, active-run enforcement, downgrade, and
+  re-upgrade behavior.
+- No TaskStep, repository/service, lifecycle orchestration, API, runtime,
+  planner/executor/verifier, application idempotency, or automatic retry
+  behavior was added.
+
+Files changed:
+- `src/persistence/models.py`
+- `src/persistence/__init__.py`
+- `migrations/env.py`
+- `migrations/versions/20260919_01_task_run.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (28 passed).
+- `uv run pytest tests/persistence/test_postgres_integration.py -q` with live
+  PostgreSQL -> PASS (21 passed, 32 warnings).
+- `uv run pytest --basetemp .pytest-tmp-t032 -q` with live PostgreSQL -> PASS
+  (442 passed, 4 skipped, 91 warnings). The default-temp run encountered
+  environment permissions in `C:\Users\Lin\AppData\Local\Temp`; the explicit
+  repository-local temp directory passed.
+- `uv run ruff format --check .` -> PASS (116 files already formatted).
+- `uv run ruff check .` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors; 18 suppressed, 5 warnings).
+- `uv lock --check` -> PASS.
+- `uv run pymarkdown scan README.md docs/ARCHITECTURE.md docs/DATABASE_DESIGN.md` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` against
+  PostgreSQL -> PASS; no new upgrade operations detected.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- T032 provides the persistence invariant only. T035 owns legal lifecycle
+  transitions and synchronization between `Task.status` and `TaskRun.status`.
+- Application-level idempotency, TaskStep, repositories/services, APIs,
+  runtime interruption, and automatic retries remain outside this task.
+- The environment did not provide the Docker CLI; validation used the
+  reachable local PostgreSQL server and the repository's existing disposable
+  database integration setup.
+
+Learner notes:
+- Problem solved: TaskPilot can now persist each execution attempt, retain
+  terminal history, number attempts per Task, and reject concurrent active runs
+  at the database boundary.
+- Read `src/persistence/models.py`,
+  `migrations/versions/20260919_01_task_run.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`, and
+  `docs/DATABASE_DESIGN.md`.
+- Key concept: a partial unique index expresses a conditional concurrency
+  invariant directly in PostgreSQL; it is different from application
+  idempotency and from lifecycle transition logic.
+- Exercise: insert one pending run and one terminal run for a Task, then try
+  inserting a second pending run and run number zero; observe both database
+  constraints reject the invalid writes.
+- Ignore for now: TaskStep, HTTP APIs, planner/executor/verifier behavior,
+  retries, and application-level idempotency.
+
+Suggested next task: T032 Strong Review, then T034 TaskRun repository/service.
+
+### 2026-09-19 — T034: Tenant-scoped repositories and transaction boundary
+
+Status: IMPLEMENTED — READY FOR T034 STRONG REVIEW (uncommitted)
+
+Baseline:
+- Branch: `phase-3-task-domain`
+- Baseline HEAD: `1f02975 feat: add TaskPilot task run persistence`.
+- Working tree before T034 implementation: clean.
+
+What changed:
+- Added `TaskRepository` primitives to add/flush Tasks, load one Task inside
+  a trusted organization scope, and list Tasks inside that scope.
+- Added `TaskRunRepository` primitives to add/flush runs, load a run through a
+  tenant-scoped join to its Task, and list complete historical run records in
+  run-number order.
+- Kept the caller-owned `AsyncSession` and transaction boundary intact:
+  repositories flush but never commit, rollback, close, or replace sessions.
+- Added unit SQL-shape evidence and live PostgreSQL behavioral tests proving
+  own-tenant visibility, foreign/nonexistent invisibility, TaskRun-through-Task
+  scoping, and preserved run history.
+- Updated the architecture, database design, README, and progress log to
+  describe the T034 boundary.
+- No lifecycle transition service, HTTP API, TaskStep, idempotency, runtime
+  binding, or new dependency/framework was added.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/persistence/__init__.py`
+- `tests/persistence/test_foundation.py`
+- `tests/persistence/test_postgres_integration.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (29 passed,
+  1 existing pytest cache warning).
+- `uv run pytest --basetemp .pytest-tmp-t034 tests/persistence/test_foundation.py tests/persistence/test_postgres_integration.py -q` with live PostgreSQL -> PASS (51 passed, 33 warnings).
+- `uv run pytest --basetemp .pytest-tmp-t034 -q` with live PostgreSQL -> PASS
+  (444 passed, 4 skipped, 92 warnings).
+- `uv run ruff format` on changed Python files -> PASS; `uv run ruff format
+  --check .` -> PASS (116 files already formatted).
+- `uv run ruff check .` -> PASS.
+- `uv run pyrefly check` -> PASS (0 errors; 18 suppressed, 5 warnings).
+- `uv lock --check` -> PASS.
+- `uv run pymarkdown scan README.md docs/ARCHITECTURE.md docs/DATABASE_DESIGN.md` -> PASS.
+- `uv run alembic upgrade head` followed by `uv run alembic check` -> PASS;
+  no new upgrade operations detected; `t032_task_run (head)` is the single head.
+- `git diff --check` -> PASS.
+
+Known limitations:
+- T034 supplies composable persistence/query primitives only. T035 owns legal
+  Task/TaskRun transitions, active-state synchronization, and lifecycle
+  transactions.
+- The repository-local PostgreSQL test harness is required for live tenant
+  isolation evidence. Docker CLI is not available in this environment, but
+  the reachable local PostgreSQL server passed the integration tests.
+
+Learner notes:
+- Problem solved: Task and TaskRun queries now enforce tenant visibility in
+  SQL, so foreign and nonexistent resources are both not found at the
+  repository boundary.
+- Read `src/persistence/repositories.py`,
+  `tests/persistence/test_foundation.py`,
+  `tests/persistence/test_postgres_integration.py`,
+  `src/persistence/engine.py`, and `docs/DATABASE_DESIGN.md`.
+- Key concept: repository scope is a trusted server-side organization input;
+  it is a SQL predicate, not a Python post-query authorization check.
+- Exercise: query a foreign TaskRun ID with the local organization scope, then
+  query a nonexistent ID; observe that both return `None` through the same
+  production repository method.
+- Ignore for now: lifecycle state transitions, HTTP status mapping, TaskStep,
+  idempotency, and LangGraph runtime binding.
+
+Suggested next task: T034 Strong Review, then T035 Task lifecycle transition service.
+
+### 2026-09-19 — T035: Task lifecycle transition service
+
+Status: IMPLEMENTED — READY FOR T035 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `TaskLifecycleService` with explicit start/retry, begin-running,
+  success, failure, and persistence-only cancellation operations.
+- Added the smallest repository locking/query primitives needed for tenant-scoped
+  lifecycle decisions, serialized run-number allocation, and active-run checks.
+- Added focused transition, conflict, cancellation, and fail-closed unit tests.
+- Synchronized database and architecture documentation with the service boundary.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/service/task_lifecycle.py`
+- `tests/service/test_task_lifecycle.py`
+- `docs/DATABASE_DESIGN.md`
+- `docs/ARCHITECTURE.md`
+- `process/DECISION_LOG.md`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- `uv run pytest tests/service/test_task_lifecycle.py -q` -> PASS (5 passed).
+- `uv run pytest tests/persistence/test_foundation.py -q` -> PASS (29 passed).
+- Ruff format/check and `uv run pyrefly check` -> PASS.
+
+Known limitations:
+- T035 has no HTTP API, TaskStep, runtime interruption, automatic recovery, or
+  application-level idempotency. PostgreSQL concurrency evidence remains part
+  of the complete validation pass before strong review.
+
+Learner notes:
+- Problem solved: Task and its active execution attempt now move together under
+  explicit, tenant-scoped lifecycle rules.
+- Read `src/service/task_lifecycle.py`, `src/persistence/repositories.py`,
+  `tests/service/test_task_lifecycle.py`, and `docs/DATABASE_DESIGN.md`.
+- Key concept: lock the aggregate root (Task) before deciding a transition;
+  the service owns domain rules and the business transaction while the caller
+  owns session close.
+- Exercise: add a test for retrying a failed Task and verify run #1 remains
+  failed while run #2 is pending.
+- Ignore for now: HTTP wiring, runtime execution, TaskStep, and idempotency.
+
+### 2026-09-19 — T036: Task create/list/get API
+
+Status: IMPLEMENTED — READY FOR T036 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added protected `POST /api/v1/tasks`, `GET /api/v1/tasks`, and
+  `GET /api/v1/tasks/{task_id}` routes using the server-derived
+  `CurrentPrincipal`.
+- Added typed request/response models and a small Task application service.
+- Creation derives organization and creator from the principal, commits through
+  the service boundary, starts in `DRAFT`, and creates no TaskRun.
+- Reads use the tenant-scoped TaskRepository; foreign and nonexistent Tasks both
+  return the fixed 404 response.
+- Added real PostgreSQL HTTP/security coverage for authentication, spoofed
+  identity fields, tenant-scoped listing, foreign/nonexistent equivalence, and
+  persisted creation state.
+- Updated API, architecture, README, user-guide, and progress documentation.
+
+Files changed:
+- `src/schema/task_api.py`
+- `src/service/task_api.py`
+- `src/service/task_service.py`
+- `src/service/service.py`
+- `tests/service/test_task_api_postgres.py`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/USER_GUIDE.md`
+- `docs/SECURITY_HITL.md`
+- `README.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T036. No TaskRun API, Task mutation/cancellation API,
+TaskStep, idempotency, runtime execution, or new dependency was added.
+Task API models are imported directly from `schema.task_api`; they are
+intentionally not re-exported from `schema` to keep package initialization
+acyclic.
+
+Commands/tests run:
+- `uv run pytest tests/service/test_task_api_postgres.py -q` -> PASS (1 passed).
+- Focused identity/lifecycle/persistence regression -> PASS (98 unit tests and
+  72 PostgreSQL integration tests passed; the one combined run was separated so
+  the business-database environment variable could not affect settings tests).
+- `uv run pytest -q` with `TASKPILOT_TEST_DATABASE_URL` only -> PASS (455 passed,
+  4 skipped).
+- `uv run alembic upgrade head`, `uv run alembic check`, and import sanity
+  checks -> PASS; no circular import reproduced.
+- Ruff format/check, `uv run pyrefly check`, `uv lock --check`, focused
+  Markdown scans, and `git diff --check` -> PASS.
+
+Known limitations:
+- Login remains a service/CLI concern; Task mutation/run APIs, TaskStep,
+  idempotency, runtime execution, approvals, and observability remain later
+  Phase 3/4 work.
+
+Learner notes:
+- Problem solved: authenticated callers can create and read only Tasks in their
+  current organization, without trusting client-supplied identity fields.
+- Read `src/service/task_api.py`, `src/service/task_service.py`,
+  `src/schema/task_api.py`, `tests/service/test_task_api_postgres.py`, and
+  `src/service/auth_dependency.py`.
+- Key concept: the route authenticates a principal, the service owns the use
+  case, and the repository enforces tenant scope in the query.
+- Exercise: add a test proving a malformed UUID returns FastAPI's validation
+  response without reaching the repository.
+- Ignore for now: TaskRun HTTP operations, runtime graphs, and approvals.
+
+### 2026-09-19 — T035 blocker-only fix B1–B3
+
+Status: READY FOR FOCUSED T035 RE-REVIEW (uncommitted)
+
+- Aligned `TaskLifecycleService` with accepted ADR-005: successful lifecycle
+  operations commit atomically, failures roll back and propagate, and the
+  service never closes the supplied session.
+- Added deterministic two-session PostgreSQL start contention using a test-only
+  pre-lock barrier; the production row-locking design remains unchanged.
+- Added fresh persisted PostgreSQL assertions for both QUEUED/PENDING and
+  RUNNING/RUNNING cancellation.
+- Updated T035 transaction-boundary documentation and tests.
+
+### 2026-09-19 — T037: Task update/cancel API
+
+Status: IMPLEMENTED — READY FOR T037 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `PATCH /api/v1/tasks/{task_id}` for mutable `title` and `description`
+  fields only; server-owned identity and lifecycle fields are ignored or
+  rejected by the request model.
+- Added `POST /api/v1/tasks/{task_id}/cancel`, delegating persistence-only
+  cancellation to the T035 `TaskLifecycleService`.
+- Applied the frozen tenant/role policy: admins manage any Task in their active
+  organization; members manage only Tasks they created; owners do not inherit
+  admin task permissions.
+- Mapped foreign/nonexistent resources to 404, same-tenant insufficient access
+  to 403, and lifecycle conflicts/inconsistent persisted states to a stable 409.
+- Added real PostgreSQL HTTP tests for authentication, ownership/role policy,
+  tenant isolation, update persistence, draft/queued/running cancellation,
+  repeated cancellation, and terminal conflicts.
+- Updated API, architecture, security, README, user-guide, and progress docs.
+
+Files changed:
+- `src/schema/task_api.py`
+- `src/service/authorization.py`
+- `src/service/task_api.py`
+- `src/service/task_service.py`
+- `tests/service/test_task_api_t037_postgres.py`
+- `README.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_HITL.md`
+- `docs/USER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T037. No TaskRun API, TaskStep, idempotency,
+runtime/LangGraph execution, or lifecycle state machine outside T035 was added.
+
+Known limitations:
+- Cancellation remains persistence-only and does not interrupt external work.
+- Login, later TaskRun runtime operations, TaskStep, approvals, runtime
+  execution, and application-level idempotency remain deferred.
+
+Learner notes:
+- Problem solved: authenticated users can update permitted Task metadata and
+  cancel Tasks without bypassing tenant or lifecycle rules.
+- Read `src/service/task_api.py`, `src/service/task_service.py`,
+  `src/service/task_lifecycle.py`, `src/service/authorization.py`, and
+  `tests/service/test_task_api_t037_postgres.py`.
+- Key concept: authorization first resolves a tenant-scoped resource, then
+  applies same-tenant policy; lifecycle mutation remains owned by T035.
+- Exercise: add a test proving a member cannot update or cancel another
+  member's Task while an admin can.
+- Ignore for now: TaskRun HTTP routes, runtime interruption, and idempotency.
+
+### 2026-09-19 — T038: TaskRun start/inspect API
+
+Status: IMPLEMENTED — READY FOR T038 STRONG REVIEW (uncommitted)
+
+What changed:
+- Added `POST /api/v1/tasks/{task_id}/runs` for tenant-scoped start/retry.
+- Added `GET /api/v1/tasks/{task_id}/runs/{run_id}` for tenant-scoped persisted
+  TaskRun inspection.
+- Delegated all Task/TaskRun lifecycle state changes, run numbering, row locks,
+  transaction commit/rollback, and retry legality to the T035 lifecycle service.
+- Allowed start only from `DRAFT` or `FAILED`; illegal and inconsistent states
+  map to a stable HTTP 409 response.
+- Added a TaskRun response containing only persisted identity, task ID, run
+  number, status, and timestamps; no runtime metadata or idempotency contract.
+- Added real PostgreSQL HTTP coverage for authentication, tenant isolation,
+  foreign/nonexistent equivalence, DRAFT start, FAILED retry history, illegal
+  restart states, and TaskRun response shape.
+- Updated API, architecture, security, README, user-guide, and progress docs.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `src/schema/task_run_api.py`
+- `src/service/task_api.py`
+- `src/service/task_run_service.py`
+- `tests/service/test_task_run_api_postgres.py`
+- `README.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY_HITL.md`
+- `docs/USER_GUIDE.md`
+- `process/PROGRESS_LOG.md`
+
+Scope remains limited to T038. TaskStep, runtime execution, planner/executor/
+verifier behavior, application-level idempotency, and external side effects
+remain deferred.
+
+Known limitations:
+- T038 persists lifecycle state only; it does not invoke an LLM or interrupt
+  external work.
+- Login, TaskStep, approvals, runtime execution, and application-level
+  idempotency remain deferred.
+
+Learner notes:
+- Problem solved: authenticated callers can start/retry tenant-visible Tasks
+  and inspect persisted TaskRun history without bypassing T035 lifecycle rules.
+- Read `src/service/task_api.py`, `src/service/task_run_service.py`,
+  `src/service/task_lifecycle.py`, `src/persistence/repositories.py`, and
+  `tests/service/test_task_run_api_postgres.py`.
+- Key concept: API code adapts HTTP to the lifecycle service; it does not own
+  state transitions, run numbering, locking, or transaction commits.
+- Exercise: add a concurrent HTTP start test proving one winner and one 409
+  after the existing domain-level concurrency test.
+- Ignore for now: TaskStep, runtime graphs, tool execution, and idempotency.
+
+### 2026-09-19 — Phase 3 Final Audit B1: stale locked Task refresh
+
+Status: FIXED — READY FOR FOCUSED PHASE 3 RE-AUDIT (uncommitted)
+
+What changed:
+- Reproduced the audit interleaving against PostgreSQL: one Session preloaded a
+  `DRAFT` Task, another Session committed `QUEUED` plus a `PENDING` TaskRun,
+  and cancellation in the first Session incorrectly committed `CANCELLED`
+  while leaving the run `PENDING`.
+- Added `populate_existing=True` to the tenant-scoped Task `SELECT ... FOR
+  UPDATE`, so every T035 lifecycle branch uses the current database state from
+  the locked row even when that Task identity was already loaded.
+- Added a deterministic PostgreSQL regression using independent Sessions and a
+  fresh final database read. It asserts one historical cancelled run and no
+  `PENDING` or `RUNNING` run after cancellation.
+
+Files changed:
+- `src/persistence/repositories.py`
+- `tests/service/test_task_lifecycle_postgres.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+- Pre-fix focused B1 test -> expected FAIL: fresh state was Task `CANCELLED`,
+  Run `PENDING`.
+- Post-fix focused B1 test -> PASS (1 passed).
+- Affected T035/T036/T037/T038 and persistence regression -> PASS (67 passed).
+- Full pytest with `TASKPILOT_TEST_DATABASE_URL` -> PASS (460 passed, 4
+  skipped, 102 warnings); mandatory Phase 3 PostgreSQL tests executed.
+- Ruff tracked-Python format check and lint -> PASS (127 tracked files already formatted,
+  all checks passed). Direct repository-root traversal remains affected by the
+  pre-existing inaccessible `.pytest-tmp-*` directories.
+- Pyrefly -> PASS (0 errors; 18 suppressed, 6 warnings not shown).
+- `uv lock --check` -> PASS.
+- Alembic heads/history and fresh disposable PostgreSQL upgrade/current/check
+  -> PASS; `t032_task_run` is the single head and no schema drift was found.
+- Direct `schema`, `schema.task_api`, `schema.task_run_api`, and application
+  imports with the repository's `src` layout -> PASS.
+
+Security/transaction review:
+- Tenant predicates and T037 admin/member/owner authorization are unchanged.
+- Repositories still query/add/flush only; `TaskLifecycleService` remains the
+  sole lifecycle commit/rollback owner and the outer dependency owns close.
+- No migration, API, dependency, runtime, recovery, idempotency, or distributed
+  locking change was introduced.
+
+Known limitations:
+- Cancellation remains persistence-only and does not interrupt external work,
+  as required by ADR-005. No B1-related blocker remains.
+
+Learner notes:
+- Problem solved: a database row lock does not itself refresh an ORM object
+  already present in a Session; cancellation now branches on locked database
+  truth instead of stale identity-map state.
+- Read `src/persistence/repositories.py`, `src/service/task_lifecycle.py`,
+  `src/service/task_service.py`, and
+  `tests/service/test_task_lifecycle_postgres.py`.
+- Key concept: `SELECT ... FOR UPDATE` serializes access, while
+  `populate_existing` separately repopulates an existing ORM identity.
+- Exercise: temporarily remove `populate_existing`, run the focused B1 test,
+  and inspect the final Task and TaskRun statuses; then restore the line.
+- Do not worry yet about TaskStep, runtime interruption, application
+  idempotency, distributed locks, or automatic recovery.
+
+Suggested next task: focused Phase 3 Final Audit B1 re-audit only.

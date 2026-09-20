@@ -42,6 +42,11 @@ WWW_AUTHENTICATE_HEADER = {"WWW-Authenticate": "Bearer"}
 # active membership in the task organization; L3 is blocked in V1."
 APPROVAL_DECISION_ROLES: frozenset[Role] = frozenset({Role.OWNER, Role.ADMIN})
 
+# TaskPilot V1 permits admins to manage any task in their active organization.
+# Members have self-service rights only for tasks they created. Owners do not
+# inherit admin task permissions; there is no implicit role hierarchy.
+TASK_MANAGEMENT_ROLES: frozenset[Role] = frozenset({Role.ADMIN})
+
 
 class AuthorizationError(Exception):
     """Result of a failed policy decision.
@@ -129,6 +134,19 @@ def require_resource_tenant(
     return resource_organization_id
 
 
+def require_task_management(
+    principal: CurrentPrincipal, created_by_user_id: UUID
+) -> CurrentPrincipal:
+    """Allow an admin or a member managing their own Task."""
+
+    principal = require_authenticated(principal)
+    if principal.role in TASK_MANAGEMENT_ROLES or (
+        principal.role is Role.MEMBER and principal.user_id == created_by_user_id
+    ):
+        return principal
+    raise AuthorizationError(status.HTTP_403_FORBIDDEN)
+
+
 async def require_authenticated_principal(
     principal: Annotated[CurrentPrincipal, Depends(require_principal)],
 ) -> CurrentPrincipal:
@@ -172,6 +190,7 @@ __all__ = [
     "AUTHENTICATION_FAILED_DETAIL",
     "AUTHORIZATION_FORBIDDEN_DETAIL",
     "APPROVAL_DECISION_ROLES",
+    "TASK_MANAGEMENT_ROLES",
     "RESOURCE_NOT_FOUND_DETAIL",
     "AuthorizationError",
     "require_active_membership",
@@ -179,6 +198,7 @@ __all__ = [
     "require_authenticated_principal",
     "require_resource_tenant",
     "require_resource_tenant_dependency",
+    "require_task_management",
     "require_role",
     "require_role_dependency",
 ]

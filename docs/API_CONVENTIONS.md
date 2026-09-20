@@ -1,6 +1,10 @@
 # API Conventions
 
-TaskPilot currently exposes **no** HTTP endpoint of its own. The retained upstream routes (`/invoke`, `/stream`, `/history`, `/threads`, `/feedback`, `/info`, `/health`, `/agui/*`) are unchanged, and `/api/v1` exists only as the planned prefix below. Login, principal resolution, and authorization are implemented as service and FastAPI-dependency layers, not as routes.
+TaskPilot now exposes the T036–T038 Task and TaskRun surface under `/api/v1/tasks`.
+The retained upstream routes (`/invoke`, `/stream`, `/history`, `/threads`,
+`/feedback`, `/info`, `/health`, `/agui/*`) are unchanged. Login remains a
+service/CLI concern; principal resolution and authorization use the existing
+FastAPI dependencies.
 
 Planned prefix: `/api/v1`.
 
@@ -9,14 +13,16 @@ Planned prefix: `/api/v1`.
 - POST `/auth/login`
 - GET `/me`
 
-## Tasks (planned, not implemented)
+## Tasks (T036–T038 implemented)
 
 - POST `/tasks`
 - GET `/tasks`
 - GET `/tasks/{task_id}`
+- PATCH `/tasks/{task_id}`
+- POST `/tasks/{task_id}/cancel`
 - POST `/tasks/{task_id}/runs`
 - GET `/tasks/{task_id}/runs/{run_id}`
-- POST `/tasks/{task_id}/runs/{run_id}/cancel`
+- POST `/tasks/{task_id}/runs/{run_id}/cancel` *(planned later)*
 
 ## Approvals (planned, not implemented)
 
@@ -42,6 +48,28 @@ Exact endpoints should follow the existing codebase conventions after Phase 0.
 - idempotency key for retryable create/action endpoints where needed
 - no direct DB calls in route handlers
 - cross-tenant or nonexistent resources answer `404`, not `403`, to hide existence; this is now the frozen decision documented below
+
+T036 implements only `POST /api/v1/tasks`, `GET /api/v1/tasks`, and
+`GET /api/v1/tasks/{task_id}`. Creation accepts `title` and optional
+`description`; organization and creator are derived from `CurrentPrincipal`.
+New Tasks are persisted as `draft` with no TaskRun. T037 mutation endpoints and
+T038 TaskRun start/inspect endpoints are implemented; later runtime operations
+remain assigned to subsequent Phase 3/4 tasks.
+
+T037 adds partial updates for `title` and `description`, plus persistence-only
+cancellation. Admins may manage any Task in their active organization; members
+may manage only Tasks they created. Owners do not inherit admin task
+permissions. Foreign/nonexistent resources remain 404, while same-tenant
+insufficient access is 403. Cancellation delegates to the T035 lifecycle
+service and maps legal-state conflicts to 409.
+
+T038 adds `POST /api/v1/tasks/{task_id}/runs` and
+`GET /api/v1/tasks/{task_id}/runs/{run_id}`. Start/retry is allowed only from
+`draft` or `failed`, delegates all state changes and run numbering to the T035
+lifecycle service, and maps illegal or inconsistent states to 409. TaskRun
+inspection is tenant-scoped through the owning Task and exposes only persisted
+identity, run number, lifecycle status, and timestamps. No runtime metadata or
+application idempotency contract is exposed.
 
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 

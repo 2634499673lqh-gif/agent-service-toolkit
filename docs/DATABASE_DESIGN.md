@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 architecture decision and the T021–T023 schema that implements it. ADR-004 is authoritative.
+This document records the Phase 2 identity architecture and the T021–T023 schema, plus the Phase 3 T031/T032/T034 Task domain persistence and repository foundations. ADR-004 and ADR-005 are authoritative.
 
 ## Ownership and bootstrap
 
@@ -30,6 +30,52 @@ flushes but never commits; service code owns transaction commit/rollback.
 - `users`: UUID4 `id`, trimmed display `email`, non-null globally unique `normalized_email` produced by the shared trim + Unicode casefold helper, Argon2id `password_hash`, `is_active`, UTC `created_at`, `updated_at`. Hashes are never serialized; PostgreSQL `lower()`/collation is not the canonicalization mechanism.
 - `memberships`: UUID4 `id`, unique `(user_id, organization_id)`, constrained role enum `owner|admin|member`, `is_active`, UTC `created_at`, `updated_at`, explicit foreign keys.
 - `auth_sessions`: UUID4 `id`, indexed SHA-256 token hash, user/membership foreign keys, `expires_at`, `revoked_at`, UTC timestamps. Raw tokens are never stored.
+
+## Task domain foundation (T031)
+
+`tasks` is the first Phase 3 business table. Each row stores a UUID4 `id`,
+server-derived `organization_id`, server-derived `created_by_user_id`, a
+non-blank `title`, optional `description`, the user-visible `status`, and
+UTC `created_at`/`updated_at` timestamps. New rows default to `DRAFT`; a new
+Task has no TaskRun. Status is stored as readable lowercase text and is
+constrained to `draft`, `queued`, `running`, `succeeded`, `failed`, or
+`cancelled`. Organization and creator foreign keys use `RESTRICT`, and the
+organization, creator, and status columns are indexed for later tenant-scoped
+queries. T034 adds tenant-scoped repository queries, and T035 adds the
+service-owned lifecycle transitions. The lifecycle service commits successful
+operations and rolls back failures; the caller still owns session close.
+
+## TaskRun persistence foundation (T032)
+
+`task_runs` stores one durable execution attempt for a Task. Each row has a
+UUID4 `id`, a non-null `task_id` foreign key to `tasks`, a positive per-Task
+`run_number`, a readable lowercase `status`, and UTC `created_at`/
+`updated_at` timestamps. New rows default to `PENDING`. `(task_id,
+run_number)` is unique, so run numbers are immutable persistence identities
+within a Task and terminal history can contain multiple rows. PostgreSQL also
+owns a partial unique index over `task_id` for `pending` and `running` rows;
+this enforces at most one active run per Task. T035 still owns legal lifecycle
+transitions and synchronization between Task and TaskRun states.
+
+## Tenant-scoped repository boundary (T034)
+
+`TaskRepository` requires a trusted organization scope for Task lookups and
+listings. `TaskRunRepository` joins `task_runs` to `tasks` and applies the
+organization predicate to the Task row; TaskRun does not duplicate
+`organization_id`. Foreign or nonexistent resources therefore return the same
+`None`/empty result at the repository visibility boundary. Repository `add`
+operations flush into the service-owned business transaction but never commit,
+rollback, close, or replace the caller's `AsyncSession`.
+
+## Lifecycle service (T035)
+
+`TaskLifecycleService` locks the visible Task row before each decision, allocates
+the next run number under that lock, and synchronizes the required active
+TaskRun transition. It supports explicit start/retry, begin, success, failure,
+and persistence-only cancellation. It never claims to interrupt external
+runtime work and never closes the caller's session. Successful lifecycle
+operations commit atomically and failed operations roll back through the
+service boundary.
 
 T022 implements `users`; the second migration is
 `migrations/versions/20260916_01_user.py` and its revision is `t022_user`
@@ -100,4 +146,4 @@ The first Organization + owner User + owner Membership is created only by `scrip
 
 ## Verification (T021–T026)
 
-The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.
+The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session` -> `t031_task` -> `t032_task_run`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.
