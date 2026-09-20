@@ -17,6 +17,21 @@ Scope remains limited to T041. No planner node, repair loop, executor,
 verifier, recovery, persistence, API, authority fields, or dependency was
 added. PostgreSQL is not applicable to this pure schema task.
 
+### 2026-09-20 — T042: Planner node
+
+Status: IMPLEMENTED — READY FOR T042 STRONG REVIEW (uncommitted)
+
+- Added a narrow async, injectable planner model boundary.
+- Added one-shot structured-output repair using the T041 `Plan` validator.
+- Added stable terminal `planner_output_invalid` behavior after exactly two
+  invalid attempts, with validation summaries that omit invalid values.
+- Added deterministic call-count, repair-context, authority-field, and input
+  boundary tests.
+
+Scope remains limited to T042. No executor, verifier, classifier, retry/replan
+runtime, LangGraph graph, persistence, API, external model call, or dependency
+was added.
+
 ### 2026-09-20 — Phase 4 Planning Acceptance Status
 
 Status: APPROVED / COMPLETE
