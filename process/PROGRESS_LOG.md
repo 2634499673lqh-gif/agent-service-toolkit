@@ -2,6 +2,48 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-20 — T046: Verifier node
+
+Status: IMPLEMENTED — READY FOR T046 STRONG REVIEW (uncommitted)
+
+- Added the narrow async `VerifierModel` boundary and `VerifierNode` using
+  sanitized task input, validated `PlanStep`, and normalized `ExecutionResult`.
+- Validated every candidate through the committed T045 `VerificationResult`;
+  malformed initial output receives exactly one safe repair attempt.
+- Added stable terminal `verifier_output_invalid` behavior after two invalid
+  candidates, with no T047 classification or recovery routing.
+- Added deterministic PASS/FAIL, repair-count, invalid-output, input-boundary,
+  and protocol compatibility tests.
+
+Scope remains limited to T046. No classifier, retry/replan runtime, LangGraph
+graph, lifecycle mutation, persistence, API, provider, or dependency was added.
+PostgreSQL is not applicable to this pure runtime-node task.
+
+Files changed:
+
+- `src/runtime/verifier.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_verifier_node.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: provider/model failures and workflow classification remain
+outside this node; T047 owns normalized failure routing.
+
+Learner notes:
+
+- Problem solved: verifier model output is now validated and repaired once
+  before it can become runtime verification data.
+- Read `src/runtime/verifier.py`, `tests/runtime/test_verifier_node.py`,
+  `src/schema/verifier.py`, and `src/runtime/planner.py`.
+- Key concept: bounded repair handles malformed structure, while recovery
+  classification is a separate later responsibility.
+- Exercise: change the repair fake to return invalid output twice and observe
+  `verifier_output_invalid` with exactly two model calls.
+- Ignore for now: T047 classification, retry/replan, graph orchestration,
+  persistence, and lifecycle transitions.
+
+Suggested next task: T046 Strong Review, then T047 — Failure classifier.
+
 ### 2026-09-20 — T045: Verifier schema
 
 Status: IMPLEMENTED — READY FOR T045 STRONG REVIEW (uncommitted)
