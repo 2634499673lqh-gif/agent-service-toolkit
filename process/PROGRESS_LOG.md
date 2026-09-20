@@ -32,6 +32,21 @@ Scope remains limited to T042. No executor, verifier, classifier, retry/replan
 runtime, LangGraph graph, persistence, API, external model call, or dependency
 was added.
 
+### 2026-09-20 — T043: Executor interface
+
+Status: IMPLEMENTED — READY FOR T043 STRONG REVIEW (uncommitted)
+
+- Added the narrow async `Executor` Protocol for a validated `PlanStep` and
+  sanitized task input.
+- Added JSON-serializable `ExecutionResult` validation for bounded output,
+  normalized failure fields, and mutually exclusive success/failure shapes.
+- Added focused interface, invariant, serialization, and fake-implementation
+  tests.
+
+Scope remains limited to T043. No deterministic executor, provider, tool/skill
+registry, classifier, retry/replan, persistence, API, or external effect was
+added. PostgreSQL is not applicable to this interface/schema task.
+
 ### 2026-09-20 — Phase 4 Planning Acceptance Status
 
 Status: APPROVED / COMPLETE
