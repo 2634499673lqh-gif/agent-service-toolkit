@@ -10,6 +10,13 @@ from runtime.planner import (
     PlannerRequest,
     PlannerTaskInput,
 )
+from runtime.replan import (
+    REPLAN_BUDGET,
+    ReplanDecision,
+    ReplanState,
+    apply_replacement_plan,
+    consume_replan,
+)
 from runtime.retry import RETRY_BUDGET, RetryDecision, consume_retry
 from runtime.verifier import (
     VerifierModel,
@@ -32,6 +39,11 @@ __all__ = [
     "PlannerRequest",
     "PlannerRepairContext",
     "PlannerTaskInput",
+    "REPLAN_BUDGET",
+    "ReplanDecision",
+    "ReplanState",
+    "apply_replacement_plan",
+    "consume_replan",
     "RETRY_BUDGET",
     "RetryDecision",
     "consume_retry",

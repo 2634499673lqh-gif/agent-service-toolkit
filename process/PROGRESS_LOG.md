@@ -2,6 +2,49 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-21 — T049: Bounded replan
+
+Status: IMPLEMENTED — READY FOR T049 STRONG REVIEW (uncommitted)
+
+- Added the single `REPLAN_BUDGET = 1` decision boundary and terminal
+  exhaustion behavior without duplicating T047 classification.
+- Added a JSON-safe narrow replan state slice and replacement-Plan helper that
+  reuses the committed `Plan` schema, resets per-plan transient fields, and
+  preserves both TaskRun-scoped counters as required.
+- Added focused coverage for first-replan `0 → 1`, exhaustion, counter
+  isolation, replacement validation/reset semantics, and JSON round trips.
+
+Scope remains limited to T049. No planner loop, LangGraph graph, checkpoint/
+resume, lifecycle persistence, TaskRun creation, API, worker, provider, tool,
+HITL, or dependency was added. PostgreSQL is not applicable to this runtime-only
+transition task.
+
+Files changed:
+- `src/runtime/replan.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_replan.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T049 exposes only the bounded decision and state transition;
+T050 owns checkpoint/resume and later runtime work owns graph/lifecycle
+orchestration.
+
+Learner notes:
+- Problem solved: one recoverable runtime failure can replace the Plan once,
+  while exhausted recovery becomes terminal and consumed retry budget survives.
+- Read `src/runtime/replan.py`, `src/runtime/retry.py`,
+  `src/runtime/failure.py`, `src/schema/planner.py`, and
+  `tests/runtime/test_replan.py`.
+- Key concept: a bounded transition must advance its monotonic counter before
+  applying a validated replacement and must clear only per-Plan transient data.
+- Exercise: change the initial `replan_count` in the exhaustion test to `0`,
+  then verify one replacement is allowed; change it back to `1` and verify the
+  terminal route.
+- Ignore for now: checkpoint/resume, LangGraph routing, lifecycle persistence,
+  external tools, and HITL.
+
+Suggested next task: T049 Strong Review, then T050 — Checkpoint / resume.
+
 ### 2026-09-21 — T048: Bounded retry
 
 Status: IMPLEMENTED — READY FOR T048 STRONG REVIEW (uncommitted)
