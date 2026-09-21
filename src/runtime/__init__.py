@@ -1,6 +1,7 @@
 """TaskPilot runtime boundaries."""
 
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
+from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
 from runtime.planner import (
     PlannerModel,
     PlannerNode,
@@ -21,6 +22,9 @@ __all__ = [
     "ExecutionResult",
     "Executor",
     "DeterministicExecutor",
+    "FailureClassification",
+    "FailureClassifier",
+    "RuntimeFailure",
     "PlannerModel",
     "PlannerNode",
     "PlannerOutputInvalidError",

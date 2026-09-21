@@ -2,6 +2,49 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-20 — T047: Failure classifier
+
+Status: IMPLEMENTED — READY FOR T047 STRONG REVIEW (uncommitted)
+
+- Added the bounded `FailureClassification` type with exactly `RETRY`,
+  `REPLAN`, and `TERMINAL`.
+- Added JSON-safe `RuntimeFailure` validation for bounded code/message fields
+  and forbidden extra authority/runtime fields.
+- Added a pure fail-closed `FailureClassifier`: deterministic execution failure
+  maps to RETRY, explicitly recoverable plan/verifier inadequacy maps to REPLAN,
+  and all other/unknown codes map to TERMINAL.
+- Added table-driven mapping, negative classification, bounds, and JSON
+  round-trip tests.
+
+Scope remains limited to T047. No retry/replan execution, counters, LangGraph
+graph, lifecycle mutation, persistence, API, provider, or dependency was added.
+PostgreSQL is not applicable to this pure runtime classification task.
+
+Files changed:
+
+- `src/runtime/failure.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_failure_classifier.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T047 returns classification data only; T048/T049 own retry
+and replan budgets and actions.
+
+Learner notes:
+
+- Problem solved: normalized runtime failures now have one deterministic,
+  fail-closed classification contract.
+- Read `src/runtime/failure.py`, `tests/runtime/test_failure_classifier.py`,
+  `src/runtime/executor.py`, and `src/runtime/verifier.py`.
+- Key concept: classification chooses a later route but does not execute the
+  route or mutate durable lifecycle state.
+- Exercise: pass a new unknown code to the classifier and verify it remains
+  TERMINAL until an explicit policy change is approved.
+- Ignore for now: retry/replan budgets, checkpointing, LangGraph, and lifecycle
+  orchestration.
+
+Suggested next task: T047 Strong Review, then T048 — Bounded retry.
+
 ### 2026-09-20 — T046: Verifier node
 
 Status: IMPLEMENTED — READY FOR T046 STRONG REVIEW (uncommitted)
