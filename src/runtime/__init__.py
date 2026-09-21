@@ -10,6 +10,7 @@ from runtime.planner import (
     PlannerRequest,
     PlannerTaskInput,
 )
+from runtime.retry import RETRY_BUDGET, RetryDecision, consume_retry
 from runtime.verifier import (
     VerifierModel,
     VerifierNode,
@@ -31,6 +32,9 @@ __all__ = [
     "PlannerRequest",
     "PlannerRepairContext",
     "PlannerTaskInput",
+    "RETRY_BUDGET",
+    "RetryDecision",
+    "consume_retry",
     "VerifierModel",
     "VerifierNode",
     "VerifierOutputInvalidError",

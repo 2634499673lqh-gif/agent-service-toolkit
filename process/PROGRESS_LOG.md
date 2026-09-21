@@ -2,6 +2,47 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-21 — T048: Bounded retry
+
+Status: IMPLEMENTED — READY FOR T048 STRONG REVIEW (uncommitted)
+
+- Added the explicit `RETRY_BUDGET = 1` runtime budget and checkpoint-safe
+  `RetryDecision` result.
+- Added `consume_retry`, which consumes only T047's existing classification:
+  `RETRY` transitions `retry_count` from `0` to `1`, while exhausted RETRY
+  becomes TERMINAL without incrementing or resetting the counter.
+- Preserved REPLAN/TERMINAL without consuming retry budget and demonstrated one
+  deterministic fail-once Executor retry on the same PlanStep.
+- Added focused off-by-one, monotonicity, isolation, bounds, and JSON tests.
+
+Scope remains limited to T048. No replan, planner invocation, LangGraph graph,
+TaskRun/lifecycle persistence, API, worker, provider, or dependency was added.
+PostgreSQL is not applicable to this runtime-only retry decision task.
+
+Files changed:
+
+- `src/runtime/retry.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_retry.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T048 models and consumes the retry decision only; T049 owns
+replan and later runtime orchestration owns lifecycle transitions.
+
+Learner notes:
+
+- Problem solved: one initial execution can receive exactly one additional
+  same-step retry without creating a new TaskRun.
+- Read `src/runtime/retry.py`, `tests/runtime/test_retry.py`,
+  `src/runtime/failure.py`, and `src/runtime/executor.py`.
+- Key concept: bounded counters use pre-transition checks, so budget `1` means
+  `0 → 1` once, not one total attempt and not two retries.
+- Exercise: change the second call to `consume_retry` to start at count `1`
+  and verify the result is TERMINAL with count still `1`.
+- Ignore for now: T049 replan, checkpointing, LangGraph, and lifecycle/API work.
+
+Suggested next task: T048 Strong Review, then T049 — Bounded replan.
+
 ### 2026-09-20 — T047: Failure classifier
 
 Status: IMPLEMENTED — READY FOR T047 STRONG REVIEW (uncommitted)
