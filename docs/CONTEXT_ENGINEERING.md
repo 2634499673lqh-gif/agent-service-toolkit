@@ -60,8 +60,9 @@ T063 applies a fixed structural budget rather than retrieval or optimization:
 - over-budget or malformed input is rejected rather than silently trimmed.
 
 Memory, organization knowledge, generic context buses, authorization
-containers, persistence, and runtime integration are deferred. T064 owns
-building this envelope inside the TaskPilot runtime dispatch path.
+containers, and persistence remain deferred. T064 builds this envelope inside
+the existing TaskPilot graph and sends it through the explicit capability
+dispatcher; it does not add retrieval or external effects.
 
 ## Evaluation questions
 

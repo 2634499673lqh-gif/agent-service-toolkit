@@ -1,3 +1,63 @@
+### 2026-09-22 — T064: Phase 5 runtime integration
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T064 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `3dc7b43`; working tree
+was clean before implementation apart from pre-existing inaccessible
+`.pytest-tmp-*` directories. T060–T063 are approved, committed, and
+published. No Phase 5 Final Audit was performed.
+
+What changed:
+
+- Integrated the approved `ContextBuilder` and explicit
+  `CapabilityDispatcher` into the existing Planner → Capability → Verifier
+  graph.
+- The default path dispatches the approved deterministic read-only fixture;
+  the existing `executor=` test injection is adapted through that same
+  dispatcher boundary.
+- Capability context is checkpointed only for the current step, preserved for
+  retry, cleared on step advance/replan, and rebuilt after replacement plans.
+- Preserved `TaskRuntimeService` tenant validation, checkpoint identity and
+  resume behavior, T035 lifecycle ownership, retry/replan budgets, and
+  terminal conflict handling.
+- Added capability-path runtime tests for bounded context checkpointing,
+  retry, replan, same-TaskRun behavior, and authority absence.
+
+Files changed:
+
+- `src/runtime/graph.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_task_runtime.py`
+- `docs/CONTEXT_ENGINEERING.md`
+- `process/PROGRESS_LOG.md`
+
+Validation: focused capability/runtime tests: 15 passed; affected runtime
+regression: 117 passed, 12 skipped; PostgreSQL/LangGraph tests: 12 skipped
+because `TASKPILOT_TEST_DATABASE_URL` is not configured; full suite: 536
+passed, 93 skipped, 18 warnings. Ruff, targeted format, Pyrefly, `uv lock
+--check`, and `git diff --check` passed.
+
+Scope: T064 only. No new persistence, migrations, public API, credentials,
+providers, plugin/MCP infrastructure, HITL, memory, workers, idempotency,
+leases, locks, external effects, or exactly-once machinery was added. The Phase
+5 Final Audit remains deferred to an independent read-only review.
+
+Learner notes:
+
+- Problem solved: the approved bounded context and deterministic capability now
+  run inside the existing checkpointed TaskPilot graph.
+- Read `src/runtime/graph.py`, `src/service/task_runtime.py`,
+  `src/runtime/capability.py`, `src/runtime/context.py`, and
+  `tests/runtime/test_task_runtime.py`.
+- Key concept: the capability path is an adapter inside the existing lifecycle;
+  it does not own tenant authorization or TaskRun terminal transitions.
+- Exercise: inspect the checkpoint after the executor node and identify the
+  three approved `capability_context` fields.
+- Do not worry yet about side effects, HITL, providers, or exactly-once
+  delivery.
+
+Suggested next task: independent T064 Strong Review.
+
 ### 2026-09-22 — T063: Sanitized ContextEnvelope and builder
 
 Status: IMPLEMENTED — READY FOR INDEPENDENT T063 STRONG REVIEW
