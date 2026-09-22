@@ -18,6 +18,59 @@ Suggested next task: independent Phase5 Planning Focused Strong Review (no imple
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-22 — T060: Phase 5 capability/context architecture gate
+
+Status: PLANNING CONTRACT COMPLETE — READY FOR INDEPENDENT Phase 5 Planning
+Strong Review
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `afdedc1`; working tree
+was clean before this documentation change. T051 Phase 4 Final Audit is
+approved, and Phase 5 production implementation has not started.
+
+What changed:
+
+- Expanded ADR-007 from a planning summary into the implementation authority
+  for one typed, async `Capability` contract and explicit Executor-supplied
+  dispatch mapping.
+- Froze the bounded provenance-labeled `ContextEnvelope`, structural
+  sanitization rules, the single optional `capability_context` AgentState
+  field, and the existing `ExecutionResult` / `RuntimeFailure` output boundary.
+- Froze failure normalization, existing retry/replan budgets, T035 lifecycle
+  ownership, tenant-check location, checkpoint attempt semantics, and the
+  deterministic replay limitation.
+- Explicitly deferred registries/plugins/MCP, credentials, real effects,
+  persistence, public APIs, HITL, memory/knowledge infrastructure, workers,
+  generic idempotency, and exactly-once claims.
+
+Files changed:
+
+- `process/DECISION_LOG.md`
+- `process/PROGRESS_LOG.md`
+
+Scope: documentation/ADR only. No production source, tests, dependencies,
+migrations, persistence tables, public runtime API, or later Phase 5 task was
+implemented.
+
+Validation: final diff inspection, cross-document contract comparison against
+ADR-006/T051 and T061–T064, and `git diff --check`.
+
+Learner notes:
+
+- Problem solved: Phase 5 now has one small implementation authority for
+  capability dispatch and bounded context without moving tenant authority into
+  AgentState.
+- Read `process/DECISION_LOG.md` ADR-006/ADR-007,
+  `src/runtime/executor.py`, `src/runtime/state.py`, and
+  `src/service/task_runtime.py`.
+- Key concept: checkpoint data is resumable runtime data, not authorization;
+  a deterministic replay limitation is different from an exactly-once claim.
+- Exercise: list every field that may enter `capability_context`, then explain
+  why `organization_id`, `AsyncSession`, and a raw exception cannot enter it.
+- Do not worry yet about implementing a registry, provider credentials, HITL,
+  memory/knowledge retrieval, or external effects.
+
+Suggested next task: independent Phase 5 Planning Strong Review of T060/ADR-007.
+
 ### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization (historical record)
 
 Status: DOCUMENTATION FIX COMPLETE — READY FOR T051 FOCUSED FINAL AUDIT RE-REVIEW
