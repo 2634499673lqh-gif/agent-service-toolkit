@@ -2,6 +2,7 @@
 
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
 from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
+from runtime.graph import build_runtime_graph
 from runtime.planner import (
     PlannerModel,
     PlannerNode,
@@ -18,6 +19,7 @@ from runtime.replan import (
     consume_replan,
 )
 from runtime.retry import RETRY_BUDGET, RetryDecision, consume_retry
+from runtime.state import AgentState, TerminalOutcome
 from runtime.verifier import (
     VerifierModel,
     VerifierNode,
@@ -33,6 +35,9 @@ __all__ = [
     "FailureClassification",
     "FailureClassifier",
     "RuntimeFailure",
+    "build_runtime_graph",
+    "AgentState",
+    "TerminalOutcome",
     "PlannerModel",
     "PlannerNode",
     "PlannerOutputInvalidError",

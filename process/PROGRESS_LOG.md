@@ -2,6 +2,141 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-21 — T050 B1: Repeated / concurrent RUNNING resume evidence
+
+Status: IMPLEMENTED — READY FOR T050 FOCUSED RE-REVIEW (uncommitted)
+
+Blocker fixed:
+
+- The Strong Review B1 gap was evidence-only: the existing real PostgreSQL
+  suite covered one RUNNING resume and PENDING contention, but not repeated or
+  concurrent RUNNING resume against the same durable checkpoint thread.
+- Production implementation was unchanged. The new tests simulate a worker
+  interruption after LangGraph checkpoint progress but before T035 completion,
+  then resume the still-RUNNING TaskRun; the concurrent case uses two
+  independent SQLAlchemy sessions and allows duplicate graph work.
+- Both scenarios use `taskpilot-run:<task_run_id>`, meaningful non-initial
+  `plan_position`, consumed `retry_count`/`replan_count`, fresh final reads,
+  and durable TaskRun-count assertions.
+
+Files changed:
+
+- `tests/runtime/test_task_runtime_postgres.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Repeated/concurrent B1 tests → PASS (2 passed, 0 skipped).
+- `uv run pytest -q tests/runtime/test_task_runtime_postgres.py` → PASS
+  (12 passed, 0 skipped).
+- `uv run pytest -q tests/runtime/test_task_runtime.py` → PASS (12 passed).
+- `uv run pytest -q tests/runtime` → PASS (96 passed).
+- `uv run pytest -q` → PASS (592 passed, 4 unrelated skips).
+- Ruff, Ruff format, Pyrefly, `uv lock --check`, import smoke, `git diff
+  --check`, and Alembic heads/history/check → PASS.
+
+Scope: no production code, T051, migration, dependency, TaskStep, HTTP API,
+worker, lock/lease, distributed coordination, or exactly-once infrastructure
+was added. No commit or push.
+
+Learner notes:
+
+- Problem solved: a RUNNING TaskRun can be resumed repeatedly or concurrently
+  from its durable checkpoint without resetting progress or creating a new run.
+- Read `tests/runtime/test_task_runtime_postgres.py` together with
+  `src/service/task_runtime.py` and `process/tasks/T050.md`.
+- Key concept: LangGraph graph work may duplicate, while T035 terminal business
+  state remains the durable single-winner boundary.
+- Exercise: inspect the two durable checkpoint states in the repeated-resume
+  helper and identify why `plan_position == 1` proves restart was avoided.
+- Do not worry about exactly-once node execution; it is explicitly not claimed.
+
+Suggested next task: request the focused T050 B1 re-review.
+
+### 2026-09-21 — T050: Checkpoint / resume
+
+Status: IMPLEMENTED — READY FOR T050 STRONG REVIEW (uncommitted)
+
+What changed:
+
+- Added the typed JSON/checkpoint-safe `AgentState` with immutable canonical
+  Task/TaskRun IDs, bounded retry/replan counters, and terminal outcome.
+- Added the smallest static LangGraph runtime composition for Planner →
+  Executor → Verifier, one retry, one replacement Plan, step advancement, and
+  terminal routing. Existing T041–T049 contracts remain the source of truth.
+- Added `TaskRuntimeService.execute_run(...)`, which tenant-validates Task and
+  nested TaskRun in one SQL join, derives `taskpilot-run:<task_run_id>` only
+  after validation, separates business lifecycle transactions from graph work,
+  and delegates begin/succeed/fail exclusively to T035.
+- Implemented initial PENDING execution, RUNNING resume from the latest valid
+  checkpoint, fail-closed missing/corrupt checkpoint handling, terminal-run
+  rejection, stale checkpoint identity rejection, and late completion failure
+  under lifecycle races.
+- Added deterministic unit coverage and a real PostgreSQL/LangGraph integration
+  suite covering checkpoint creation, resume, counters, tenant scope,
+  cancellation race, and migration ownership. Added the Windows runtime test
+  Selector event-loop hook required by psycopg's async PostgreSQL driver.
+- Fixed the async runtime boundary to snapshot the TaskRun status before the
+  deliberate transaction rollback and to validate the final lifecycle status
+  before releasing that session transaction. Corrected integration setup cases
+  so concurrency and cancellation tests reach the intended lifecycle races.
+
+Files changed:
+
+- `src/persistence/repositories.py`
+- `src/runtime/__init__.py`
+- `src/runtime/state.py`
+- `src/runtime/graph.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_task_runtime.py`
+- `tests/runtime/test_task_runtime_postgres.py`
+- `tests/runtime/conftest.py`
+- `docs/API_CONVENTIONS.md`
+- `process/PROGRESS_LOG.md`
+
+Scope check: no TaskStep model/migration, HTTP route, worker, external effect,
+HITL, idempotency, distributed lock, exactly-once claim, or T051 audit work was
+added. No dependency or TaskPilot migration was added.
+
+Commands/tests run:
+
+- `uv run pytest tests/runtime/test_task_runtime.py -q` → PASS (12 passed).
+- `uv run pytest tests/runtime/test_task_runtime_postgres.py -q` with the
+  repository Compose PostgreSQL test base → PASS (10 passed, 0 skipped), using
+  real PostgreSQL 16.15 and real `AsyncPostgresSaver` checkpoint tables.
+- `uv run pytest tests/runtime -q` with the same test base → PASS (94 passed).
+- `uv run pytest -q` with only `TASKPILOT_TEST_DATABASE_URL` configured → PASS
+  (590 passed, 4 skipped, 112 warnings). The four skips are unrelated existing
+  conditional tests; all PostgreSQL TaskPilot suites executed.
+- `uv run alembic heads; uv run alembic history; uv run alembic check` with
+  `TASKPILOT_DATABASE_URL` pointed at the disposable test base → PASS; one
+  expected head `t032_task_run`, no new upgrade operations.
+- Ruff check/format, Pyrefly, `uv lock --check`, import smoke with
+  `PYTHONPATH=src`, `git diff --check`, and the focused Markdown scan for
+  `docs/API_CONVENTIONS.md` → PASS.
+
+The integration blocker is resolved locally with the repository-provided
+Compose PostgreSQL service and its existing `taskpilot_test` disposable-test
+base. No TaskPilot migration was added for LangGraph-owned tables. T050 is
+ready for the independent Strong Review gate; it is not yet approved.
+
+Learner notes:
+
+- Problem solved: a durable TaskRun now has one tenant-validated checkpoint
+  identity and can resume without restarting its checkpointed plan or budgets.
+- Read `src/service/task_runtime.py`, `src/runtime/state.py`,
+  `src/runtime/graph.py`, `src/persistence/repositories.py`, and
+  `src/service/task_lifecycle.py`.
+- Key concept: business lifecycle state and graph checkpoint state have separate
+  owners; T035 commits Task/TaskRun status while LangGraph checkpoints runtime
+  progress, and the checkpoint never grants authorization.
+- Exercise: run the PostgreSQL integration file with a disposable test database,
+  then inspect the final Task/TaskRun rows after the cancellation-race test.
+- Do not worry about TaskStep persistence, workers, HITL, external tools, or
+  exactly-once execution yet.
+
+Suggested next task: request the independent T050 Strong Review.
+
 ### 2026-09-21 — T049: Bounded replan
 
 Status: IMPLEMENTED — READY FOR T049 STRONG REVIEW (uncommitted)
