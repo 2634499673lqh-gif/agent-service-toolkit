@@ -1,3 +1,61 @@
+### 2026-09-22 — T063: Sanitized ContextEnvelope and builder
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T063 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `9671d83`; working tree
+was clean before implementation apart from pre-existing inaccessible
+`.pytest-tmp-*` directories. T060–T062 are approved, committed, and
+published. T064 runtime integration has not started.
+
+What changed:
+
+- Added the bounded `ContextSource`, `ContextEnvelope`, and deterministic
+  `ContextBuilder` contract from ADR-007.
+- Validated the existing `PlannerTaskInput` and `PlanStep` snapshots, retained
+  only explicit source order, rejected extra/non-JSON/runtime values, and
+  enforced source-field and 8,192-byte UTF-8 envelope limits.
+- Added the sole approved `AgentState.capability_context` field, defaulting to
+  `null`; no graph, service, capability dispatch, persistence, or public
+  runtime integration was added.
+- Replaced the stale generic context suggestion with the concrete T063
+  contract in `docs/CONTEXT_ENGINEERING.md`.
+
+Files changed:
+
+- `src/runtime/context.py`
+- `src/runtime/state.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_context.py`
+- `docs/CONTEXT_ENGINEERING.md`
+- `process/PROGRESS_LOG.md`
+
+Validation: focused context tests: 13 passed; affected runtime tests: 113
+passed, 12 skipped; full suite: 533 passed, 93 skipped, 18 warnings; Ruff
+check and targeted format check passed; Pyrefly passed with 0 errors; `uv lock
+--check` and `git diff --check` passed. Existing inaccessible `.pytest-tmp-*`
+directories emitted permission warnings during repository-wide Ruff scanning.
+
+Scope: T063 only. T064 runtime integration, memory/knowledge retrieval,
+authorization containers, credentials, persistence, migrations, public APIs,
+external effects, plugin/MCP infrastructure, and exactly-once machinery were
+not implemented.
+
+Learner notes:
+
+- Problem solved: capability dispatch now has one small, typed, checkpoint-safe
+  context shape without moving authority or secrets into runtime state.
+- Read `src/runtime/context.py`, `src/runtime/state.py`,
+  `tests/runtime/test_context.py`, `process/DECISION_LOG.md` ADR-007, and
+  `docs/CONTEXT_ENGINEERING.md`.
+- Key concept: a provenance label explains why bounded data was selected; it is
+  not an authorization grant.
+- Exercise: add one valid source and then add an `organization_id` field; trace
+  why the first serializes and the second is rejected.
+- Do not worry yet about runtime graph wiring, retries around capabilities,
+  memory, organization knowledge, providers, or external effects.
+
+Suggested next task: independent T063 Strong Review.
+
 ### 2026-09-22 — Phase 5 Planning package
 
 Status: PLANNING ARTIFACTS CREATED — READY FOR INDEPENDENT Phase5 Planning Strong Review

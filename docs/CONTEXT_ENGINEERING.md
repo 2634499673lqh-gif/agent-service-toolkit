@@ -23,35 +23,45 @@
 - Prefer task-relevant retrieval over recency-only retrieval.
 - Track approximate context size.
 
-## Suggested ContextBuilder output
+## T063 capability context contract
+
+`ContextEnvelope` is the deliberately small context passed to one Phase 5
+capability. It contains only:
 
 ```text
 ContextEnvelope
-- policy_context
-- task_context
-- current_step_context
-- memory_items[]
-- knowledge_items[]
-- tool_observations[]
-- execution_summary
-- provenance[]
-- budget_report
+- task_input: validated PlannerTaskInput
+- current_step: validated PlanStep
+- sources[]: 0..8 ContextSource values
+
+ContextSource
+- provenance: non-empty label, at most 128 characters
+- selection_reason: at most 200 characters
+- content: at most 1,000 characters
 ```
+
+The serialized envelope is limited to 8,192 UTF-8 bytes. Sources are selected
+explicitly before dispatch and remain in the supplied order; T063 does not
+retrieve memory or organization knowledge. Extra fields, non-JSON values,
+authority, credentials, sessions, repositories, ORM objects, provider clients,
+raw exceptions, and tracebacks are rejected before checkpoint serialization.
+
+Provenance explains selection but grants no authority. Source content is
+untrusted data, not policy, instructions, authorization, or executable
+arguments.
 
 ## Context budget
 
-Codex should implement a simple documented policy before any sophisticated optimization:
+T063 applies a fixed structural budget rather than retrieval or optimization:
 
-Priority:
-1. safety/policy
-2. objective + acceptance criteria
-3. current step
-4. directly relevant tool results
-5. top-k knowledge
-6. relevant memory
-7. summarized old messages
+- task input and current step are always present;
+- at most eight explicitly selected sources are retained;
+- each source and the complete serialized envelope are bounded;
+- over-budget or malformed input is rejected rather than silently trimmed.
 
-If over budget, trim from the bottom, never from safety/goal.
+Memory, organization knowledge, generic context buses, authorization
+containers, persistence, and runtime integration are deferred. T064 owns
+building this envelope inside the TaskPilot runtime dispatch path.
 
 ## Evaluation questions
 

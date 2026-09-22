@@ -6,6 +6,16 @@ from runtime.capability import (
     CapabilityDispatcher,
     CapabilityMetadata,
 )
+from runtime.context import (
+    MAX_CONTEXT_BYTES,
+    MAX_CONTEXT_SOURCES,
+    MAX_PROVENANCE_LENGTH,
+    MAX_SELECTION_REASON_LENGTH,
+    MAX_SOURCE_CONTENT_LENGTH,
+    ContextBuilder,
+    ContextEnvelope,
+    ContextSource,
+)
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
 from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
 from runtime.graph import build_runtime_graph
@@ -38,6 +48,14 @@ __all__ = [
     "Capability",
     "CapabilityDispatcher",
     "CapabilityMetadata",
+    "ContextBuilder",
+    "ContextEnvelope",
+    "ContextSource",
+    "MAX_CONTEXT_BYTES",
+    "MAX_CONTEXT_SOURCES",
+    "MAX_PROVENANCE_LENGTH",
+    "MAX_SELECTION_REASON_LENGTH",
+    "MAX_SOURCE_CONTENT_LENGTH",
     "DeterministicFixtureCapability",
     "ExecutionResult",
     "Executor",
