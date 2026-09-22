@@ -104,12 +104,9 @@ Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABA
 
 Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task create/list/get/update/cancel routes, and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. T040–T050 provide the committed internal bounded runtime described below. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, approval, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
 
-## Current TaskPilot implementation status — Phase 4 branch (T040–T050 committed)
+## Current TaskPilot implementation status — Phase 4 complete (T040–T051 approved)
 
-The committed `phase-4-agent-runtime` branch contains the completed T040–T050
-Phase 4 implementation. T051 Final Audit is still in progress: its sole B1
-documentation blocker has been fixed, and focused re-review is pending. Phase 4
-is not yet Final-Audit approved and has not been merged to `main`.
+The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`; Phase 5 planning is active.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
@@ -128,3 +125,8 @@ HTTP API, worker/queue execution, real external tools or providers, HITL,
 exactly-once external effects, and any production deployment claim. Checkpoint
 or graph progress never grants authorization, and Phase 4 makes no exactly-once
 execution guarantee.
+
+
+### Phase 5 planning boundary
+
+The Phase 5 package (T060–T064, following approved T051) adds one bounded Capability contract and an explicit in-process dispatch dependency to the existing Executor. The first capability remains deterministic, read-only, and side-effect-free. A typed, provenance-labeled ContextEnvelope is sanitized and size-bounded; authority, secrets, repositories, ORM objects, provider clients, and checkpoint objects remain outside AgentState and checkpoints. No new persistence or public runtime API is planned.

@@ -367,3 +367,14 @@ provider credentials, generic tool/skill registries, exactly-once external
 effects, observability schemas, and new Task/TaskRun states remain later-phase
 work. The ADR was accepted after independent Planning Strong Review; the
 contract substance above is now the implementation authority.
+
+
+## ADR-007 — Phase 5 bounded capabilities and sanitized context (proposed)
+
+Status: Proposed; requires independent Phase5 Planning Strong Review. Prerequisite: accepted T051 Phase 4 Final Audit.
+
+Phase 5 uses one minimal `Capability` concept rather than separate Skill/Tool hierarchies. Explicit in-process dispatch is supplied to the existing Executor. Inputs are validated `PlanStep` plus a bounded, provenance-labeled ContextEnvelope; outputs reuse `ExecutionResult` and failures reuse `RuntimeFailure`. The first capability slice is deterministic, read-only, in-process, and side-effect-free.
+
+AgentState/checkpoints may contain only approved JSON runtime state and sanitized capability results. Authority, tenant principal, sessions, repositories, ORM objects, provider clients, secrets, checkpoint objects, and raw exceptions never cross that boundary. Tenant/authorization checks remain at the trusted TaskRuntimeService/repository boundary. Retry and replan continue to use existing budgets inside the same TaskRun. Repeated or concurrent resume may duplicate deterministic capability work; exactly-once execution is not claimed.
+
+No registry/plugin/MCP platform, credential-bearing or real-effect capability, new persistence, public runtime API, HITL, memory/knowledge subsystem, worker, or generic idempotency framework is introduced.

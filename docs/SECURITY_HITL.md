@@ -158,5 +158,9 @@ tenant-scoped Task/TaskRun validation before using a LangGraph checkpoint
 identity. Checkpoint data, Plan/PlanStep output, and verifier evidence cannot
 select a tenant, user, membership, role, or tool authority. Phase 4 adds no
 approval model, `WAITING_APPROVAL` state, HTTP idempotency, worker claim, or
-real external side effect; those remain later-phase security work. T051 Final
-Audit is not yet approved, and Phase 4 is not merged to `main`.
+real external side effect; those remain later-phase security work. T051 Final Audit is approved; Phase 4 is complete and merged to `main`.
+
+
+## Phase 5 planning boundary
+
+Phase 5 is intentionally limited to deterministic, read-only, in-process capability execution. Capability inputs and outputs are bounded and sanitized; retrieved or capability-produced content is untrusted data and cannot select tenant, user, role, or tool authority. Credentials and real external side effects remain deferred to later HITL planning. Repeated or concurrent checkpoint resume may repeat deterministic work; no exactly-once effect guarantee is made.

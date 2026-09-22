@@ -103,15 +103,13 @@ Exit:
 - one complete task can execute through graph
 - a forced retry is visible and recoverable
 
-## Phase 5 — Skills, Tools, Context [STRONG DESIGN + STANDARD/ECONOMY IMPLEMENTATION]
+## Phase 5 — Skills, Tools, Context [PLANNING GATE THEN STANDARD IMPLEMENTATION]
 
-Tasks: see the canonical backlog IDs T060–T074.
+Phase 4/T051 is approved, complete, and merged to `main`; Phase 5 planning is active. Canonical tasks: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`. After T064 implementation, its independent Strong Review, and approval, the user performs the GitHub Desktop commit and push to `origin`; only then does the independent read-only Phase 5 Final Audit run.
 
-Exit:
-- planner selects a skill
-- tool calls are typed/traced
-- context sources can be explained
+Exit: one deterministic read-only capability is selected and dispatched through the existing Executor; capability context is typed, bounded, provenance-labeled, sanitized, and explainable; retry/replan/checkpoint/resume and tenant boundaries remain unchanged.
 
+No real external effects, credentials, dynamic registry/plugin platform, new persistence, public runtime API, HITL, memory/knowledge subsystem, or exactly-once guarantee is included.
 ## Phase 6 — Human-in-the-loop & Safety [STRONG MODEL]
 
 Tasks: see the canonical backlog IDs T080–T088.

@@ -1,8 +1,24 @@
+### 2026-09-22 — Phase 5 Planning package
+
+Status: PLANNING ARTIFACTS CREATED — READY FOR INDEPENDENT Phase5 Planning Strong Review
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD and `main` both `87c4bed`; working tree was clean before planning (apart from pre-existing inaccessible `.pytest-tmp-*` directories). T051 Phase 4 Final Audit is approved; Phase 4 is complete and merged to `main`. Phase 5 planning is active and no implementation task has started.
+
+What changed: replaced the historical T060–T074 proposal with the smallest coherent T060–T064 DAG; added task cards and proposed ADR-007. The package freezes one Capability contract, explicit dispatch, one deterministic read-only capability, a bounded sanitized ContextEnvelope, and runtime integration followed by a separate Phase 5 Final Audit. No `src/` code, tests, migrations, dependencies, or Git state were changed.
+
+Validation: documentation inspection, task-ID/dependency review, and `git diff --check`; no production or Phase 5 tests run.
+
+Deferred: separate Skill/Tool registries, providers, credentials, real side effects, new persistence, public API, HITL, memory/knowledge, workers, generic idempotency, and exactly-once claims.
+
+Learner notes: the key concept is preserving Phase 4's trust boundary while adding bounded capability data; read `process/tasks/T060.md`, `T061.md`, `T063.md`, `src/runtime/executor.py`, `src/runtime/state.py`, and `src/service/task_runtime.py`. Exercise: trace which values may enter `AgentState` and which must remain in the trusted service call. Do not worry yet about providers, approvals, or external effects.
+
+Suggested next task: independent Phase5 Planning Focused Strong Review (no implementation).
+
 # Progress Log
 
 > Append one entry per completed task. Do not delete old entries.
 
-### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization
+### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization (historical record)
 
 Status: DOCUMENTATION FIX COMPLETE — READY FOR T051 FOCUSED FINAL AUDIT RE-REVIEW
 
