@@ -2,6 +2,50 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization
+
+Status: DOCUMENTATION FIX COMPLETE — READY FOR T051 FOCUSED FINAL AUDIT RE-REVIEW
+
+Current canonical status:
+
+- T040 is completed, approved, and committed.
+- T041–T050 are completed, task-level approved, and committed; T050 is present
+  at committed HEAD `9d9e96e`.
+- T051 Final Audit was executed and returned `PHASE 4 NOT APPROVED` for exactly
+  one blocker: stale canonical Phase 4 status documentation.
+- This blocker fix changes documentation only. The focused T051 Final Audit
+  re-review remains pending.
+- Phase 4 is not yet Final-Audit approved and has not been merged to `main`.
+
+Files changed:
+
+- `process/tasks/INDEX.md`
+- `process/PROGRESS_LOG.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/SECURITY_HITL.md`
+
+Scope: no production code, tests, migrations, dependencies, TaskStep
+persistence, public runtime API, worker, HITL, external side effect, or
+exactly-once guarantee was added. No commit or push.
+
+Learner notes:
+
+- Problem solved: canonical documents now agree with the committed T040–T050
+  implementation while keeping T051 pending focused re-review.
+- Read `process/tasks/INDEX.md`, this current entry in
+  `process/PROGRESS_LOG.md`, `docs/ARCHITECTURE.md`, and
+  `docs/API_CONVENTIONS.md`.
+- Key concept: current status declarations and historical progress entries have
+  different truth obligations; the former must track repository state while the
+  latter preserves what was true at the time.
+- Exercise: compare the Phase 4 status table with `git log --oneline -20` and
+  identify which commit supplies T050's implementation evidence.
+- Do not worry about Phase 5, public runtime APIs, workers, HITL, or
+  exactly-once external effects yet.
+
+Suggested next task: request the focused T051 Final Audit re-review.
+
 ### 2026-09-21 — T050 B1: Repeated / concurrent RUNNING resume evidence
 
 Status: IMPLEMENTED — READY FOR T050 FOCUSED RE-REVIEW (uncommitted)

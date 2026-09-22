@@ -85,8 +85,9 @@ durable TaskRun according to T035/T038. Retry/replan remain bounded internal
 graph routes, and no TaskStep API, approval API, worker endpoint, HTTP
 idempotency contract, exactly-once claim, or external side effect is authorized
 by Phase 4. The required real PostgreSQL/LangGraph validation has passed against
-the repository's disposable Compose PostgreSQL test base; T050 still requires
-the independent Strong Review before approval.
+the repository's disposable Compose PostgreSQL test base; T050 is completed,
+task-level approved, and committed. The Phase 4 Final Audit remains in progress
+and is not yet approved.
 
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 

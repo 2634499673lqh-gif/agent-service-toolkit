@@ -45,24 +45,27 @@ Dependency graph: `T031 → T032 → T034 → T035 → T036 → T037 → T038 �
 
 ## Phase 4 Task Cards — Agent runtime
 
-| Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? |
-|---|---|---|---|---|---|
-| T040 | Phase 4 runtime architecture / AgentState contract | STRONG, planning only | APPROVED / COMPLETE | T039, ADR-005 | No runtime |
-| T041 | Planner schema | LOW_COST | STRONG_REVIEW_REQUIRED | T040 | Focused schema |
-| T042 | Planner node | STANDARD | STRONG_REVIEW_REQUIRED | T041 | Focused deterministic |
-| T043 | Executor interface | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T042 | Focused contract |
-| T044 | Deterministic execution path | LOW_COST | STRONG_REVIEW_REQUIRED | T043 | Focused deterministic |
-| T045 | Verifier schema | LOW_COST | STRONG_REVIEW_REQUIRED | T044 | Focused schema |
-| T046 | Verifier node | STANDARD | STRONG_REVIEW_REQUIRED | T045 | Focused PASS/FAIL |
-| T047 | Failure classifier | STANDARD | STRONG_REVIEW_REQUIRED | T046 | Table-driven |
-| T048 | Bounded retry | STANDARD | STRONG_REVIEW_REQUIRED | T047 | Recovery scenarios |
-| T049 | Bounded replan | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T048 | Recovery scenarios |
-| T050 | Checkpoint / resume | STRONG | STRONG_REVIEW_REQUIRED | T049 | PostgreSQL/LangGraph integration |
-| T051 | Phase 4 Final Audit (read-only) | STRONG | STRONG_REVIEW_REQUIRED | T040–T050 | Full suite at gate |
+| Task | Purpose | Implementation Model | Review Model | Depends On | Full Pytest? | Current Status |
+|---|---|---|---|---|---|---|
+| T040 | Phase 4 runtime architecture / AgentState contract | STRONG, planning only | APPROVED / COMPLETE | T039, ADR-005 | No runtime | APPROVED / COMPLETE / COMMITTED |
+| T041 | Planner schema | LOW_COST | STRONG_REVIEW_REQUIRED | T040 | Focused schema | APPROVED / COMPLETE / COMMITTED |
+| T042 | Planner node | STANDARD | STRONG_REVIEW_REQUIRED | T041 | Focused deterministic | APPROVED / COMPLETE / COMMITTED |
+| T043 | Executor interface | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T042 | Focused contract | APPROVED / COMPLETE / COMMITTED |
+| T044 | Deterministic execution path | LOW_COST | STRONG_REVIEW_REQUIRED | T043 | Focused deterministic | APPROVED / COMPLETE / COMMITTED |
+| T045 | Verifier schema | LOW_COST | STRONG_REVIEW_REQUIRED | T044 | Focused schema | APPROVED / COMPLETE / COMMITTED |
+| T046 | Verifier node | STANDARD | STRONG_REVIEW_REQUIRED | T045 | Focused PASS/FAIL | APPROVED / COMPLETE / COMMITTED |
+| T047 | Failure classifier | STANDARD | STRONG_REVIEW_REQUIRED | T046 | Table-driven | APPROVED / COMPLETE / COMMITTED |
+| T048 | Bounded retry | STANDARD | STRONG_REVIEW_REQUIRED | T047 | Recovery scenarios | APPROVED / COMPLETE / COMMITTED |
+| T049 | Bounded replan | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T048 | Recovery scenarios | APPROVED / COMPLETE / COMMITTED |
+| T050 | Checkpoint / resume | STRONG | STRONG_REVIEW_REQUIRED | T049 | PostgreSQL/LangGraph integration | APPROVED / COMPLETE / COMMITTED |
+| T051 | Phase 4 Final Audit (read-only) | STRONG | STRONG_REVIEW_REQUIRED | T040–T050 | Full suite at gate | FINAL AUDIT IN PROGRESS — B1 FIX COMPLETE; FOCUSED RE-REVIEW PENDING |
 
-Recommended execution order is the linear DAG `T040 → T041 → T042 → T043 → T044 → T045 → T046 → T047 → T048 → T049 → T050 → T051`. T040/ADR-006 is approved and complete; T041 is the first executable implementation task. Phase 4 adds no TaskStep persistence, new HTTP endpoint, worker, approval, HTTP idempotency, external side effect, or Task/TaskRun state.
+Execution order is the linear DAG `T040 → T041 → T042 → T043 → T044 → T045 → T046 → T047 → T048 → T049 → T050 → T051`. T040/ADR-006 is approved and complete; T041–T050 are completed, task-level approved, and committed on this branch. Phase 4 adds no TaskStep persistence, new HTTP endpoint, worker, approval, HTTP idempotency, external side effect, or Task/TaskRun state.
 
-Current status: T041 is NOT STARTED and is the executable next task.
+Current status: T041–T050 are completed / approved / committed. T051 is the active
+Final Audit task; its documentation-only B1 blocker fix is complete and the next
+action is the focused Final Audit re-review. T051 is not approved. No T052 or
+Phase 5 task has started, and Phase 4 has not been merged to `main`.
 
 Later-phase numbering follows the granular `TASK_BACKLOG.md` authority. The former compact roadmap labels are preserved as intent mappings there; no later work is deleted.
 
