@@ -2,6 +2,566 @@
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization
+
+Status: DOCUMENTATION FIX COMPLETE — READY FOR T051 FOCUSED FINAL AUDIT RE-REVIEW
+
+Current canonical status:
+
+- T040 is completed, approved, and committed.
+- T041–T050 are completed, task-level approved, and committed; T050 is present
+  at committed HEAD `9d9e96e`.
+- T051 Final Audit was executed and returned `PHASE 4 NOT APPROVED` for exactly
+  one blocker: stale canonical Phase 4 status documentation.
+- This blocker fix changes documentation only. The focused T051 Final Audit
+  re-review remains pending.
+- Phase 4 is not yet Final-Audit approved and has not been merged to `main`.
+
+Files changed:
+
+- `process/tasks/INDEX.md`
+- `process/PROGRESS_LOG.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API_CONVENTIONS.md`
+- `docs/SECURITY_HITL.md`
+
+Scope: no production code, tests, migrations, dependencies, TaskStep
+persistence, public runtime API, worker, HITL, external side effect, or
+exactly-once guarantee was added. No commit or push.
+
+Learner notes:
+
+- Problem solved: canonical documents now agree with the committed T040–T050
+  implementation while keeping T051 pending focused re-review.
+- Read `process/tasks/INDEX.md`, this current entry in
+  `process/PROGRESS_LOG.md`, `docs/ARCHITECTURE.md`, and
+  `docs/API_CONVENTIONS.md`.
+- Key concept: current status declarations and historical progress entries have
+  different truth obligations; the former must track repository state while the
+  latter preserves what was true at the time.
+- Exercise: compare the Phase 4 status table with `git log --oneline -20` and
+  identify which commit supplies T050's implementation evidence.
+- Do not worry about Phase 5, public runtime APIs, workers, HITL, or
+  exactly-once external effects yet.
+
+Suggested next task: request the focused T051 Final Audit re-review.
+
+### 2026-09-21 — T050 B1: Repeated / concurrent RUNNING resume evidence
+
+Status: IMPLEMENTED — READY FOR T050 FOCUSED RE-REVIEW (uncommitted)
+
+Blocker fixed:
+
+- The Strong Review B1 gap was evidence-only: the existing real PostgreSQL
+  suite covered one RUNNING resume and PENDING contention, but not repeated or
+  concurrent RUNNING resume against the same durable checkpoint thread.
+- Production implementation was unchanged. The new tests simulate a worker
+  interruption after LangGraph checkpoint progress but before T035 completion,
+  then resume the still-RUNNING TaskRun; the concurrent case uses two
+  independent SQLAlchemy sessions and allows duplicate graph work.
+- Both scenarios use `taskpilot-run:<task_run_id>`, meaningful non-initial
+  `plan_position`, consumed `retry_count`/`replan_count`, fresh final reads,
+  and durable TaskRun-count assertions.
+
+Files changed:
+
+- `tests/runtime/test_task_runtime_postgres.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Repeated/concurrent B1 tests → PASS (2 passed, 0 skipped).
+- `uv run pytest -q tests/runtime/test_task_runtime_postgres.py` → PASS
+  (12 passed, 0 skipped).
+- `uv run pytest -q tests/runtime/test_task_runtime.py` → PASS (12 passed).
+- `uv run pytest -q tests/runtime` → PASS (96 passed).
+- `uv run pytest -q` → PASS (592 passed, 4 unrelated skips).
+- Ruff, Ruff format, Pyrefly, `uv lock --check`, import smoke, `git diff
+  --check`, and Alembic heads/history/check → PASS.
+
+Scope: no production code, T051, migration, dependency, TaskStep, HTTP API,
+worker, lock/lease, distributed coordination, or exactly-once infrastructure
+was added. No commit or push.
+
+Learner notes:
+
+- Problem solved: a RUNNING TaskRun can be resumed repeatedly or concurrently
+  from its durable checkpoint without resetting progress or creating a new run.
+- Read `tests/runtime/test_task_runtime_postgres.py` together with
+  `src/service/task_runtime.py` and `process/tasks/T050.md`.
+- Key concept: LangGraph graph work may duplicate, while T035 terminal business
+  state remains the durable single-winner boundary.
+- Exercise: inspect the two durable checkpoint states in the repeated-resume
+  helper and identify why `plan_position == 1` proves restart was avoided.
+- Do not worry about exactly-once node execution; it is explicitly not claimed.
+
+Suggested next task: request the focused T050 B1 re-review.
+
+### 2026-09-21 — T050: Checkpoint / resume
+
+Status: IMPLEMENTED — READY FOR T050 STRONG REVIEW (uncommitted)
+
+What changed:
+
+- Added the typed JSON/checkpoint-safe `AgentState` with immutable canonical
+  Task/TaskRun IDs, bounded retry/replan counters, and terminal outcome.
+- Added the smallest static LangGraph runtime composition for Planner →
+  Executor → Verifier, one retry, one replacement Plan, step advancement, and
+  terminal routing. Existing T041–T049 contracts remain the source of truth.
+- Added `TaskRuntimeService.execute_run(...)`, which tenant-validates Task and
+  nested TaskRun in one SQL join, derives `taskpilot-run:<task_run_id>` only
+  after validation, separates business lifecycle transactions from graph work,
+  and delegates begin/succeed/fail exclusively to T035.
+- Implemented initial PENDING execution, RUNNING resume from the latest valid
+  checkpoint, fail-closed missing/corrupt checkpoint handling, terminal-run
+  rejection, stale checkpoint identity rejection, and late completion failure
+  under lifecycle races.
+- Added deterministic unit coverage and a real PostgreSQL/LangGraph integration
+  suite covering checkpoint creation, resume, counters, tenant scope,
+  cancellation race, and migration ownership. Added the Windows runtime test
+  Selector event-loop hook required by psycopg's async PostgreSQL driver.
+- Fixed the async runtime boundary to snapshot the TaskRun status before the
+  deliberate transaction rollback and to validate the final lifecycle status
+  before releasing that session transaction. Corrected integration setup cases
+  so concurrency and cancellation tests reach the intended lifecycle races.
+
+Files changed:
+
+- `src/persistence/repositories.py`
+- `src/runtime/__init__.py`
+- `src/runtime/state.py`
+- `src/runtime/graph.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_task_runtime.py`
+- `tests/runtime/test_task_runtime_postgres.py`
+- `tests/runtime/conftest.py`
+- `docs/API_CONVENTIONS.md`
+- `process/PROGRESS_LOG.md`
+
+Scope check: no TaskStep model/migration, HTTP route, worker, external effect,
+HITL, idempotency, distributed lock, exactly-once claim, or T051 audit work was
+added. No dependency or TaskPilot migration was added.
+
+Commands/tests run:
+
+- `uv run pytest tests/runtime/test_task_runtime.py -q` → PASS (12 passed).
+- `uv run pytest tests/runtime/test_task_runtime_postgres.py -q` with the
+  repository Compose PostgreSQL test base → PASS (10 passed, 0 skipped), using
+  real PostgreSQL 16.15 and real `AsyncPostgresSaver` checkpoint tables.
+- `uv run pytest tests/runtime -q` with the same test base → PASS (94 passed).
+- `uv run pytest -q` with only `TASKPILOT_TEST_DATABASE_URL` configured → PASS
+  (590 passed, 4 skipped, 112 warnings). The four skips are unrelated existing
+  conditional tests; all PostgreSQL TaskPilot suites executed.
+- `uv run alembic heads; uv run alembic history; uv run alembic check` with
+  `TASKPILOT_DATABASE_URL` pointed at the disposable test base → PASS; one
+  expected head `t032_task_run`, no new upgrade operations.
+- Ruff check/format, Pyrefly, `uv lock --check`, import smoke with
+  `PYTHONPATH=src`, `git diff --check`, and the focused Markdown scan for
+  `docs/API_CONVENTIONS.md` → PASS.
+
+The integration blocker is resolved locally with the repository-provided
+Compose PostgreSQL service and its existing `taskpilot_test` disposable-test
+base. No TaskPilot migration was added for LangGraph-owned tables. T050 is
+ready for the independent Strong Review gate; it is not yet approved.
+
+Learner notes:
+
+- Problem solved: a durable TaskRun now has one tenant-validated checkpoint
+  identity and can resume without restarting its checkpointed plan or budgets.
+- Read `src/service/task_runtime.py`, `src/runtime/state.py`,
+  `src/runtime/graph.py`, `src/persistence/repositories.py`, and
+  `src/service/task_lifecycle.py`.
+- Key concept: business lifecycle state and graph checkpoint state have separate
+  owners; T035 commits Task/TaskRun status while LangGraph checkpoints runtime
+  progress, and the checkpoint never grants authorization.
+- Exercise: run the PostgreSQL integration file with a disposable test database,
+  then inspect the final Task/TaskRun rows after the cancellation-race test.
+- Do not worry about TaskStep persistence, workers, HITL, external tools, or
+  exactly-once execution yet.
+
+Suggested next task: request the independent T050 Strong Review.
+
+### 2026-09-21 — T049: Bounded replan
+
+Status: IMPLEMENTED — READY FOR T049 STRONG REVIEW (uncommitted)
+
+- Added the single `REPLAN_BUDGET = 1` decision boundary and terminal
+  exhaustion behavior without duplicating T047 classification.
+- Added a JSON-safe narrow replan state slice and replacement-Plan helper that
+  reuses the committed `Plan` schema, resets per-plan transient fields, and
+  preserves both TaskRun-scoped counters as required.
+- Added focused coverage for first-replan `0 → 1`, exhaustion, counter
+  isolation, replacement validation/reset semantics, and JSON round trips.
+
+Scope remains limited to T049. No planner loop, LangGraph graph, checkpoint/
+resume, lifecycle persistence, TaskRun creation, API, worker, provider, tool,
+HITL, or dependency was added. PostgreSQL is not applicable to this runtime-only
+transition task.
+
+Files changed:
+- `src/runtime/replan.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_replan.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T049 exposes only the bounded decision and state transition;
+T050 owns checkpoint/resume and later runtime work owns graph/lifecycle
+orchestration.
+
+Learner notes:
+- Problem solved: one recoverable runtime failure can replace the Plan once,
+  while exhausted recovery becomes terminal and consumed retry budget survives.
+- Read `src/runtime/replan.py`, `src/runtime/retry.py`,
+  `src/runtime/failure.py`, `src/schema/planner.py`, and
+  `tests/runtime/test_replan.py`.
+- Key concept: a bounded transition must advance its monotonic counter before
+  applying a validated replacement and must clear only per-Plan transient data.
+- Exercise: change the initial `replan_count` in the exhaustion test to `0`,
+  then verify one replacement is allowed; change it back to `1` and verify the
+  terminal route.
+- Ignore for now: checkpoint/resume, LangGraph routing, lifecycle persistence,
+  external tools, and HITL.
+
+Suggested next task: T049 Strong Review, then T050 — Checkpoint / resume.
+
+### 2026-09-21 — T048: Bounded retry
+
+Status: IMPLEMENTED — READY FOR T048 STRONG REVIEW (uncommitted)
+
+- Added the explicit `RETRY_BUDGET = 1` runtime budget and checkpoint-safe
+  `RetryDecision` result.
+- Added `consume_retry`, which consumes only T047's existing classification:
+  `RETRY` transitions `retry_count` from `0` to `1`, while exhausted RETRY
+  becomes TERMINAL without incrementing or resetting the counter.
+- Preserved REPLAN/TERMINAL without consuming retry budget and demonstrated one
+  deterministic fail-once Executor retry on the same PlanStep.
+- Added focused off-by-one, monotonicity, isolation, bounds, and JSON tests.
+
+Scope remains limited to T048. No replan, planner invocation, LangGraph graph,
+TaskRun/lifecycle persistence, API, worker, provider, or dependency was added.
+PostgreSQL is not applicable to this runtime-only retry decision task.
+
+Files changed:
+
+- `src/runtime/retry.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_retry.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T048 models and consumes the retry decision only; T049 owns
+replan and later runtime orchestration owns lifecycle transitions.
+
+Learner notes:
+
+- Problem solved: one initial execution can receive exactly one additional
+  same-step retry without creating a new TaskRun.
+- Read `src/runtime/retry.py`, `tests/runtime/test_retry.py`,
+  `src/runtime/failure.py`, and `src/runtime/executor.py`.
+- Key concept: bounded counters use pre-transition checks, so budget `1` means
+  `0 → 1` once, not one total attempt and not two retries.
+- Exercise: change the second call to `consume_retry` to start at count `1`
+  and verify the result is TERMINAL with count still `1`.
+- Ignore for now: T049 replan, checkpointing, LangGraph, and lifecycle/API work.
+
+Suggested next task: T048 Strong Review, then T049 — Bounded replan.
+
+### 2026-09-20 — T047: Failure classifier
+
+Status: IMPLEMENTED — READY FOR T047 STRONG REVIEW (uncommitted)
+
+- Added the bounded `FailureClassification` type with exactly `RETRY`,
+  `REPLAN`, and `TERMINAL`.
+- Added JSON-safe `RuntimeFailure` validation for bounded code/message fields
+  and forbidden extra authority/runtime fields.
+- Added a pure fail-closed `FailureClassifier`: deterministic execution failure
+  maps to RETRY, explicitly recoverable plan/verifier inadequacy maps to REPLAN,
+  and all other/unknown codes map to TERMINAL.
+- Added table-driven mapping, negative classification, bounds, and JSON
+  round-trip tests.
+
+Scope remains limited to T047. No retry/replan execution, counters, LangGraph
+graph, lifecycle mutation, persistence, API, provider, or dependency was added.
+PostgreSQL is not applicable to this pure runtime classification task.
+
+Files changed:
+
+- `src/runtime/failure.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_failure_classifier.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: T047 returns classification data only; T048/T049 own retry
+and replan budgets and actions.
+
+Learner notes:
+
+- Problem solved: normalized runtime failures now have one deterministic,
+  fail-closed classification contract.
+- Read `src/runtime/failure.py`, `tests/runtime/test_failure_classifier.py`,
+  `src/runtime/executor.py`, and `src/runtime/verifier.py`.
+- Key concept: classification chooses a later route but does not execute the
+  route or mutate durable lifecycle state.
+- Exercise: pass a new unknown code to the classifier and verify it remains
+  TERMINAL until an explicit policy change is approved.
+- Ignore for now: retry/replan budgets, checkpointing, LangGraph, and lifecycle
+  orchestration.
+
+Suggested next task: T047 Strong Review, then T048 — Bounded retry.
+
+### 2026-09-20 — T046: Verifier node
+
+Status: IMPLEMENTED — READY FOR T046 STRONG REVIEW (uncommitted)
+
+- Added the narrow async `VerifierModel` boundary and `VerifierNode` using
+  sanitized task input, validated `PlanStep`, and normalized `ExecutionResult`.
+- Validated every candidate through the committed T045 `VerificationResult`;
+  malformed initial output receives exactly one safe repair attempt.
+- Added stable terminal `verifier_output_invalid` behavior after two invalid
+  candidates, with no T047 classification or recovery routing.
+- Added deterministic PASS/FAIL, repair-count, invalid-output, input-boundary,
+  and protocol compatibility tests.
+
+Scope remains limited to T046. No classifier, retry/replan runtime, LangGraph
+graph, lifecycle mutation, persistence, API, provider, or dependency was added.
+PostgreSQL is not applicable to this pure runtime-node task.
+
+Files changed:
+
+- `src/runtime/verifier.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_verifier_node.py`
+- `process/PROGRESS_LOG.md`
+
+Known limitations: provider/model failures and workflow classification remain
+outside this node; T047 owns normalized failure routing.
+
+Learner notes:
+
+- Problem solved: verifier model output is now validated and repaired once
+  before it can become runtime verification data.
+- Read `src/runtime/verifier.py`, `tests/runtime/test_verifier_node.py`,
+  `src/schema/verifier.py`, and `src/runtime/planner.py`.
+- Key concept: bounded repair handles malformed structure, while recovery
+  classification is a separate later responsibility.
+- Exercise: change the repair fake to return invalid output twice and observe
+  `verifier_output_invalid` with exactly two model calls.
+- Ignore for now: T047 classification, retry/replan, graph orchestration,
+  persistence, and lifecycle transitions.
+
+Suggested next task: T046 Strong Review, then T047 — Failure classifier.
+
+### 2026-09-20 — T045: Verifier schema
+
+Status: IMPLEMENTED — READY FOR T045 STRONG REVIEW (uncommitted)
+
+- Added the minimal JSON-serializable runtime-only `VerificationResult` schema
+  with the frozen `PASS`/`FAIL` verdict type.
+- Enforced a required non-blank reason, bounded evidence strings, at most eight
+  evidence items, allowed empty evidence, and forbidden extra fields.
+- Added focused validation and JSON round-trip tests.
+
+Scope remains limited to T045. No verifier node, classifier, retry/replan
+runtime, LangGraph graph, persistence, API, authority fields, or dependency
+was added. PostgreSQL is not applicable to this pure schema task.
+
+Files changed:
+
+- `src/schema/verifier.py`
+- `src/schema/__init__.py`
+- `tests/schema/test_verifier.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+
+- Focused T045 tests: `18 passed`.
+- T041–T044 and schema/runtime regression: `62 passed`.
+- Full pytest: `445 passed, 81 skipped`.
+- Ruff check/format, Pyrefly, `uv lock --check`, import smoke, and
+  `git diff --check`: PASS.
+
+Known limitations: this task validates verifier data only; verifier model/node,
+structured-output repair, failure classification, recovery, and runtime graph
+behavior remain deferred to later tasks.
+
+Learner notes:
+
+- Problem solved: verifier output now has a bounded, JSON-safe contract that
+  cannot carry authorization or future recovery decisions.
+- Read `src/schema/verifier.py`, `tests/schema/test_verifier.py`,
+  `src/schema/planner.py`, and `src/runtime/executor.py`.
+- Key concept: a runtime schema validates data shape and trust boundaries; it
+  does not decide workflow routing or persisted lifecycle state.
+- Exercise: add a test proving an `organization_id` or `role` field is rejected,
+  then inspect the Pydantic error for `extra_forbidden`.
+- Ignore for now: verifier model calls, repair loops, classifiers, retries,
+  replans, LangGraph, and persistence.
+
+Suggested next task: T045 Strong Review, then T046 — Verifier node.
+
+### 2026-09-20 — T041: Planner schema
+
+Status: IMPLEMENTED — READY FOR T041 STRONG REVIEW (uncommitted)
+
+- Added the minimal JSON-serializable runtime-only `Plan` and `PlanStep`
+  Pydantic schemas.
+- Enforced one-to-eight steps, positive positions, canonical `1..N` ordering,
+  non-blank instructions, the 500-character instruction limit, and forbidden
+  extra fields.
+- Added focused schema validation and JSON round-trip tests.
+
+Scope remains limited to T041. No planner node, repair loop, executor,
+verifier, recovery, persistence, API, authority fields, or dependency was
+added. PostgreSQL is not applicable to this pure schema task.
+
+### 2026-09-20 — T042: Planner node
+
+Status: IMPLEMENTED — READY FOR T042 STRONG REVIEW (uncommitted)
+
+- Added a narrow async, injectable planner model boundary.
+- Added one-shot structured-output repair using the T041 `Plan` validator.
+- Added stable terminal `planner_output_invalid` behavior after exactly two
+  invalid attempts, with validation summaries that omit invalid values.
+- Added deterministic call-count, repair-context, authority-field, and input
+  boundary tests.
+
+Scope remains limited to T042. No executor, verifier, classifier, retry/replan
+runtime, LangGraph graph, persistence, API, external model call, or dependency
+was added.
+
+### 2026-09-20 — T043: Executor interface
+
+Status: IMPLEMENTED — READY FOR T043 STRONG REVIEW (uncommitted)
+
+- Added the narrow async `Executor` Protocol for a validated `PlanStep` and
+  sanitized task input.
+- Added JSON-serializable `ExecutionResult` validation for bounded output,
+  normalized failure fields, and mutually exclusive success/failure shapes.
+- Added focused interface, invariant, serialization, and fake-implementation
+  tests.
+
+Scope remains limited to T043. No deterministic executor, provider, tool/skill
+registry, classifier, retry/replan, persistence, API, or external effect was
+added. PostgreSQL is not applicable to this interface/schema task.
+
+### 2026-09-20 — T044: Deterministic execution path
+
+Status: IMPLEMENTED — READY FOR T044 STRONG REVIEW (uncommitted)
+
+- Added one side-effect-free `DeterministicExecutor` implementation using the
+  committed T043 interface and result contract.
+- Added stable bounded text transformation from sanitized task input and
+  `PlanStep` data.
+- Added explicit per-instance `none`, `fail_once`, and `always_fail` behavior
+  for deterministic recovery tests; no global failure state was introduced.
+- Added repeatability, bounds, normalized failure, and Protocol compatibility
+  tests.
+
+Scope remains limited to T044. No verifier, classifier, retry/replan runtime,
+LangGraph graph, persistence, API, provider, tool registry, or external effect
+was added.
+
+Files changed:
+
+- `src/runtime/executor.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_deterministic_executor.py`
+- `process/PROGRESS_LOG.md`
+
+Commands/tests run:
+
+- Focused T044 tests: `5 passed`.
+- T041/T042/T043 regression: `39 passed`.
+- Runtime/schema regression: `54 passed`.
+- Full pytest: `427 passed, 81 skipped`.
+- Ruff, Ruff format, Pyrefly, `uv lock --check`, import smoke, and
+  `git diff --check`: PASS.
+
+Result: T044 is implemented and ready for independent Strong Review.
+
+Known limitations: the executor intentionally formats bounded runtime data;
+semantic task execution, verification, recovery, persistence, and external
+effects remain deferred to later tasks.
+
+Learner notes: the production executor is deliberately pure and instance-local;
+`fail_once` state is explicit and is not a retry or failure-classification
+framework.
+
+Suggested next task: T045 — Verifier schema. Do not implement it as part of T044.
+
+### 2026-09-20 — Phase 4 Planning Acceptance Status
+
+Status: APPROVED / COMPLETE
+
+Independent Planning Strong Review approved ADR-006 and T040. The Phase 4
+planning contract is now accepted; T041 is the first executable implementation
+task. No runtime implementation is marked started or complete.
+
+### 2026-09-20 — Phase 4 blocker-only planning correction
+
+Status: CORRECTED — READY FOR FOCUSED PHASE 4 PLANNING RE-REVIEW
+
+Resolved the four independent Strong Review blockers without changing the
+already-approved Phase 4 boundaries:
+
+- Reconciled all live ROADMAP task IDs through Phase 11 to canonical
+  TASK_BACKLOG IDs and documented the complete old→canonical mapping,
+  including split mappings such as old T058 → T070/T072.
+- Expanded ADR-006/T040 with exact JSON AgentState fields, types,
+  initialization/mutation rules, Plan/PlanStep bounds, executor and verifier
+  result contracts, classifier literals, routing, and finite-budget proof.
+- Froze the trusted `TaskRuntimeService.execute_run(...)` boundary, PENDING /
+  RUNNING / terminal sequence, stale-state revalidation, and lifecycle-race
+  behavior.
+- Froze concurrent/repeated resume invariants: duplicate deterministic graph
+  work is allowed, exactly-once node execution is not claimed, and T035 alone
+  decides one consistent terminal business state.
+- Updated T041–T051 acceptance contracts and T051 audit evidence requirements.
+
+No production source, migration, dependency, or lockfile changed. Runtime and
+PostgreSQL tests remain intentionally deferred because this correction is
+planning-only.
+
+Suggested next task: focused independent Planning Strong Re-review.
+
+### 2026-09-20 — Phase 4 Planning Fix — Agent Runtime Contract
+
+Status: PLANNING ARTIFACTS CREATED — READY FOR INDEPENDENT PLANNING STRONG REVIEW
+
+What changed:
+- Added proposed ADR-006 and implementation-ready T040–T051 Task Cards.
+- Canonicalized Phase 4 as T040–T051, including read-only T051 Final Audit,
+  with a linear dependency DAG and no duplicate IDs.
+- Resolved T033 explicitly: PlanStep is runtime-only; persistent TaskStep ORM,
+  migration, repository, API, and lifecycle remain deferred.
+- Froze internal runtime entry, unchanged Phase 3 enums and T035 lifecycle
+  ownership, minimal serializable AgentState, one retry and one replan budgets,
+  tenant-trusted checkpoint identity/resume, independent persistence, and
+  side-effect-free scope.
+- Reconciled backlog, roadmap, task index, architecture/API/README docs.
+
+Files changed: TASK_BACKLOG.md, ROADMAP.md, README.md,
+docs/ARCHITECTURE.md, docs/API_CONVENTIONS.md, process/DECISION_LOG.md,
+process/tasks/INDEX.md, process/tasks/T033.md, process/tasks/T040.md through
+T051.md, and this log.
+
+Historical pre-approval limitation (superseded): ADR-006 and T040 required
+Planning Strong Review before Phase 4 production work.
+
+Learner notes:
+- Problem solved: Phase 4 now has one implementation authority instead of
+  conflicting task numbers and an unfrozen runtime boundary.
+- Read ADR-006, T040, T050, `src/service/task_lifecycle.py`, and
+  `docs/ARCHITECTURE.md`.
+- Key concept: durable TaskRun lifecycle and runtime graph/checkpoint state are
+  separate boundaries; checkpoint identity is correlation, never authorization.
+- Exercise: trace fail-once through T035 `succeed_run`, then compare always-fail
+  exhaustion through T035 `fail_run`.
+- Do not worry yet about TaskStep tables, workers, approvals, providers, or
+  HTTP idempotency.
+
+Historical suggested next task (completed): independent Planning Strong Review
+of ADR-006/T040.
+
 ### 2026-09-11 — T014: Structured Logging and Secret Redaction
 
 Status: DONE — ready for Strong Review

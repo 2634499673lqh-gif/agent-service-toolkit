@@ -133,6 +133,35 @@ class TaskRunRepository:
         )
         return await self.session.scalar(statement)
 
+    async def get_task_and_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> tuple[Task, TaskRun] | None:
+        """Load a Task and its requested run through one tenant-scoped SQL join.
+
+        The runtime uses this query as its trust boundary before deriving a
+        checkpoint identity.  Both the requested Task and nested TaskRun are
+        constrained in SQL; neither checkpoint data nor a later Python
+        organization comparison can make a foreign run visible.
+        """
+
+        statement = (
+            select(Task, TaskRun)
+            .join(TaskRun, TaskRun.task_id == Task.id)
+            .where(
+                Task.id == task_id,
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        result = await self.session.execute(statement)
+        row = result.one_or_none()
+        return None if row is None else (row[0], row[1])
+
     async def get_for_update_in_principal_tenant(
         self, task_run_id: UUID, principal_organization_id: UUID
     ) -> TaskRun | None:

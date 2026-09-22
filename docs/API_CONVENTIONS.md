@@ -71,6 +71,24 @@ inspection is tenant-scoped through the owning Task and exposes only persisted
 identity, run number, lifecycle status, and timestamps. No runtime metadata or
 application idempotency contract is exposed.
 
+## Phase 4 runtime boundary (ADR-006/T040/T050; implementation and integration validated)
+
+T050 implements the internal `TaskRuntimeService.execute_run(...)` entry point
+for a tenant-validated TaskRun. PENDING runs begin through T035, RUNNING runs
+resume the latest `taskpilot-run:<task_run_id>` LangGraph checkpoint, and
+missing/corrupt checkpoints fail closed through T035. TaskPilot business
+persistence and LangGraph checkpoint persistence remain separate; the runtime
+does not hold a business transaction across graph execution. The implementation
+does not add an HTTP route and does not change the meaning of
+`POST /api/v1/tasks/{task_id}/runs`: that route continues to create/start a
+durable TaskRun according to T035/T038. Retry/replan remain bounded internal
+graph routes, and no TaskStep API, approval API, worker endpoint, HTTP
+idempotency contract, exactly-once claim, or external side effect is authorized
+by Phase 4. The required real PostgreSQL/LangGraph validation has passed against
+the repository's disposable Compose PostgreSQL test base; T050 is completed,
+task-level approved, and committed. The Phase 4 Final Audit remains in progress
+and is not yet approved.
+
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 
 TaskPilot `/api/v1` endpoints require the new opaque session credential and a server-derived `CurrentPrincipal`; the legacy `AUTH_SECRET` bearer is not accepted as identity. `CurrentPrincipal` contains user, membership, organization, role, and session IDs loaded from the database. Request body/query/header identity fields are ignored for authorization.

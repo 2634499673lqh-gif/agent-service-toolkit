@@ -1,6 +1,6 @@
 # Architecture — Phase 0 baseline (2026-09-10)
 
-This document keeps the Phase 0/1 assessment below as history. The current implementation status is recorded in "Phase 2 identity architecture" at the end; earlier sections describe the runtime as it was when they were written.
+This document keeps the Phase 0/1 assessment below as history. The current implementation status is recorded in "Current TaskPilot implementation status" at the end; earlier sections describe the runtime as it was when they were written.
 
 ## What is actually present now
 
@@ -69,9 +69,9 @@ redaction are deferred to T014.
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
 | Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs and T038 tenant-scoped TaskRun start/inspect APIs are implemented; approval records remain missing | 2 (done) / 3 |
-| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, and T038 start/inspect integration | TaskStep schema, runtime execution, idempotency | 3 |
-| Planner/executor/verifier/recovery | Demo tool-loop graphs; `StateGraph`, `ToolNode` | Typed state/plan/verdict, bounded retry/replan and acceptance verification | 4 |
-| Checkpoint/resume | Conversation checkpoint plus interrupt demo; `memory/*` | Bind to authorized durable TaskRuns and recovery semantics | 4/6 |
+| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, T038 start/inspect integration, and the T040–T050 internal runtime | TaskStep schema, public runtime API, idempotency | 3/4 |
+| Planner/executor/verifier/recovery | T040–T050 typed AgentState, Planner → Executor → Verifier runtime, bounded retry/replan, and verification | External tools/providers, broader context and recovery capabilities | 4/5 |
+| Checkpoint/resume | T050 LangGraph checkpoint/resume bound to a tenant-validated durable TaskRun | Worker/queue orchestration, HITL resume, and external-effect guarantees | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
 | Human approval | `interrupt()` demo | L0-L3 policy, approval records/APIs, audit/resume and exactly-once effects | 6 |
 | Observability/audit | Logging, run UUID, optional Langfuse/LangSmith | Correlated TaskPilot IDs, sanitized events, metrics and audit truth | 7 |
@@ -102,4 +102,29 @@ Implemented and reviewed:
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, planner/executor/verifier behavior, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task create/list/get/update/cancel routes, and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`; runtime execution and application idempotency remain later work. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
+Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task create/list/get/update/cancel routes, and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. T040–T050 provide the committed internal bounded runtime described below. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, approval, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
+
+## Current TaskPilot implementation status — Phase 4 branch (T040–T050 committed)
+
+The committed `phase-4-agent-runtime` branch contains the completed T040–T050
+Phase 4 implementation. T051 Final Audit is still in progress: its sole B1
+documentation blocker has been fixed, and focused re-review is pending. Phase 4
+is not yet Final-Audit approved and has not been merged to `main`.
+
+The implemented runtime is an internal, deterministic LangGraph topology:
+
+- Planner → Executor → Verifier over typed, checkpoint-serializable `AgentState`.
+- One bounded retry and one bounded replan, with terminal behavior on budget
+  exhaustion or unrecoverable failure.
+- Checkpoint/resume for the same tenant-validated `TaskRun`, using a
+  correlation-only `taskpilot-run:<task_run_id>` checkpoint thread.
+- Task/TaskRun lifecycle integration through T035; runtime code does not directly
+  mutate lifecycle status.
+- Tenant-scoped business validation before runtime/checkpoint use. TaskPilot
+  business persistence and LangGraph checkpoint ownership remain separate.
+
+The following boundaries remain deferred: persistent TaskStep, a public runtime
+HTTP API, worker/queue execution, real external tools or providers, HITL,
+exactly-once external effects, and any production deployment claim. Checkpoint
+or graph progress never grants authorization, and Phase 4 makes no exactly-once
+execution guarantee.

@@ -4,7 +4,7 @@ TaskPilot is a production-oriented task-execution platform for knowledge work. T
 
 ## Current scope
 
-The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy, the T031/T032/T034 persistence boundary, the T035 lifecycle service, and the T036/T037/T038 tenant-safe Task and TaskRun APIs. The PostgreSQL-only `taskpilot` schema contains (`organizations`, `users`, `memberships`, `auth_sessions`, `tasks`, `task_runs`), with opaque revocable sessions, a server-derived request principal, centralized 401/403/404 authorization semantics, and `/api/v1/tasks` protected by the TaskPilot bearer credential. TaskStep records, planner/executor/verifier behavior, approvals, and observability tables remain absent. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and phase boundary.
+The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy, the T031/T032/T034 persistence boundary, the T035 lifecycle service, and the T036/T037/T038 tenant-safe Task and TaskRun APIs. The PostgreSQL-only `taskpilot` schema contains (`organizations`, `users`, `memberships`, `auth_sessions`, `tasks`, `task_runs`), with opaque revocable sessions, a server-derived request principal, centralized 401/403/404 authorization semantics, and `/api/v1/tasks` protected by the TaskPilot bearer credential. TaskStep records and runtime planner/executor/verifier behavior remain absent from production; Phase 4 is planned/frozen by proposed ADR-006/T040 and is not an implementation claim. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and phase boundary.
 
 ## Getting started
 

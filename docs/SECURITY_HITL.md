@@ -150,3 +150,13 @@ T026 is a tests-only card; it changed no production behavior and is the authorit
   domains remain deferred.
 - The security matrix and the persistence suites require a disposable PostgreSQL test database; without `TASKPILOT_TEST_DATABASE_URL` they skip, which is not evidence of success.
 - Destructive production migration downgrade remains a separately reviewed process step, not an automated or routine recovery mechanism.
+
+### Phase 4 runtime security boundary (ADR-006/T040/T050 implemented)
+
+The committed bounded runtime receives a trusted organization scope and performs
+tenant-scoped Task/TaskRun validation before using a LangGraph checkpoint
+identity. Checkpoint data, Plan/PlanStep output, and verifier evidence cannot
+select a tenant, user, membership, role, or tool authority. Phase 4 adds no
+approval model, `WAITING_APPROVAL` state, HTTP idempotency, worker claim, or
+real external side effect; those remain later-phase security work. T051 Final
+Audit is not yet approved, and Phase 4 is not merged to `main`.
