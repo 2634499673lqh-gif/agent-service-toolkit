@@ -372,8 +372,12 @@ contract substance above is now the implementation authority.
 
 Date: 2026-09-22
 
-Status: Proposed; implementation-ready and awaiting independent Phase 5
-Planning Strong Review. Prerequisite: accepted T051 Phase 4 Final Audit.
+Status: Accepted. T060 Planning Strong Review approved ADR-007 and the
+architecture gate on 2026-09-22. T061–T064 implement this frozen contract;
+Phase 5 implementation is complete and Strong Review approved. The Phase 5
+Final Audit is approved and Phase 5 is complete. Its initial audit returned NOT
+APPROVED solely because canonical status documentation was stale; the focused
+re-review subsequently approved Phase 5.
 
 ### Context
 

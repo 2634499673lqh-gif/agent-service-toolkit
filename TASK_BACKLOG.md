@@ -172,12 +172,12 @@ Bind LangGraph checkpoint identity to the tenant-validated TaskRun, define resum
 ### T051 — Phase 4 Final Audit [A, read-only after T050]
 Collect implementation evidence for the accepted ADR/T040 contract, deterministic planner/executor/verifier/recovery behavior, TaskRun lifecycle/security/concurrency, checkpoint/resume, persistence separation, static checks, and deferred-scope compliance. No implementation work.
 
-## Phase 5 — Skills / Tools / Context (planning package)
+## Phase 5 — Skills / Tools / Context (complete)
 
-Phase 4/T051 is approved and complete. Phase 5 planning is active. DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`. After T064 implementation, its independent Strong Review, and approval, the user performs the GitHub Desktop commit and push to `origin`; only then does the independent read-only Phase 5 Final Audit run.
+Phase 4/T051 is approved, complete, and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed. Phase 5 implementation is complete and the Phase 5 Final Audit is approved; Phase 5 is complete. The initial audit returned NOT APPROVED solely because canonical status documentation was stale, and the focused re-review subsequently approved Phase 5. DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`.
 
 ### T060 — Capability/context architecture gate [A]
-Depends on completed Phase 4/T051. Freeze one minimal Capability contract, sanitized ContextEnvelope, explicit dispatch, deterministic read-only scope, and replay/security boundaries. Planning only; ADR-007.
+Depends on completed Phase 4/T051. Freeze one minimal Capability contract, sanitized ContextEnvelope, explicit dispatch, deterministic read-only scope, and replay/security boundaries. Architecture gate complete; ADR-007 is accepted and frozen.
 
 ### T061 — Capability contract and explicit dispatch [B]
 Reuse `ExecutionResult` / `RuntimeFailure` in one typed in-process dispatch adapter. No registry, plugin loading, provider, or public API.
@@ -189,7 +189,7 @@ Implement exactly one bounded, deterministic, side-effect-free capability with f
 Implement minimum typed, provenance-labeled, size-bounded context; exclude authority, secrets, and runtime objects. No persistence.
 
 ### T064 — Phase 5 runtime integration implementation [A/B]
-Integrate with `TaskRuntimeService` and preserve retry/replan/checkpoint/resume and tenant guarantees. T064 is implementation-only; after its independent Strong Review, if approved, the user performs the GitHub Desktop commit and push to `origin`, then a separate read-only Phase 5 Final Audit evaluates the complete phase.
+Integrate with `TaskRuntimeService` and preserve retry/replan/checkpoint/resume and tenant guarantees. T064 implementation and independent Strong Review are complete; the separate read-only Phase 5 Final Audit is approved.
 
 Phase 5 defers separate Skill/Tool hierarchies, dynamic registries/plugins/MCP, credentials or real side effects, new persistence, public runtime APIs, HITL, memory/knowledge systems, workers, and exactly-once claims.
 ## Phase 6 — HITL

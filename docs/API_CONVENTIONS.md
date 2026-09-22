@@ -86,8 +86,14 @@ graph routes, and no TaskStep API, approval API, worker endpoint, HTTP
 idempotency contract, exactly-once claim, or external side effect is authorized
 by Phase 4. The required real PostgreSQL/LangGraph validation has passed against
 the repository's disposable Compose PostgreSQL test base; T050 is completed,
-task-level approved, and committed. The Phase 4 Final Audit remains in progress
-and is not yet approved.
+task-level approved, and committed. The Phase 4 Final Audit is approved; Phase
+4 is complete and merged to `main`.
+
+Phase 5 status: T060–T064 are implemented, Strong Review approved, committed,
+and pushed. Phase 5 implementation is complete and the Phase 5 Final Audit is
+approved; Phase 5 is complete. The initial audit returned NOT APPROVED solely
+because canonical status documentation was stale; the focused re-review
+subsequently approved Phase 5.
 
 ## Phase 2 identity rules (implemented; applies to future TaskPilot routes)
 
