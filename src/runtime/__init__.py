@@ -1,5 +1,10 @@
 """TaskPilot runtime boundaries."""
 
+from runtime.capability import (
+    Capability,
+    CapabilityDispatcher,
+    CapabilityMetadata,
+)
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
 from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
 from runtime.graph import build_runtime_graph
@@ -29,6 +34,9 @@ from runtime.verifier import (
 )
 
 __all__ = [
+    "Capability",
+    "CapabilityDispatcher",
+    "CapabilityMetadata",
     "ExecutionResult",
     "Executor",
     "DeterministicExecutor",

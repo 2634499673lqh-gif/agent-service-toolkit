@@ -18,6 +18,67 @@ Suggested next task: independent Phase5 Planning Focused Strong Review (no imple
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-22 — T061: Capability contract and explicit dispatch
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T061 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `ff7fa1f`; working tree
+was clean before implementation. T060 is approved and committed. No later
+Phase 5 implementation task had started.
+
+What changed:
+
+- Added bounded `CapabilityMetadata` and one generic `Capability` protocol.
+- Added `CapabilityDispatcher`, which copies an explicit mapping, validates
+  capability names/metadata and existing `PlanStep` inputs, invokes only the
+  selected in-process dependency, and normalizes untrusted outputs.
+- Reused `ExecutionResult`, `RuntimeFailure`, and `FailureClassifier`; unknown
+  capabilities, malformed output, unsafe error fields, and raised exceptions
+  fail closed with fixed sanitized terminal failures.
+- Exported the contract from `runtime`; no ContextEnvelope model, AgentState
+  field, graph wiring, TaskRuntimeService change, registry, or provider was
+  added.
+
+Files changed:
+
+- `src/runtime/capability.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_capability.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Focused capability/executor/failure tests: 52 passed.
+- `uv run pytest tests/runtime -q`: 96 passed, 12 skipped.
+- `uv run pytest -q`: 517 passed, 93 skipped, 18 warnings.
+- `uv run ruff check .`: passed.
+- Tracked Python `uv run ruff format --check`: passed (151 files).
+- `uv run pyrefly check`: passed with 0 errors.
+- `uv lock --check`: passed.
+- `git diff --check`: passed.
+- Root-wide Ruff format also reported the repository's existing inaccessible
+  `.pytest-tmp-*` directories; the tracked-file check passed separately.
+
+Scope: T061 only. T062 capability behavior, T063 ContextEnvelope, and T064
+runtime integration were not implemented. No persistence, migration, public
+API, credentials, external effect, plugin/MCP framework, or exactly-once
+machinery was added.
+
+Learner notes:
+
+- Problem solved: the runtime now has one explicit, typed, fail-closed route
+  from a capability name to an in-process capability dependency.
+- Read `src/runtime/capability.py`, `src/runtime/executor.py`,
+  `src/runtime/failure.py`, and `tests/runtime/test_capability.py`.
+- Key concept: validate untrusted capability output at the boundary, then
+  reuse the existing failure classifier instead of trusting returned routing.
+- Exercise: make a fake capability return a wrong `step_position` and trace
+  why it becomes terminal without invoking retry/replan logic.
+- Do not worry yet about the first real capability, ContextEnvelope fields, or
+  TaskRuntimeService graph integration.
+
+Suggested next task: independent T061 Strong Review, then T062.
+
 ### 2026-09-22 — T060: Phase 5 capability/context architecture gate
 
 Status: PLANNING CONTRACT COMPLETE — READY FOR INDEPENDENT Phase 5 Planning
