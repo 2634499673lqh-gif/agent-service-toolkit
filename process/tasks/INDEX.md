@@ -58,14 +58,16 @@ Dependency graph: `T031 → T032 → T034 → T035 → T036 → T037 → T038 �
 | T048 | Bounded retry | STANDARD | STRONG_REVIEW_REQUIRED | T047 | Recovery scenarios | APPROVED / COMPLETE / COMMITTED |
 | T049 | Bounded replan | STRONG/STANDARD | STRONG_REVIEW_REQUIRED | T048 | Recovery scenarios | APPROVED / COMPLETE / COMMITTED |
 | T050 | Checkpoint / resume | STRONG | STRONG_REVIEW_REQUIRED | T049 | PostgreSQL/LangGraph integration | APPROVED / COMPLETE / COMMITTED |
-| T051 | Phase 4 Final Audit (read-only) | STRONG | STRONG_REVIEW_REQUIRED | T040–T050 | Full suite at gate | FINAL AUDIT IN PROGRESS — B1 FIX COMPLETE; FOCUSED RE-REVIEW PENDING |
+| T051 | Phase 4 Final Audit (read-only) | STRONG | STRONG_REVIEW_REQUIRED | T040–T050 | Full suite at gate | APPROVED / COMPLETE / COMMITTED |
 
 Execution order is the linear DAG `T040 → T041 → T042 → T043 → T044 → T045 → T046 → T047 → T048 → T049 → T050 → T051`. T040/ADR-006 is approved and complete; T041–T050 are completed, task-level approved, and committed on this branch. Phase 4 adds no TaskStep persistence, new HTTP endpoint, worker, approval, HTTP idempotency, external side effect, or Task/TaskRun state.
 
-Current status: T041–T050 are completed / approved / committed. T051 is the active
-Final Audit task; its documentation-only B1 blocker fix is complete and the next
-action is the focused Final Audit re-review. T051 is not approved. No T052 or
-Phase 5 task has started, and Phase 4 has not been merged to `main`.
+Current status: T040–T051 are completed, approved, and committed. Phase 4 is
+complete and merged to `main`. T060–T064 are implemented, Strong Review
+approved, committed, and pushed. Phase 5 implementation is complete. The
+Phase 5 Final Audit is approved, and Phase 5 is complete. Its initial audit
+returned NOT APPROVED solely because canonical status documentation was stale;
+the focused re-review subsequently approved the phase.
 
 Later-phase numbering follows the granular `TASK_BACKLOG.md` authority. The former compact roadmap labels are preserved as intent mappings there; no later work is deleted.
 
@@ -73,3 +75,16 @@ For Phases 5–11, `TASK_BACKLOG.md` is the canonical task-card numbering
 source; ROADMAP.md now lists the same canonical IDs and titles. Historical
 compact roadmap IDs appear only in the explicitly labeled mapping table and
 are not live task assignments.
+
+
+## Phase 5 Task Cards — Skills / Tools / Context (complete)
+
+| Task | Purpose | Model | Review | Depends | Current status |
+|---|---|---|---|---|---|
+| T060 | Capability/context architecture gate and ADR-007 | STRONG planning | Planning Strong Review | Phase 4 complete | APPROVED / COMPLETE / COMMITTED / PUSHED |
+| T061 | Capability contract and explicit dispatch | STANDARD | Strong Review | T060 | APPROVED / COMPLETE / COMMITTED / PUSHED |
+| T062 | One deterministic read-only capability | LOW_COST/STANDARD | Strong Review | T061 | APPROVED / COMPLETE / COMMITTED / PUSHED |
+| T063 | Sanitized ContextEnvelope and builder | STANDARD | Strong Review | T060, T061 | APPROVED / COMPLETE / COMMITTED / PUSHED |
+| T064 | Runtime integration implementation | STRONG/STANDARD | Strong Review | T061–T063 | APPROVED / COMPLETE / COMMITTED / PUSHED |
+
+DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`. T060–T064 are complete and Strong Review approved. The initial Phase 5 Final Audit returned NOT APPROVED solely because canonical status documentation was stale; the focused Final Audit re-review subsequently approved Phase 5.

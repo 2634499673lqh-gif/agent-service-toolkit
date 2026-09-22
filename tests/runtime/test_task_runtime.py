@@ -12,9 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from persistence.models import Task, TaskRun, TaskRunStatus, TaskStatus
 from runtime import (
     AgentState,
+    CapabilityDispatcher,
+    CapabilityMetadata,
+    ContextEnvelope,
     DeterministicExecutor,
+    ExecutionResult,
     PlannerNode,
     PlannerRequest,
+    RuntimeFailure,
     VerifierNode,
     VerifierRequest,
     build_runtime_graph,
@@ -99,6 +104,153 @@ def test_agent_state_is_json_safe_and_contains_no_authority_fields() -> None:
     assert str(TASK_ID) in encoded
     with pytest.raises(ValueError):
         AgentState.model_validate(state.checkpoint_data() | {"organization_id": str(ORG)})
+
+
+@pytest.mark.asyncio
+async def test_default_graph_dispatches_fixture_with_bounded_checkpoint_context() -> None:
+    saver = MemorySaver()
+    initial = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="Task",
+        description="Use the selected details.",
+    )
+    graph = build_runtime_graph(saver, interrupt_before=["verifier"])
+
+    await graph.ainvoke(
+        initial.checkpoint_data(), config={"configurable": {"thread_id": THREAD_ID}}
+    )
+
+    checkpoint = saver.get_tuple({"configurable": {"thread_id": THREAD_ID}})
+    assert checkpoint is not None
+    state = TaskRuntimeService(saver)._state_from_checkpoint(
+        checkpoint,
+        THREAD_ID,
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+    )
+    assert state.execution_result == ExecutionResult(
+        step_position=1,
+        success=True,
+        output="deterministic-read-only-fixture:v1",
+    )
+    assert state.capability_context is not None
+    assert state.plan is not None
+    assert state.capability_context.current_step == state.plan.steps[0]
+    assert state.capability_context.task_input == state.task_input
+    assert state.capability_context.sources == ()
+    assert "organization_id" not in state.capability_context.model_dump_json()
+
+
+class _RetryThenSucceedCapability:
+    metadata = CapabilityMetadata(
+        name="deterministic_fixture",
+        description="A test-only deterministic read-only capability.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
+    )
+
+    def __init__(self) -> None:
+        self.contexts: list[ContextEnvelope] = []
+
+    async def execute(self, step, context: ContextEnvelope) -> ExecutionResult | RuntimeFailure:
+        self.contexts.append(context)
+        if len(self.contexts) == 1:
+            return RuntimeFailure(
+                classification="TERMINAL",
+                code="deterministic_execution_failed",
+                sanitized_message="retryable test failure",
+            )
+        return ExecutionResult(step_position=step.position, success=True, output="capability-ok")
+
+
+@pytest.mark.asyncio
+async def test_capability_retry_uses_dispatcher_context_and_same_task_run() -> None:
+    task, run = _business_pair(TaskRunStatus.PENDING)
+    capability = _RetryThenSucceedCapability()
+    saver = MemorySaver()
+    graph = build_runtime_graph(
+        saver,
+        capability_dispatcher=CapabilityDispatcher({"deterministic_fixture": capability}),
+    )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "SUCCEEDED"
+    assert result.task_run_id == RUN_ID
+    assert result.state.retry_count == 1
+    assert len(capability.contexts) == 2
+    assert all(not hasattr(context, "organization_id") for context in capability.contexts)
+    assert lifecycle.begin_run.await_count == 1
+    assert lifecycle.succeed_run.await_count == 1
+
+
+class _ReplanThenSucceedCapability:
+    metadata = _RetryThenSucceedCapability.metadata
+
+    def __init__(self) -> None:
+        self.contexts: list[ContextEnvelope] = []
+
+    async def execute(self, step, context: ContextEnvelope) -> ExecutionResult | RuntimeFailure:
+        self.contexts.append(context)
+        if len(self.contexts) == 1:
+            return RuntimeFailure(
+                classification="TERMINAL",
+                code="recoverable_plan_inadequacy",
+                sanitized_message="replacement plan required",
+            )
+        return ExecutionResult(step_position=step.position, success=True, output="replanned-ok")
+
+
+@pytest.mark.asyncio
+async def test_capability_replan_clears_then_rebuilds_context_without_new_run() -> None:
+    task, run = _business_pair(TaskRunStatus.PENDING)
+    planner_outputs = [
+        {"steps": [{"position": 1, "instruction": "Initial capability step"}]},
+        {"steps": [{"position": 1, "instruction": "Replacement capability step"}]},
+    ]
+
+    async def planner_model(_request: PlannerRequest) -> object:
+        return planner_outputs.pop(0)
+
+    capability = _ReplanThenSucceedCapability()
+    saver = MemorySaver()
+    graph = build_runtime_graph(
+        saver,
+        planner=PlannerNode(planner_model),
+        capability_dispatcher=CapabilityDispatcher({"deterministic_fixture": capability}),
+    )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "SUCCEEDED"
+    assert result.task_run_id == RUN_ID
+    assert result.state.replan_count == 1
+    assert [context.current_step.instruction for context in capability.contexts] == [
+        "Initial capability step",
+        "Replacement capability step",
+    ]
+    assert lifecycle.begin_run.await_count == 1
+    assert lifecycle.succeed_run.await_count == 1
 
 
 @pytest.mark.asyncio

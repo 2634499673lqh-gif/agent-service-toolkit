@@ -1,5 +1,21 @@
 """TaskPilot runtime boundaries."""
 
+from runtime.capabilities import DeterministicFixtureCapability
+from runtime.capability import (
+    Capability,
+    CapabilityDispatcher,
+    CapabilityMetadata,
+)
+from runtime.context import (
+    MAX_CONTEXT_BYTES,
+    MAX_CONTEXT_SOURCES,
+    MAX_PROVENANCE_LENGTH,
+    MAX_SELECTION_REASON_LENGTH,
+    MAX_SOURCE_CONTENT_LENGTH,
+    ContextBuilder,
+    ContextEnvelope,
+    ContextSource,
+)
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
 from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
 from runtime.graph import build_runtime_graph
@@ -29,6 +45,18 @@ from runtime.verifier import (
 )
 
 __all__ = [
+    "Capability",
+    "CapabilityDispatcher",
+    "CapabilityMetadata",
+    "ContextBuilder",
+    "ContextEnvelope",
+    "ContextSource",
+    "MAX_CONTEXT_BYTES",
+    "MAX_CONTEXT_SOURCES",
+    "MAX_PROVENANCE_LENGTH",
+    "MAX_SELECTION_REASON_LENGTH",
+    "MAX_SOURCE_CONTENT_LENGTH",
+    "DeterministicFixtureCapability",
     "ExecutionResult",
     "Executor",
     "DeterministicExecutor",

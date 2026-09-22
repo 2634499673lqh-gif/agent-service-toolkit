@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import TaskRunStatus
 from persistence.repositories import TaskRunRepository
+from runtime.capability import CapabilityDispatcher
+from runtime.context import ContextEnvelope
 from runtime.executor import Executor
 from runtime.failure import FailureClassifier
 from runtime.graph import build_runtime_graph
@@ -67,7 +69,7 @@ def checkpoint_thread_id(task_run_id: UUID | str) -> str:
 
 
 class TaskRuntimeService:
-    """Run one tenant-validated TaskRun through the bounded LangGraph graph.
+    """Run one tenant-validated TaskRun through the bounded capability graph.
 
     The checkpointer is supplied by the existing LangGraph adapter and owns
     its own persistence.  The supplied business session is used only for
@@ -81,6 +83,7 @@ class TaskRuntimeService:
         *,
         planner: PlannerNode | None = None,
         executor: Executor | None = None,
+        capability_dispatcher: CapabilityDispatcher[ContextEnvelope] | None = None,
         verifier: VerifierNode | None = None,
         classifier: FailureClassifier | None = None,
         graph: Any | None = None,
@@ -91,6 +94,7 @@ class TaskRuntimeService:
             checkpointer,
             planner=planner,
             executor=executor,
+            capability_dispatcher=capability_dispatcher,
             verifier=verifier,
             classifier=self.failure_classifier,
         )

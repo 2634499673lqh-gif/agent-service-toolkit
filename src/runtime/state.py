@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schema.planner import Plan
 
+from .context import ContextEnvelope
 from .executor import ExecutionResult
 from .failure import RuntimeFailure
 from .planner import PlannerTaskInput
@@ -30,6 +31,7 @@ class AgentState(BaseModel):
     task_input: PlannerTaskInput
     plan: Plan | None = None
     plan_position: int = Field(default=0, ge=0)
+    capability_context: ContextEnvelope | None = None
     execution_result: ExecutionResult | None = None
     verification: VerificationResult | None = None
     failure: RuntimeFailure | None = None

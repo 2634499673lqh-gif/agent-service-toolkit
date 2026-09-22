@@ -172,60 +172,26 @@ Bind LangGraph checkpoint identity to the tenant-validated TaskRun, define resum
 ### T051 — Phase 4 Final Audit [A, read-only after T050]
 Collect implementation evidence for the accepted ADR/T040 contract, deterministic planner/executor/verifier/recovery behavior, TaskRun lifecycle/security/concurrency, checkpoint/resume, persistence separation, static checks, and deferred-scope compliance. No implementation work.
 
-## Phase 5 — Skill / tool / context
+## Phase 5 — Skills / Tools / Context (complete)
 
-### T060 — Skill manifest decision [A]
-Goal: finalize minimal Skill metadata and loading mechanism.
+Phase 4/T051 is approved, complete, and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed. Phase 5 implementation is complete and the Phase 5 Final Audit is approved; Phase 5 is complete. The initial audit returned NOT APPROVED solely because canonical status documentation was stale, and the focused re-review subsequently approved Phase 5. DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`.
 
-### T061 — Skill registry [C/B]
-Goal: load/list/get versioned skills.
-Acceptance: duplicate/missing skill tests.
+### T060 — Capability/context architecture gate [A]
+Depends on completed Phase 4/T051. Freeze one minimal Capability contract, sanitized ContextEnvelope, explicit dispatch, deterministic read-only scope, and replay/security boundaries. Architecture gate complete; ADR-007 is accepted and frozen.
 
-### T062 — Research skill manifest [C]
-Docs/config + tests only, based on approved registry.
+### T061 — Capability contract and explicit dispatch [B]
+Reuse `ExecutionResult` / `RuntimeFailure` in one typed in-process dispatch adapter. No registry, plugin loading, provider, or public API.
 
-### T063 — Document-analysis skill manifest [C]
-Same scope.
+### T062 — First deterministic read-only capability [C/B]
+Implement exactly one bounded, deterministic, side-effect-free capability with fixture evidence.
 
-### T064 — Tabular-analysis skill manifest [C]
-Same scope.
+### T063 — Sanitized ContextEnvelope and builder [B]
+Implement minimum typed, provenance-labeled, size-bounded context; exclude authority, secrets, and runtime objects. No persistence.
 
-### T065 — Tool interface [B]
-Goal: typed input/output + risk/error metadata.
+### T064 — Phase 5 runtime integration implementation [A/B]
+Integrate with `TaskRuntimeService` and preserve retry/replan/checkpoint/resume and tenant guarantees. T064 implementation and independent Strong Review are complete; the separate read-only Phase 5 Final Audit is approved.
 
-### T066 — Safe tabular tool [B]
-Goal: deterministic CSV/XLSX summary/metric operations, not arbitrary untrusted code execution.
-Acceptance: known fixtures produce exact outputs.
-
-### T067 — Document retrieval tool [B]
-Goal: tenant-scoped document/KB retrieval.
-Acceptance: cross-tenant test mandatory.
-
-### T068 — Research/search adapter [B]
-Goal: provider-abstracted, mockable research tool.
-Acceptance: live network not required in unit tests.
-
-### T069 — Mock external action tool [C/B]
-Goal: in-memory/test DB side-effect counter for later approval proof.
-Acceptance: idempotency hook exists; no real external system.
-
-### T070 — ContextEnvelope schema [C after design]
-Goal: typed context container with provenance/budget metadata.
-
-### T071 — Context builder [A/B]
-Goal: select task/step/knowledge/memory/tool context explicitly.
-Acceptance: provenance test.
-
-### T072 — Context budget trimming [C/B]
-Goal: deterministic priority-based trimming.
-Acceptance: safety/objective never dropped.
-
-### T073 — User memory persistence/retrieval [B]
-Goal: minimal scoped memory, not a generalized memory platform.
-
-### T074 — Organization knowledge tenant filtering [B]
-Mandatory cross-tenant retrieval tests.
-
+Phase 5 defers separate Skill/Tool hierarchies, dynamic registries/plugins/MCP, credentials or real side effects, new persistence, public runtime APIs, HITL, memory/knowledge systems, workers, and exactly-once claims.
 ## Phase 6 — HITL
 
 ### T080 — Risk policy design [A]

@@ -367,3 +367,194 @@ provider credentials, generic tool/skill registries, exactly-once external
 effects, observability schemas, and new Task/TaskRun states remain later-phase
 work. The ADR was accepted after independent Planning Strong Review; the
 contract substance above is now the implementation authority.
+
+## ADR-007 — Phase 5 bounded capabilities and sanitized context
+
+Date: 2026-09-22
+
+Status: Accepted. T060 Planning Strong Review approved ADR-007 and the
+architecture gate on 2026-09-22. T061–T064 implement this frozen contract;
+Phase 5 implementation is complete and Strong Review approved. The Phase 5
+Final Audit is approved and Phase 5 is complete. Its initial audit returned NOT
+APPROVED solely because canonical status documentation was stale; the focused
+re-review subsequently approved Phase 5.
+
+### Context
+
+ADR-006 freezes a deterministic Planner → Executor → Verifier runtime, but its
+Executor has no bounded capability/context contract. Phase 5 needs one small
+in-process extension that can carry explicitly selected data to a deterministic
+read-only operation without turning the runtime into a generic tool platform or
+moving authorization into checkpoint state. The extension must preserve the
+existing `PlanStep`, `ExecutionResult`, `RuntimeFailure`, `AgentState`, T035
+lifecycle, tenant, and checkpoint contracts.
+
+### Decisions
+
+1. **One Capability concept.** Phase 5 defines one `Capability` abstraction.
+   `Skill`, `Tool`, provider, plugin, and MCP are not separate domain concepts
+   or registries. A capability is an in-process dependency with explicit typed
+   metadata and this async operation:
+
+   ```text
+   Capability.execute(
+       step: PlanStep,
+       context: ContextEnvelope,
+   ) -> Awaitable[ExecutionResult | RuntimeFailure]
+   ```
+
+   The input `PlanStep` is the existing ADR-006 runtime-only model; no
+   capability name, authority, tenant, session, repository, or provider field
+   is added to `PlanStep`. Capability output is treated as untrusted until the
+   Executor validates it.
+
+2. **Typed metadata and explicit dispatch.** Each capability exposes only
+   bounded metadata:
+
+   | Field | Contract |
+   |---|---|
+   | `name` | non-empty stable dispatch key, at most 64 characters |
+   | `description` | sanitized descriptive text, at most 200 characters |
+   | `read_only` | literal `true` for all Phase 5 capabilities |
+   | `deterministic` | literal `true` for all Phase 5 capabilities |
+   | `side_effect_free` | literal `true` for all Phase 5 capabilities |
+
+   The Executor receives an explicit, trusted mapping of dispatch key to
+   capability dependency. The mapping is supplied at construction/integration
+   time; it is not populated from model output, checkpoint data, imports,
+   configuration discovery, or a marketplace. The mapping key must match the
+   capability metadata name. Unknown names, duplicate names, invalid metadata,
+   and a missing dependency are terminal normalized failures. No generic
+   registry or dynamic loading contract is created. The minimal dispatch
+   operation is:
+
+   ```text
+   dispatch(
+       name: str,
+       step: PlanStep,
+       context: ContextEnvelope,
+   ) -> Awaitable[ExecutionResult | RuntimeFailure]
+   ```
+
+   It is an Executor-owned adapter over that supplied mapping, not a public
+   registry API.
+
+3. **ContextEnvelope shape and bounds.** The only capability context is a
+   typed, JSON-safe `ContextEnvelope` containing:
+
+   | Field | Contract |
+   |---|---|
+   | `task_input` | the validated ADR-006 `PlannerTaskInput` snapshot |
+   | `current_step` | the validated ADR-006 `PlanStep` being dispatched |
+   | `sources` | zero to eight explicitly selected `ContextSource` values |
+
+   Each `ContextSource` has exactly these bounded fields: `provenance`, a
+   non-empty label of at most 128 characters; `selection_reason`, at most 200
+   characters; and `content`, at most 1,000 characters. The serialized
+   envelope is limited to 8,192 UTF-8 bytes. Extra fields, non-JSON values,
+   raw exceptions, and runtime objects are rejected. The envelope is a data
+   carrier, not an instruction or policy channel; source content and
+   capability output are untrusted data.
+
+   Sources are selected explicitly before dispatch. Phase 5 does not retrieve
+   memory or organization knowledge and does not allow a capability to query a
+   repository, session, filesystem, shell, network, provider, or checkpoint.
+   A source that carries credentials, tenant/role authority, session data, ORM
+   state, or other runtime handles is not an admissible source. Provenance is
+   explanatory metadata only and never grants authority.
+
+4. **Sanitization and AgentState boundary.** The context builder validates the
+   existing `PlannerTaskInput` and `PlanStep` models, rejects extra fields and
+   runtime objects, enforces the source and total-size limits, and emits only
+   the bounded JSON shape above. It does not promote source text to policy,
+   authorization, instructions, or executable arguments. The only Phase 5
+   addition permitted to checkpoint-safe `AgentState` is:
+
+   | Field | Initial value | Mutation rule |
+   |---|---|---|
+   | `capability_context: ContextEnvelope \| null` | `null` | set only for the current capability dispatch; cleared when an accepted replan replaces the Plan |
+
+   All ADR-006 fields and their mutation rules remain unchanged. The context
+   field is optional runtime data, never authorization truth, and may contain
+   only the bounded JSON envelope. `ExecutionResult` and `RuntimeFailure` are
+   the only capability result/failure shapes that may be retained in state;
+   raw return objects and exception values are discarded before checkpointing
+   or logging.
+
+5. **Output and failure normalization.** A successful capability result must
+   validate as the existing ADR-006 `ExecutionResult`, must have
+   `step_position == current_step.position`, and remains bounded by its
+   existing limits: output at most 2,000 characters, error code at most 64
+   characters, and sanitized error message at most 500 characters. Success and
+   failure field combinations remain exactly those already enforced by
+   `ExecutionResult`.
+
+   A capability failure must validate as the existing `RuntimeFailure` shape:
+   `classification` is one of `RETRY`, `REPLAN`, or `TERMINAL`, `code` is
+   non-empty and at most 64 characters, and `sanitized_message` is at most 500
+   characters. The normalizer recomputes the classification from the existing
+   `FailureClassifier` and the failure code; a capability-supplied
+   classification is not authority. Unknown codes are terminal. Unknown capability,
+   invalid metadata, malformed output, step-position mismatch, and raised
+   exceptions map to bounded terminal failures with these fixed sanitized
+   codes: `capability_unknown`, `capability_metadata_invalid`,
+   `capability_output_invalid`, and `capability_execution_failed`.
+   Exception text and exception objects never enter `RuntimeFailure`,
+   `AgentState`, checkpoints, or logs.
+
+6. **Retry, replan, and lifecycle interaction.** A valid capability success
+   continues through the existing verifier. A normalized capability failure
+   follows the ADR-006 classifier and routing table: at most one retry consumes
+   `retry_count`, at most one replacement Plan consumes `replan_count`, and
+   exhausted or terminal paths call T035 `fail_run`. Replanning clears the
+   capability context together with the existing execution, verification, and
+   failure fields, then rebuilds context for the replacement PlanStep. No
+   capability retry or replan creates a new TaskRun, resets either counter, or
+   changes Task/TaskRun enums. Malformed output after the capability boundary
+   is terminal and never enters the replan path merely because it came from a
+   capability.
+
+7. **Trusted tenant and authority boundary.** The trusted caller converts the
+   authenticated `CurrentPrincipal` to `organization_id` outside AgentState.
+   `TaskRuntimeService` performs the existing tenant-scoped Task/TaskRun SQL
+   validation before reading a checkpoint or dispatching a capability. This is
+   the only tenant/authorization check location for the capability slice.
+   Capabilities and `ContextEnvelope` never receive `CurrentPrincipal`,
+   organization or role authority, sessions, repositories, ORM objects,
+   secrets, provider clients, or checkpoint objects. Context selection cannot
+   widen the already validated tenant scope, and checkpoint/model/capability
+   data cannot select a tenant, user, membership, role, or capability
+   authority.
+
+8. **Checkpoint, attempt, and replay semantics.** Capability execution remains
+   inside the existing TaskRun attempt. PENDING runs start through T035
+   `begin_run`; RUNNING runs resume the same
+   `taskpilot-run:<task_run_id>` checkpoint; terminal runs do not resume. A
+   checkpoint may retain only the bounded `AgentState`, including the optional
+   `capability_context` and sanitized result/failure fields. No capability
+   invocation table, attempt counter, lease, distributed lock, or cross-system
+   transaction is added.
+
+   A deterministic read-only capability may be executed more than once after
+   repeated or concurrent resume, including after a checkpoint was written but
+   before terminal lifecycle completion. Repeated execution with the same
+   validated inputs must produce the same bounded result, but this is not an
+   exactly-once execution or external-effect guarantee. T035 remains the sole
+   owner of the terminal TaskRun transition; a later completion cannot
+   overwrite a terminal state won by another transition.
+
+### Consequences and deferred scope
+
+Phase 5 gains one implementation-ready, bounded Capability/context contract
+that reuses ADR-006 result, failure, retry, replan, checkpoint, and lifecycle
+semantics. The first capability slice is deterministic, read-only, in-process,
+and side-effect-free. This ADR does not add production code, persistence, a
+public runtime API, or a new TaskPilot business state.
+
+The following are explicitly deferred: credential-bearing capabilities, real
+external effects, network/filesystem/shell/provider access, separate Skill or
+Tool abstractions, dynamic registry/plugin/MCP loading, persistent
+Skill/Tool/Context/Invocation tables, public APIs, HITL/approval, workers,
+memory or organization-knowledge infrastructure, generic idempotency, and any
+exactly-once claim. T061–T064 may implement only this contract; any broader
+capability or context system requires a new accepted decision.

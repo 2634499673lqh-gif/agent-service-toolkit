@@ -1,8 +1,339 @@
+### 2026-09-22 — Phase 5 Final Approval
+
+Status: PHASE 5 APPROVED — PHASE 5 COMPLETE
+
+Current state: Phase 4 is complete and merged to `main`. T060–T064 are
+implemented, Strong Review approved, committed, and pushed. Phase 5
+implementation is complete and the Phase 5 Final Audit is approved. Phase 5
+is complete. The initial audit returned NOT APPROVED solely because canonical
+status documentation was stale; the focused re-review subsequently approved
+Phase 5.
+
+Scope: documentation-only canonical status synchronization. ADR-007 is now
+recorded as Accepted and frozen. No production code, tests, migrations,
+dependencies, or runtime contracts were changed. The dated task entries below
+are historical implementation records; earlier review-readiness and
+not-started statements describe their original point in time.
+
+Files changed: `process/tasks/INDEX.md`, `TASK_BACKLOG.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`, `docs/API_CONVENTIONS.md`, `process/DECISION_LOG.md`,
+and this progress log.
+
+Validation: final canonical status search and `git diff --check` completed after
+the documentation update.
+
+### 2026-09-22 — T064: Phase 5 runtime integration
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T064 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `3dc7b43`; working tree
+was clean before implementation apart from pre-existing inaccessible
+`.pytest-tmp-*` directories. T060–T063 are approved, committed, and
+published. At this historical entry, no Phase 5 Final Audit had yet been
+performed.
+
+What changed:
+
+- Integrated the approved `ContextBuilder` and explicit
+  `CapabilityDispatcher` into the existing Planner → Capability → Verifier
+  graph.
+- The default path dispatches the approved deterministic read-only fixture;
+  the existing `executor=` test injection is adapted through that same
+  dispatcher boundary.
+- Capability context is checkpointed only for the current step, preserved for
+  retry, cleared on step advance/replan, and rebuilt after replacement plans.
+- Preserved `TaskRuntimeService` tenant validation, checkpoint identity and
+  resume behavior, T035 lifecycle ownership, retry/replan budgets, and
+  terminal conflict handling.
+- Added capability-path runtime tests for bounded context checkpointing,
+  retry, replan, same-TaskRun behavior, and authority absence.
+
+Files changed:
+
+- `src/runtime/graph.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_task_runtime.py`
+- `docs/CONTEXT_ENGINEERING.md`
+- `process/PROGRESS_LOG.md`
+
+Validation: focused capability/runtime tests: 15 passed; affected runtime
+regression: 117 passed, 12 skipped; PostgreSQL/LangGraph tests: 12 skipped
+because `TASKPILOT_TEST_DATABASE_URL` is not configured; full suite: 536
+passed, 93 skipped, 18 warnings. Ruff, targeted format, Pyrefly, `uv lock
+--check`, and `git diff --check` passed.
+
+Scope: T064 only. No new persistence, migrations, public API, credentials,
+providers, plugin/MCP infrastructure, HITL, memory, workers, idempotency,
+leases, locks, external effects, or exactly-once machinery was added. The Phase
+5 Final Audit remains deferred to an independent read-only review.
+
+Learner notes:
+
+- Problem solved: the approved bounded context and deterministic capability now
+  run inside the existing checkpointed TaskPilot graph.
+- Read `src/runtime/graph.py`, `src/service/task_runtime.py`,
+  `src/runtime/capability.py`, `src/runtime/context.py`, and
+  `tests/runtime/test_task_runtime.py`.
+- Key concept: the capability path is an adapter inside the existing lifecycle;
+  it does not own tenant authorization or TaskRun terminal transitions.
+- Exercise: inspect the checkpoint after the executor node and identify the
+  three approved `capability_context` fields.
+- Do not worry yet about side effects, HITL, providers, or exactly-once
+  delivery.
+
+Suggested next task: independent T064 Strong Review.
+
+### 2026-09-22 — T063: Sanitized ContextEnvelope and builder
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T063 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `9671d83`; working tree
+was clean before implementation apart from pre-existing inaccessible
+`.pytest-tmp-*` directories. T060–T062 are approved, committed, and
+published. At this historical entry, T064 runtime integration had not started.
+
+What changed:
+
+- Added the bounded `ContextSource`, `ContextEnvelope`, and deterministic
+  `ContextBuilder` contract from ADR-007.
+- Validated the existing `PlannerTaskInput` and `PlanStep` snapshots, retained
+  only explicit source order, rejected extra/non-JSON/runtime values, and
+  enforced source-field and 8,192-byte UTF-8 envelope limits.
+- Added the sole approved `AgentState.capability_context` field, defaulting to
+  `null`; no graph, service, capability dispatch, persistence, or public
+  runtime integration was added.
+- Replaced the stale generic context suggestion with the concrete T063
+  contract in `docs/CONTEXT_ENGINEERING.md`.
+
+Files changed:
+
+- `src/runtime/context.py`
+- `src/runtime/state.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_context.py`
+- `docs/CONTEXT_ENGINEERING.md`
+- `process/PROGRESS_LOG.md`
+
+Validation: focused context tests: 13 passed; affected runtime tests: 113
+passed, 12 skipped; full suite: 533 passed, 93 skipped, 18 warnings; Ruff
+check and targeted format check passed; Pyrefly passed with 0 errors; `uv lock
+--check` and `git diff --check` passed. Existing inaccessible `.pytest-tmp-*`
+directories emitted permission warnings during repository-wide Ruff scanning.
+
+Scope: T063 only. T064 runtime integration, memory/knowledge retrieval,
+authorization containers, credentials, persistence, migrations, public APIs,
+external effects, plugin/MCP infrastructure, and exactly-once machinery were
+not implemented.
+
+Learner notes:
+
+- Problem solved: capability dispatch now has one small, typed, checkpoint-safe
+  context shape without moving authority or secrets into runtime state.
+- Read `src/runtime/context.py`, `src/runtime/state.py`,
+  `tests/runtime/test_context.py`, `process/DECISION_LOG.md` ADR-007, and
+  `docs/CONTEXT_ENGINEERING.md`.
+- Key concept: a provenance label explains why bounded data was selected; it is
+  not an authorization grant.
+- Exercise: add one valid source and then add an `organization_id` field; trace
+  why the first serializes and the second is rejected.
+- Do not worry yet about runtime graph wiring, retries around capabilities,
+  memory, organization knowledge, providers, or external effects.
+
+Suggested next task: independent T063 Strong Review.
+
+### 2026-09-22 — Phase 5 Planning package
+
+Status: PLANNING ARTIFACTS CREATED — READY FOR INDEPENDENT Phase5 Planning Strong Review
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD and `main` both `87c4bed`; working tree was clean before planning (apart from pre-existing inaccessible `.pytest-tmp-*` directories). T051 Phase 4 Final Audit is approved; Phase 4 is complete and merged to `main`. At this historical entry, Phase 5 planning was active and no implementation task had started.
+
+What changed: replaced the historical T060–T074 proposal with the smallest coherent T060–T064 DAG; added task cards and proposed ADR-007. The package freezes one Capability contract, explicit dispatch, one deterministic read-only capability, a bounded sanitized ContextEnvelope, and runtime integration followed by a separate Phase 5 Final Audit. No `src/` code, tests, migrations, dependencies, or Git state were changed.
+
+Validation: documentation inspection, task-ID/dependency review, and `git diff --check`; no production or Phase 5 tests run.
+
+Deferred: separate Skill/Tool registries, providers, credentials, real side effects, new persistence, public API, HITL, memory/knowledge, workers, generic idempotency, and exactly-once claims.
+
+Learner notes: the key concept is preserving Phase 4's trust boundary while adding bounded capability data; read `process/tasks/T060.md`, `T061.md`, `T063.md`, `src/runtime/executor.py`, `src/runtime/state.py`, and `src/service/task_runtime.py`. Exercise: trace which values may enter `AgentState` and which must remain in the trusted service call. Do not worry yet about providers, approvals, or external effects.
+
+Suggested next task: independent Phase5 Planning Focused Strong Review (no implementation).
+
 # Progress Log
 
 > Append one entry per completed task. Do not delete old entries.
 
-### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization
+### 2026-09-22 — T062: First deterministic read-only capability
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T062 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `9e5a314`; working tree
+was clean before implementation. T060 and T061 are approved, committed, and
+published. At this historical entry, no later Phase 5 implementation task had
+started.
+
+What changed:
+
+- Added exactly one `DeterministicFixtureCapability` with fixed bounded output
+  and literal read-only, deterministic, side-effect-free metadata.
+- Reused the T061 `CapabilityDispatcher` path and existing
+  `ExecutionResult`/`RuntimeFailure` contracts; invalid step input remains a
+  sanitized terminal failure before capability execution.
+- The capability ignores context and performs no network, filesystem, shell,
+  provider, credential, tenant, persistence, or runtime-graph access.
+
+Files changed:
+
+- `src/runtime/capabilities.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_capabilities.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Focused T062/T061 capability tests: 17 passed.
+- `uv run pytest tests/runtime -q`: 101 passed, 12 skipped, 4 warnings.
+- `uv run ruff check .`: passed; existing inaccessible `.pytest-tmp-*`
+  directories emitted permission warnings.
+- Targeted `uv run ruff format --check`: passed for the three changed Python
+  files.
+- `uv run pyrefly check`: passed with 0 errors.
+- `uv lock --check`: passed.
+- `git diff --check`: passed.
+
+Scope: T062 only. T063 `ContextEnvelope`, T064 runtime graph integration, public
+APIs, persistence, migrations, external effects, plugin/MCP infrastructure, and
+exactly-once machinery were not implemented.
+
+Learner notes:
+
+- Problem solved: the approved capability boundary now has one concrete,
+  deterministic, read-only implementation that is safe to replay.
+- Read `src/runtime/capabilities.py`, `src/runtime/capability.py`,
+  `src/runtime/executor.py`, and `tests/runtime/test_capabilities.py`.
+- Key concept: a capability can be useful as a bounded dependency without
+  receiving authority, credentials, or a runtime object.
+- Exercise: change the fixture string in a local experiment and observe which
+  exact-output test documents the replay contract.
+- Do not worry yet about ContextEnvelope construction or runtime graph wiring;
+  those belong to T063 and T064.
+
+Suggested next task: independent T062 Strong Review.
+
+### 2026-09-22 — T061: Capability contract and explicit dispatch
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T061 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `ff7fa1f`; working tree
+was clean before implementation. T060 is approved and committed. No later
+Phase 5 implementation task had started.
+
+What changed:
+
+- Added bounded `CapabilityMetadata` and one generic `Capability` protocol.
+- Added `CapabilityDispatcher`, which copies an explicit mapping, validates
+  capability names/metadata and existing `PlanStep` inputs, invokes only the
+  selected in-process dependency, and normalizes untrusted outputs.
+- Reused `ExecutionResult`, `RuntimeFailure`, and `FailureClassifier`; unknown
+  capabilities, malformed output, unsafe error fields, and raised exceptions
+  fail closed with fixed sanitized terminal failures.
+- Exported the contract from `runtime`; no ContextEnvelope model, AgentState
+  field, graph wiring, TaskRuntimeService change, registry, or provider was
+  added.
+
+Files changed:
+
+- `src/runtime/capability.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_capability.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Focused capability/executor/failure tests: 52 passed.
+- `uv run pytest tests/runtime -q`: 96 passed, 12 skipped.
+- `uv run pytest -q`: 517 passed, 93 skipped, 18 warnings.
+- `uv run ruff check .`: passed.
+- Tracked Python `uv run ruff format --check`: passed (151 files).
+- `uv run pyrefly check`: passed with 0 errors.
+- `uv lock --check`: passed.
+- `git diff --check`: passed.
+- Root-wide Ruff format also reported the repository's existing inaccessible
+  `.pytest-tmp-*` directories; the tracked-file check passed separately.
+
+Scope: T061 only. T062 capability behavior, T063 ContextEnvelope, and T064
+runtime integration were not implemented. No persistence, migration, public
+API, credentials, external effect, plugin/MCP framework, or exactly-once
+machinery was added.
+
+Learner notes:
+
+- Problem solved: the runtime now has one explicit, typed, fail-closed route
+  from a capability name to an in-process capability dependency.
+- Read `src/runtime/capability.py`, `src/runtime/executor.py`,
+  `src/runtime/failure.py`, and `tests/runtime/test_capability.py`.
+- Key concept: validate untrusted capability output at the boundary, then
+  reuse the existing failure classifier instead of trusting returned routing.
+- Exercise: make a fake capability return a wrong `step_position` and trace
+  why it becomes terminal without invoking retry/replan logic.
+- Do not worry yet about the first real capability, ContextEnvelope fields, or
+  TaskRuntimeService graph integration.
+
+Suggested next task: independent T061 Strong Review, then T062.
+
+### 2026-09-22 — T060: Phase 5 capability/context architecture gate
+
+Status: PLANNING CONTRACT COMPLETE — READY FOR INDEPENDENT Phase 5 Planning
+Strong Review
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `afdedc1`; working tree
+was clean before this documentation change. T051 Phase 4 Final Audit is
+approved, and at this historical entry Phase 5 production implementation had
+not started.
+
+What changed:
+
+- Expanded ADR-007 from a planning summary into the implementation authority
+  for one typed, async `Capability` contract and explicit Executor-supplied
+  dispatch mapping.
+- Froze the bounded provenance-labeled `ContextEnvelope`, structural
+  sanitization rules, the single optional `capability_context` AgentState
+  field, and the existing `ExecutionResult` / `RuntimeFailure` output boundary.
+- Froze failure normalization, existing retry/replan budgets, T035 lifecycle
+  ownership, tenant-check location, checkpoint attempt semantics, and the
+  deterministic replay limitation.
+- Explicitly deferred registries/plugins/MCP, credentials, real effects,
+  persistence, public APIs, HITL, memory/knowledge infrastructure, workers,
+  generic idempotency, and exactly-once claims.
+
+Files changed:
+
+- `process/DECISION_LOG.md`
+- `process/PROGRESS_LOG.md`
+
+Scope: documentation/ADR only. No production source, tests, dependencies,
+migrations, persistence tables, public runtime API, or later Phase 5 task was
+implemented.
+
+Validation: final diff inspection, cross-document contract comparison against
+ADR-006/T051 and T061–T064, and `git diff --check`.
+
+Learner notes:
+
+- Problem solved: Phase 5 now has one small implementation authority for
+  capability dispatch and bounded context without moving tenant authority into
+  AgentState.
+- Read `process/DECISION_LOG.md` ADR-006/ADR-007,
+  `src/runtime/executor.py`, `src/runtime/state.py`, and
+  `src/service/task_runtime.py`.
+- Key concept: checkpoint data is resumable runtime data, not authorization;
+  a deterministic replay limitation is different from an exactly-once claim.
+- Exercise: list every field that may enter `capability_context`, then explain
+  why `organization_id`, `AsyncSession`, and a raw exception cannot enter it.
+- Do not worry yet about implementing a registry, provider credentials, HITL,
+  memory/knowledge retrieval, or external effects.
+
+Suggested next task: independent Phase 5 Planning Strong Review of T060/ADR-007.
+
+### 2026-09-22 — T051 B1: Canonical Phase 4 status synchronization (historical record)
 
 Status: DOCUMENTATION FIX COMPLETE — READY FOR T051 FOCUSED FINAL AUDIT RE-REVIEW
 

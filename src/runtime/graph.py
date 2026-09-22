@@ -1,9 +1,14 @@
-"""The small static Planner → Executor → Verifier TaskPilot graph."""
+"""The small static Planner → Capability → Verifier TaskPilot graph."""
 
 from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
 
+from schema.planner import PlanStep
+
+from .capabilities import DeterministicFixtureCapability
+from .capability import CapabilityDispatcher, CapabilityMetadata
+from .context import ContextBuilder, ContextEnvelope
 from .executor import ExecutionResult, Executor
 from .failure import FailureClassifier, RuntimeFailure
 from .planner import PlannerNode, PlannerOutputInvalidError
@@ -15,6 +20,8 @@ from .verifier import VerifierNode, VerifierOutputInvalidError
 RETRY_NODE = "retry"
 REPLAN_NODE = "replan"
 TERMINAL_NODE = "terminal"
+_DEFAULT_CAPABILITY_NAME = "deterministic_fixture"
+_EXECUTOR_ADAPTER_NAME = "executor_adapter"
 
 
 class _DefaultPlannerModel:
@@ -38,11 +45,34 @@ class _DefaultVerifierModel:
         }
 
 
+class _ExecutorCapabilityAdapter:
+    """Keep the approved Phase 4 executor injection behind the dispatcher."""
+
+    metadata = CapabilityMetadata(
+        name=_EXECUTOR_ADAPTER_NAME,
+        description="Adapts the existing bounded executor for runtime tests.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
+    )
+
+    def __init__(self, executor: Executor) -> None:
+        self._executor = executor
+
+    async def execute(
+        self,
+        step: PlanStep,
+        context: ContextEnvelope,
+    ) -> ExecutionResult:
+        return await self._executor.execute(step, context.task_input)
+
+
 def build_runtime_graph(
     checkpointer: Any,
     *,
     planner: PlannerNode | None = None,
     executor: Executor | None = None,
+    capability_dispatcher: CapabilityDispatcher[ContextEnvelope] | None = None,
     verifier: VerifierNode | None = None,
     classifier: FailureClassifier | None = None,
     interrupt_before: list[str] | None = None,
@@ -55,11 +85,24 @@ def build_runtime_graph(
     """
 
     planner_node = planner or PlannerNode(_DefaultPlannerModel())
-    executor_node = executor
-    if executor_node is None:
-        from .executor import DeterministicExecutor
-
-        executor_node = DeterministicExecutor()
+    if capability_dispatcher is not None and executor is not None:
+        raise ValueError("executor and capability_dispatcher are mutually exclusive")
+    if capability_dispatcher is None:
+        if executor is None:
+            capability_name = _DEFAULT_CAPABILITY_NAME
+            capability_dispatcher = CapabilityDispatcher(
+                {capability_name: DeterministicFixtureCapability()},
+                classifier=classifier,
+            )
+        else:
+            capability_name = _EXECUTOR_ADAPTER_NAME
+            capability_dispatcher = CapabilityDispatcher(
+                {capability_name: _ExecutorCapabilityAdapter(executor)},
+                classifier=classifier,
+            )
+    else:
+        capability_name = _DEFAULT_CAPABILITY_NAME
+    context_builder = ContextBuilder()
     verifier_node = verifier or VerifierNode(_DefaultVerifierModel())
     failure_classifier = classifier or FailureClassifier()
 
@@ -79,25 +122,52 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "runtime_plan_position_invalid")}
         step = state.plan.steps[state.plan_position]
         try:
-            result = ExecutionResult.model_validate(
-                await executor_node.execute(step, state.task_input)
+            context = context_builder.build(
+                task_input=state.task_input,
+                current_step=step,
             )
         except Exception:
-            return {"failure": _failure(failure_classifier, "executor_output_invalid")}
+            return {"failure": _failure(failure_classifier, "capability_context_invalid")}
+        try:
+            raw_result = await capability_dispatcher.dispatch(capability_name, step, context)
+        except Exception:
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": _failure(failure_classifier, "capability_execution_failed"),
+            }
+        if isinstance(raw_result, RuntimeFailure):
+            failure = failure_classifier.classify(
+                raw_result.code,
+                raw_result.sanitized_message,
+            )
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": failure.model_dump(mode="json"),
+            }
+        try:
+            result = ExecutionResult.model_validate(raw_result)
+        except Exception:
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": _failure(failure_classifier, "capability_output_invalid"),
+            }
         if result.step_position != step.position:
             return {
+                "capability_context": context.model_dump(mode="json"),
                 "execution_result": result.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "executor_step_mismatch"),
+                "failure": _failure(failure_classifier, "capability_output_invalid"),
             }
         if not result.success:
             failure = failure_classifier.classify(
                 result.error_code or "executor_failed", result.error_message
             )
             return {
+                "capability_context": context.model_dump(mode="json"),
                 "execution_result": result.model_dump(mode="json"),
                 "failure": failure.model_dump(mode="json"),
             }
         return {
+            "capability_context": context.model_dump(mode="json"),
             "execution_result": result.model_dump(mode="json"),
             "failure": None,
         }
@@ -158,13 +228,17 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, error.code)}
         except Exception:
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
-        return replacement.model_dump(mode="json")
+        return {
+            "capability_context": None,
+            **replacement.model_dump(mode="json"),
+        }
 
     async def advance_step(state: AgentState) -> dict[str, object]:
         if state.plan is None or state.plan_position + 1 >= len(state.plan.steps):
             return {"failure": _failure(failure_classifier, "runtime_plan_position_invalid")}
         return {
             "plan_position": state.plan_position + 1,
+            "capability_context": None,
             "execution_result": None,
             "verification": None,
             "failure": None,
