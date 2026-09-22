@@ -18,6 +18,62 @@ Suggested next task: independent Phase5 Planning Focused Strong Review (no imple
 
 > Append one entry per completed task. Do not delete old entries.
 
+### 2026-09-22 — T062: First deterministic read-only capability
+
+Status: IMPLEMENTED — READY FOR INDEPENDENT T062 STRONG REVIEW
+
+Baseline: branch `phase-5-skills-tools-context`; HEAD `9e5a314`; working tree
+was clean before implementation. T060 and T061 are approved, committed, and
+published. No later Phase 5 implementation task had started.
+
+What changed:
+
+- Added exactly one `DeterministicFixtureCapability` with fixed bounded output
+  and literal read-only, deterministic, side-effect-free metadata.
+- Reused the T061 `CapabilityDispatcher` path and existing
+  `ExecutionResult`/`RuntimeFailure` contracts; invalid step input remains a
+  sanitized terminal failure before capability execution.
+- The capability ignores context and performs no network, filesystem, shell,
+  provider, credential, tenant, persistence, or runtime-graph access.
+
+Files changed:
+
+- `src/runtime/capabilities.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_capabilities.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+
+- Focused T062/T061 capability tests: 17 passed.
+- `uv run pytest tests/runtime -q`: 101 passed, 12 skipped, 4 warnings.
+- `uv run ruff check .`: passed; existing inaccessible `.pytest-tmp-*`
+  directories emitted permission warnings.
+- Targeted `uv run ruff format --check`: passed for the three changed Python
+  files.
+- `uv run pyrefly check`: passed with 0 errors.
+- `uv lock --check`: passed.
+- `git diff --check`: passed.
+
+Scope: T062 only. T063 `ContextEnvelope`, T064 runtime graph integration, public
+APIs, persistence, migrations, external effects, plugin/MCP infrastructure, and
+exactly-once machinery were not implemented.
+
+Learner notes:
+
+- Problem solved: the approved capability boundary now has one concrete,
+  deterministic, read-only implementation that is safe to replay.
+- Read `src/runtime/capabilities.py`, `src/runtime/capability.py`,
+  `src/runtime/executor.py`, and `tests/runtime/test_capabilities.py`.
+- Key concept: a capability can be useful as a bounded dependency without
+  receiving authority, credentials, or a runtime object.
+- Exercise: change the fixture string in a local experiment and observe which
+  exact-output test documents the replay contract.
+- Do not worry yet about ContextEnvelope construction or runtime graph wiring;
+  those belong to T063 and T064.
+
+Suggested next task: independent T062 Strong Review.
+
 ### 2026-09-22 — T061: Capability contract and explicit dispatch
 
 Status: IMPLEMENTED — READY FOR INDEPENDENT T061 STRONG REVIEW

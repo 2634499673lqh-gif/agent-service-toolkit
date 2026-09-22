@@ -1,5 +1,6 @@
 """TaskPilot runtime boundaries."""
 
+from runtime.capabilities import DeterministicFixtureCapability
 from runtime.capability import (
     Capability,
     CapabilityDispatcher,
@@ -37,6 +38,7 @@ __all__ = [
     "Capability",
     "CapabilityDispatcher",
     "CapabilityMetadata",
+    "DeterministicFixtureCapability",
     "ExecutionResult",
     "Executor",
     "DeterministicExecutor",
