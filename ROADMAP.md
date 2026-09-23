@@ -110,12 +110,17 @@ Phase 4/T051 is approved, complete, and merged to `main`. T060–T064 are implem
 Exit: one deterministic read-only capability is selected and dispatched through the existing Executor; capability context is typed, bounded, provenance-labeled, sanitized, and explainable; retry/replan/checkpoint/resume and tenant boundaries remain unchanged.
 
 No real external effects, credentials, dynamic registry/plugin platform, new persistence, public runtime API, HITL, memory/knowledge subsystem, or exactly-once guarantee is included.
-## Phase 6 — Human-in-the-loop & Safety [PLANNING PACKAGE]
+## Phase 6 — Human-in-the-loop & Safety [PLANNING APPROVED; T080 COMPLETE]
 
 Canonical DAG: `T080 → T081 → T082 → T083 → T084 → T085`.
-T080 freezes proposed ADR-008; T081–T084 are the smallest implementation
+T080 accepted and froze ADR-008; T081–T084 are the smallest implementation
 slice; T085 is the independent Phase 6 Final Audit. T086–T088 are retired as
 standalone cards because their behavior is covered by T083/T084.
+
+Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
+Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
+
+T081–T084 have not started and depend on completed T080.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the

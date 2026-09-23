@@ -89,18 +89,22 @@ are not live task assignments.
 
 DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`. T060–T064 are complete and Strong Review approved. The initial Phase 5 Final Audit returned NOT APPROVED solely because canonical status documentation was stale; the focused Final Audit re-review subsequently approved Phase 5.
 
-## Phase 6 Task Cards — Human-in-the-loop & Safety (planning package)
+## Phase 6 Task Cards — Human-in-the-loop & Safety
 
-| Task | Purpose | Model | Review | Depends On |
-|---|---|---|---|---|
-| T080 | HITL/risk architecture gate and ADR-008 | STRONG planning | Planning Strong Review | Phase 5 complete |
-| T081 | Approval persistence and migration | LOW_COST | Strong Review | T080 |
-| T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 |
-| T083 | Runtime approval boundary | STRONG | Strong Review | T082 |
-| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 |
-| T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 |
+Phase 6 Planning is APPROVED, frozen, committed, and published. T080 is
+COMPLETE with Strong Review APPROVED; ADR-008 is Accepted and frozen. T081–T084
+are not started and depend on completed T080.
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is proposed and requires independent Planning Strong Review before implementation.
+| Task | Purpose | Model | Review | Depends On | Status |
+|---|---|---|---|---|---|
+| T080 | HITL/risk architecture gate and ADR-008 | STRONG planning | Planning Strong Review | Phase 5 complete | COMPLETE / STRONG REVIEW APPROVED |
+| T081 | Approval persistence and migration | LOW_COST | Strong Review | T080 | Not started; gated on T080 |
+| T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 | Not started |
+| T083 | Runtime approval boundary | STRONG | Strong Review | T082 | Not started |
+| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | Not started |
+| T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | Not started |
+
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T081–T084 remain not started and depend on completed T080.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.

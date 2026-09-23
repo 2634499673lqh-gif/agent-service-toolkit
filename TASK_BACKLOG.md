@@ -195,8 +195,9 @@ Phase 5 defers separate Skill/Tool hierarchies, dynamic registries/plugins/MCP, 
 ## Phase 6 — HITL
 
 Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
-the cards below are authoritative. No production code is authorized until the
-planning gate is independently approved.
+the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
+committed, and published. T081–T084 are not started and depend on completed
+T080.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -208,6 +209,9 @@ identity, and transactional mock outcome used by T081–T084.
 Accept ADR-008: one server-side risk classifier, L0/L1 auto-allow, L2 approval,
 L3 blocked; approval boundary, state/lifecycle choice, tenant/role policy,
 checkpoint/resume, race, replay, and audit contracts are frozen.
+
+T080 is COMPLETE; its focused Strong Review is APPROVED and ADR-008 is
+Accepted/frozen. T081–T084 remain not started and depend on completed T080.
 
 ### T081 — Approval persistence and migration [C after T080]
 Implement only the approved tenant-scoped approval record and constraints.

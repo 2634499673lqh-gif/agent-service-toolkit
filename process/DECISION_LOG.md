@@ -559,15 +559,26 @@ memory or organization-knowledge infrastructure, generic idempotency, and any
 exactly-once claim. T061–T064 may implement only this contract; any broader
 capability or context system requires a new accepted decision.
 
-## ADR-008 — Phase 6 human approval and safety boundary (proposed)
+## ADR-008 — Phase 6 human approval and safety boundary (Accepted)
 
-Date: 2026-09-22
+Date: 2026-09-22; T080 contract refinement: 2026-09-23.
 
-The Phase 6 planning package proposes one server-side L0–L3 risk classifier,
-one tenant-scoped immutable Approval record, owner/admin decisions, and a
-checkpoint-backed WAITING_APPROVAL boundary without changing existing
-Task/TaskRun enums. L2 is approval-gated, L3 is blocked, and one deterministic
-mock effect is protected by an atomic action-key claim. Checkpoint persistence
-remains separate from TaskPilot business persistence. Generic policy/workflow
-engines, credentials, workers, distributed locks, real external effects, and
-exactly-once claims are deferred. See `process/ADR-008.md` and T080–T085.
+T080 freezes one pure server-side classifier over trusted fixed action metadata
+and validated arguments: L0/L1 auto-allow, L2 requires approval, L3 blocks in
+V1; unknown or malformed inputs fail closed before dispatch. The only Phase 6
+effect is one deterministic L2 mock. Approval identity is the unique
+`(task_run_id, replan_count, step_position)` tuple, with the step slot defined
+as the existing zero-based runtime plan index. B1 defines the normalized
+tenant-scoped Approval schema and Task → TaskRun → Approval lock order. The
+checkpoint carries only a bounded approval reference and cannot supply a
+decision. The runtime reports WAITING_APPROVAL only after checkpoint success;
+T035 remains the only lifecycle owner. B3 stores an existing bounded
+ExecutionResult (maximum 8,192 canonical UTF-8 bytes) atomically with the
+COMPLETED/FAILED action state. The detailed T081–T084 test matrix is in
+`process/ADR-008.md`.
+
+Status: Accepted; the focused T080 Strong Re-review approved ADR-008 on
+2026-09-23, and its contract is frozen. T080 is complete. T081–T084 remain not
+started and depend on completed T080. Generic policy/rule engines, credentials,
+workers, distributed locks, real external effects, and exactly-once claims
+remain deferred. See `process/ADR-008.md` and T080–T085.

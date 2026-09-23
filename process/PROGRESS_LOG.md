@@ -1,6 +1,109 @@
-### 2026-09-22 — Phase 6 Planning blocker fixes (B1–B3)
+### 2026-09-23 — T080 final approval
 
-Status: READY FOR PHASE6 PLANNING FOCUSED STRONG RE-REVIEW; not approved.
+Status: T080 COMPLETE; Strong Review APPROVED.
+
+Phase 6 Planning is APPROVED, frozen, committed, and published. The focused
+T080 Strong Re-review accepted ADR-008, which is now Accepted and frozen.
+T081–T084 are not started and remain dependent on completed T080.
+
+Files changed for this final status update: `process/ADR-008.md`,
+`process/DECISION_LOG.md`, `process/PROGRESS_LOG.md`,
+`process/tasks/INDEX.md`, `TASK_BACKLOG.md`, `ROADMAP.md`, and
+`docs/SECURITY_HITL.md`. No production code, tests, migrations, or dependencies
+changed.
+
+Validation: `git diff --check` passed. No T081 implementation was started.
+
+Learner note: the accepted ADR is now the frozen contract for implementation;
+read it before beginning the dependent persistence task.
+
+Suggested next task: T081, after reviewing the accepted ADR.
+
+### Historical record — 2026-09-23 T080 Status Blocker Fix (before approval)
+
+At this point the stale planning-status blocker had been corrected and a
+focused T080 Strong Re-review was pending. The later approval entry above
+supersedes this status.
+
+Status: stale planning-status statements corrected; ready for focused T080
+Strong Re-review. ADR-008 remained Proposed; T081–T084 remained gated on T080.
+
+Authority: Phase 6 Planning is APPROVED, frozen, committed, and published.
+ADR-008 remains Proposed until T080 Strong Review approves it.
+
+What changed: corrected current canonical statements that described Phase 6
+Planning as awaiting review or not approved. Earlier failed/re-review entries
+remain in the log with explicit historical labels. T081–T084 dependencies and
+the ADR-008 approval gate are unchanged.
+
+Files changed: `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, and
+`process/PROGRESS_LOG.md`. No production code, tests, or migrations changed.
+
+Validation: searched Phase 6 canonical status references and ran
+`git diff --check` successfully.
+
+Known limitation at that time: the focused T080 Strong Re-review was still
+pending; no T081 work was started.
+
+Suggested next task: focused T080 Strong Re-review.
+
+### Historical record — 2026-09-23 T080 HITL/risk architecture gate (before re-review)
+
+Historical status before initial T080 Strong Review: ready for independent
+review. That review returned NOT APPROVED for a documentation-status blocker;
+the historical T080 Status Blocker Fix entry above records its correction.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD `dc67a6b8ed5fda12e68cce2e7cad81e5631fac7b`; tracked working tree clean before this task, apart from pre-existing inaccessible `.pytest-tmp-*` directories. Phase 5/T064 and its Final Audit are recorded approved.
+
+Authority: `AGENTS.md`, `process/tasks/T080.md`, `process/ADR-008.md`,
+T081–T084, the T035 lifecycle implementation/contracts, existing Task/TaskRun
+schemas, and the Phase 5 AgentState/ExecutionResult contracts.
+
+What changed:
+
+- Froze the single pure server-side classification contract: L0/L1 auto-allow,
+  L2 approval required, L3 blocked; unknown/malformed inputs fail closed before
+  approval creation or action dispatch.
+- Defined the exact checkpoint approval reference and zero-based canonical
+  plan-slot identity, and clarified its one-based PlanStep/ExecutionResult
+  mapping. The reference carries no proposal or decision authority.
+- Bounded persisted outcomes to 8,192 canonical UTF-8 bytes and tied them to
+  the existing ExecutionResult field limits and plan slot.
+- Added a task-by-task PostgreSQL/security/checkpoint/race evidence matrix for
+  T081–T084 and synchronized the security guide and planning status references.
+
+Files changed: `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/PROGRESS_LOG.md`, `docs/SECURITY_HITL.md`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, and `process/tasks/INDEX.md`. No production code, migrations,
+tests, dependencies, or runtime enums changed.
+
+Authority at the time of this record: Phase 6 Planning was APPROVED, frozen,
+committed, and published. ADR-008 remained Proposed pending T080 Strong Review;
+T081–T084 were gated on that approval. The final approval entry above
+supersedes this status.
+
+Validation: cross-checked ADR-008 against T035 locking/lifecycle ownership,
+the current Task/TaskRun enums, AgentState, and bounded ExecutionResult; checked
+T081–T084 for contract consistency; `git diff --check` passed. Runtime tests do
+not apply to this documentation-only task.
+
+Known limitation at the time: independent T080 Strong Review remained required;
+no T081 implementation was authorized by that task.
+
+Learner notes: read `process/ADR-008.md`, `process/tasks/T081.md`,
+`process/tasks/T083.md`, `src/service/task_lifecycle.py`, and
+`src/runtime/state.py`. Learn that checkpoint state is a locator while
+business persistence owns approval decisions and effect outcomes. Exercise:
+trace a duplicate request through the same run/replan/step key, then trace a
+replay after checkpoint-write failure. Do not worry about real-provider
+exactly-once guarantees or a generic policy engine yet.
+
+Suggested next task: independent read-only T080 Strong Review.
+
+### Historical record — 2026-09-22 Phase 6 Planning blocker fixes (B1–B3)
+
+Status at that time: READY FOR PHASE6 PLANNING FOCUSED STRONG RE-REVIEW; not
+approved. Superseded by the later Phase 6 Planning approval recorded above.
 
 - B1: froze Approval columns, normalized tenant SQL join, RESTRICT FKs,
   uniqueness/checks, and repository/service transaction ownership in ADR-008.
@@ -3619,7 +3722,11 @@ Learner notes:
 
 Suggested next task: focused Phase 3 Final Audit B1 re-audit only.
 
-## Phase 6 Planning — 2026-09-22
+## Historical Phase 6 Planning package creation — 2026-09-22
+
+Historical snapshot: the package below was then awaiting independent review.
+Phase 6 Planning has since been approved, frozen, committed, and published;
+ADR-008 remains Proposed pending T080 Strong Review.
 
 - Task: Phase 6 HITL/risk/approval/safety planning package.
 - Changed: proposed ADR-008 and task cards T080–T085; narrowed the former

@@ -39,22 +39,39 @@ L3 high-impact:
 
 V1:
 
-- L2 requires approval.
-- L3 should normally be blocked or simulated.
+- L0 and L1 are automatically allowed.
+- L2 requires approval before dispatch.
+- L3 is blocked; no approval can authorize it.
+- Unknown action metadata, invalid arguments, or classifier failure blocks
+  dispatch without creating an approval.
+
+One pure server-side classifier reads only trusted fixed action metadata and
+typed, validated arguments immediately before dispatch. Caller fields, model
+output, PlanStep text, checkpoint values, and retrieved content cannot choose
+the action identity or risk level. Phase 6 supports one fixed deterministic L2
+mock action; it does not add a configurable policy engine or rule language.
 
 ## Approval flow
 
-1. Executor proposes tool call.
-2. Risk policy classifies it.
-3. For L2+, create approval request.
-4. Persist checkpoint before waiting.
-5. Return WAITING_APPROVAL to client.
-6. Authorized human views sanitized proposed action.
-7. Human approve/reject.
-8. Decision persisted and audited.
-9. Resume exactly from saved state.
-10. On approval execute action using idempotency key.
-11. Never execute twice because client retried an HTTP request.
+1. Trusted server wiring selects the fixed action; its typed arguments are
+   validated before the classifier runs.
+2. L0/L1 dispatch automatically; L3 and unknown or malformed classifier input
+   stop before dispatch; L2 creates or reuses one tenant-scoped approval.
+3. After that business transaction commits, checkpoint only the approval ID
+   and canonical run/replan/step identity. The TaskRun remains RUNNING.
+4. Return WAITING_APPROVAL only after the checkpoint write succeeds. The
+   result contains the approval ID, not a duplicate proposal or decision.
+5. An active owner/admin in the task organization may approve or reject the
+   immutable proposal. Cross-tenant resources are 404; an in-tenant role
+   failure is 403. The first decision is terminal; duplicates conflict.
+6. Resume treats checkpoint values as untrusted references and rechecks the
+   tenant, active run, approval, canonical identity, and current validated
+   action proposal before the effect boundary.
+7. Rejection has no effect. Cancellation or another terminal transition
+   prevents later resume under the shared Task lock.
+8. The one deterministic mock records only its bounded outcome on the Approval
+   row in the same transaction as COMPLETED/FAILED. Duplicate delivery reads
+   that outcome; no real external exactly-once guarantee is claimed.
 
 ## Injection boundary
 
@@ -82,7 +99,7 @@ Authorization is always `credential -> authenticated user -> active membership -
 
 V1 uses opaque server-side tokens: raw cryptographically random tokens are returned only at login; SHA-256 hashes are stored with expiry, revocation, and indexed lookup. User passwords use Argon2id via the approved T023 dependency. Unknown, wrong, inactive, malformed, expired, and revoked credentials share a generic 401. Passwords, hashes, tokens, and resource-existence details are never logged or returned. `AUTH_SECRET` remains a compatibility-only upstream bearer secret and is not a TaskPilot principal.
 
-L2 approval decisions require an active `owner` or `admin` membership in the task organization; L3 is blocked in V1.
+L2 approval decisions require an active `owner` or `admin` membership in the task organization; L3 is blocked in V1. The accepted, frozen contract, including the exact Approval schema, run/replan/step identity, lock order, checkpoint reference, and outcome bounds, is recorded in `process/ADR-008.md` after T080 Strong Review approval.
 
 ## Bootstrap and principal revalidation (implemented)
 
