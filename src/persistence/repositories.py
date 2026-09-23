@@ -179,6 +179,27 @@ class TaskRunRepository:
         )
         return await self.session.scalar(statement)
 
+    async def get_for_update_for_task_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> TaskRun | None:
+        """Load and lock one nested run after its tenant-scoped Task lock."""
+
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update(of=TaskRun)
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
+
     async def get_active_for_update(
         self,
         task_id: UUID,
@@ -193,6 +214,7 @@ class TaskRunRepository:
                 TaskRun.status == status,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
 
@@ -255,6 +277,31 @@ class ApprovalRepository:
         )
         return await self.session.scalar(statement)
 
+    async def get_for_update_for_task_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        approval_id: UUID,
+        principal_organization_id: UUID,
+    ) -> Approval | None:
+        """Load and lock one Approval through its nested tenant ownership path."""
+
+        statement = (
+            select(Approval)
+            .join(TaskRun, TaskRun.id == Approval.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                Approval.id == approval_id,
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .with_for_update(of=Approval)
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
+
     async def get_for_action_identity_in_principal_tenant(
         self,
         task_id: UUID,
@@ -277,6 +324,33 @@ class ApprovalRepository:
                 Approval.replan_count == replan_count,
                 Approval.step_position == step_position,
             )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_update_by_action_identity_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        replan_count: int,
+        step_position: int,
+        principal_organization_id: UUID,
+    ) -> Approval | None:
+        """Load and lock one canonical action identity inside the tenant."""
+
+        statement = (
+            select(Approval)
+            .join(TaskRun, TaskRun.id == Approval.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+                Approval.replan_count == replan_count,
+                Approval.step_position == step_position,
+            )
+            .with_for_update(of=Approval)
+            .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
 
@@ -416,6 +490,47 @@ class MembershipRepository:
         statement = select(Membership).where(
             Membership.user_id == user_id,
             Membership.organization_id == organization_id,
+        )
+        return await self.session.scalar(statement)
+
+    async def get_active_for_principal(
+        self,
+        membership_id: UUID,
+        user_id: UUID,
+        organization_id: UUID,
+    ) -> Membership | None:
+        """Revalidate a principal's active membership in its selected tenant."""
+
+        statement = (
+            select(Membership)
+            .where(
+                Membership.id == membership_id,
+                Membership.user_id == user_id,
+                Membership.organization_id == organization_id,
+                Membership.is_active.is_(True),
+            )
+            .execution_options(populate_existing=True)
+        )
+        return await self.session.scalar(statement)
+
+    async def get_active_for_principal_for_update(
+        self,
+        membership_id: UUID,
+        user_id: UUID,
+        organization_id: UUID,
+    ) -> Membership | None:
+        """Load and share-lock the active principal membership for a write."""
+
+        statement = (
+            select(Membership)
+            .where(
+                Membership.id == membership_id,
+                Membership.user_id == user_id,
+                Membership.organization_id == organization_id,
+                Membership.is_active.is_(True),
+            )
+            .with_for_update(read=True, of=Membership)
+            .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
 

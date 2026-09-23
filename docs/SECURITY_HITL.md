@@ -136,7 +136,7 @@ Implemented in T025 (`src/service/authorization.py`):
 - `require_resource_tenant(principal, resource_organization_id)` answers 404 for a resource outside the principal's organization, making a foreign resource indistinguishable from a nonexistent one. An `owner` is an owner of their own organization only - there is no global owner, so a powerful role never bypasses tenant scope.
 - Tenant-owned lookups must carry the predicate in the query itself, not in a Python comparison after a global fetch. `OrganizationRepository.get_in_principal_tenant` establishes the pattern: `WHERE id = :id AND organization_id = :principal_organization_id`, so a foreign row is simply not found.
 - Decision ordering is enforced: tenant-scoped existence is resolved first, and only then the role check runs, so a 403/404 difference cannot be used to enumerate another tenant's resources.
-- `APPROVAL_DECISION_ROLES` records the one role set the ADR names explicitly ("L2 approval decisions require owner or admin"). T081 now provides the Approval persistence table; approval-specific authorization, decision service/API, and duplicate-decision rejection remain deferred to T082.
+- `APPROVAL_DECISION_ROLES` records the one role set the ADR names explicitly ("L2 approval decisions require owner or admin"). T081 provides Approval persistence and T082 applies the gate after SQL resolves the tenant-scoped Task, run, and Approval, so foreign resources remain 404 and an in-tenant member decision is 403.
 
 Nothing in T025's helper contract is pending. `AUTH_SECRET` remains a compatibility-only upstream bearer secret; it is not a TaskPilot user credential and was not changed.
 
@@ -155,7 +155,7 @@ T026 is a tests-only card; it changed no production behavior and is the authorit
 
 ## Known deferrals
 
-- T081 adds the constrained Approval persistence table and tenant-scoped repository. The approval decision service/API, runtime approval boundary, permission tables, policy engine, and duplicate-decision behavior are not implemented; the frozen `APPROVAL_DECISION_ROLES` gate (`owner`/`admin`) is not yet applied to approval decisions.
+- T081 adds the constrained Approval persistence table and tenant-scoped repository; T082 adds service-owned create/reuse, protected nested reads, and approve/reject decisions. Approval creation accepts only an internal trusted proposal, and decisions derive the actor from the active principal. Runtime approval pause/resume (T083) and action claim/effect behavior (T084) remain unimplemented. No permission tables or generic policy engine are added.
 - T036/T037/T038 now provide protected Task create/list/get/update/cancel and
   tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. Login
   remains outside HTTP scope; principal resolution and authorization use the
@@ -175,9 +175,10 @@ tenant-scoped Task/TaskRun validation before using a LangGraph checkpoint
 identity. Checkpoint data, Plan/PlanStep output, and verifier evidence cannot
 select a tenant, user, membership, role, or tool authority. Phase 4 added no
 runtime approval boundary, `WAITING_APPROVAL` state, HTTP idempotency, worker
-claim, or real external side effect; those remain later-phase security work.
-T081 adds persistence only. T051 Final Audit is approved; Phase 4 is complete
-and merged to `main`.
+claim, or real external side effect. T081/T082 later add Approval persistence
+and its protected decision surface without changing the Phase 4 runtime;
+T083/T084 own runtime pause/resume and action claims. T051 Final Audit is
+approved; Phase 4 is complete and merged to `main`.
 
 
 ## Phase 5 planning boundary

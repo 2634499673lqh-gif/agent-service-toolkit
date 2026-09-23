@@ -1,3 +1,66 @@
+### 2026-09-23 — T082 Approval service and decision APIs
+
+Status: T082 implementation complete; READY FOR INDEPENDENT STRONG REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`2934a406d65fbcf5818aad8b48541e8806da1c05`; no tracked working-tree changes
+before T082 edits. Git reports the pre-existing inaccessible
+`.pytest-tmp-t032/` and `.pytest-tmp-t034/` directories.
+
+Authority: `AGENTS.md`, `process/tasks/T082.md`, accepted/frozen
+`process/ADR-008.md` B1/B2, approved T081 Approval persistence/repository, and
+existing principal, membership, authorization, lifecycle, API, and transaction
+patterns.
+
+What changed: added `ApprovalService` create/reuse, tenant-scoped reads, and
+approve/reject transitions. Mutations lock Task -> TaskRun -> Approval, then
+share-lock the active actor membership through commit. Create/reuse enforces
+bounded canonical slot identity and full sanitized proposal equality; a unique
+constraint collision rolls back to a conflict without retry. Decisions derive
+the current role and decider membership from SQL, accept only PENDING, preserve
+terminal evidence, and use first-commit-wins semantics. Protected nested GET
+and decision routes return sanitized response fields; actor, organization,
+role, risk, action identity, and proposal are not accepted in request bodies.
+Create/reuse remains service-only for trusted runtime wiring.
+
+Files changed: `src/persistence/repositories.py`,
+`src/service/approval_service.py`, `src/service/approval_api.py`,
+`src/service/service.py`, `src/schema/approval_api.py`,
+`tests/service/test_approval_api_postgres.py`,
+`docs/API_CONVENTIONS.md`, `docs/ARCHITECTURE.md`,
+`docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`,
+`docs/SECURITY_HITL.md`, `docs/USER_GUIDE.md`, `process/ADR-008.md`,
+`process/DECISION_LOG.md`, `process/tasks/INDEX.md`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, and this log.
+
+Validation: T082's live PostgreSQL suite passed 6 tests. The affected Task,
+TaskRun, authorization, and persistence contract set passed 72 tests. The wider
+`tests/service` and `tests/persistence` regression passed 337 tests against
+PostgreSQL. Ruff check passed; all 148 Python files passed Ruff format check;
+Pyrefly reported 0 errors; `uv lock --check`, the single Alembic head check,
+route import smoke check, and `git diff --check` passed. Docker used the
+repository Compose PostgreSQL 16 service under the unique project
+`taskpilot-t082-live-20260923` and its fresh project-scoped volume. Each test
+created and dropped its own unique database; no pre-existing volume was used.
+The task-owned container/network were removed after testing, while the dedicated
+test volume was left intact (no volume pruning).
+
+Scope: no migration, production runtime pause/resume, checkpoint changes,
+action claim/effect behavior, generic policy/workflow infrastructure, T083, or
+T084 implementation was added. ADR-008 remains accepted and frozen. T081 is
+approved; T082 awaits independent review; T083/T084 remain gated on completed
+T082.
+
+Learner notes: this change makes approval evidence tenant-visible and gives
+decisions one durable winner under PostgreSQL locking. Read the Approval
+service, repositories, nested API, ADR-008 B2, and PostgreSQL tests. Main
+concept: acquire locks in the same parent-to-child order, then commit the
+decision once. Exercise: run two independent sessions that approve and reject
+one pending row and inspect the winning audit fields. Runtime resume and action
+effects belong to later tasks.
+
+Suggested next task: independent Strong Review of T082.
+
 ### 2026-09-23 — T081 Approval persistence implementation
 
 Status: T081 implementation and live PostgreSQL acceptance evidence are
@@ -58,7 +121,7 @@ the Approval model, migration, repository, and the PostgreSQL integration test.
 
 Suggested next task: independent Strong Review of T081.
 
-### 2026-09-23 — T080 final approval
+### Historical record — 2026-09-23 T080 final approval
 
 Status: T080 COMPLETE; Strong Review APPROVED.
 

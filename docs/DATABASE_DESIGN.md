@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 identity architecture and the T021–T023 schema, the Phase 3 T031/T032/T034 Task domain, and T081 Approval persistence. ADR-004, ADR-005, and accepted ADR-008 are authoritative for their respective domains.
+This document records the Phase 2 identity architecture and the T021–T023 schema, the Phase 3 T031/T032/T034 Task domain, and T081/T082 Approval persistence and decision services. ADR-004, ADR-005, and accepted ADR-008 are authoritative for their respective domains.
 
 ## Ownership and bootstrap
 
@@ -75,8 +75,12 @@ run and membership foreign keys use `ON DELETE RESTRICT`. The
 `(task_run_id, status)` index supports run/status lookup. `ApprovalRepository`
 keeps the full TaskRun-to-Task join and principal organization predicate in
 every read query; `add()` flushes but leaves commit/rollback to its caller.
-T081 adds persistence only; decision services, HTTP routes, runtime pause and
-resume, and action claims remain later-task work.
+T082's `ApprovalService` owns create/reuse and decision transactions, locking
+Task -> TaskRun -> Approval, and commits or rolls back the supplied session.
+Its protected nested read/decision routes return sanitized proposal and
+decision fields. Create/reuse is service-only: trusted runtime wiring supplies
+the already selected action and validated arguments. Runtime pause/resume and
+action claims remain T083/T084 work.
 
 ## Tenant-scoped repository boundary (T034)
 
