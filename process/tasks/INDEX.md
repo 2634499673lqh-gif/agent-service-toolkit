@@ -93,20 +93,21 @@ DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T06
 
 Phase 6 Planning is APPROVED, frozen, committed, and published. T080 is
 COMPLETE with Strong Review APPROVED; ADR-008 is Accepted and frozen. T081 is
-Strong Review approved, committed, and pushed. T082 implementation is complete
-and awaiting independent Strong Review; T083–T084 have not started and are
-gated on completed T082.
+COMPLETE with Strong Review APPROVED, committed, and pushed. T082 is COMPLETE
+with Strong Review APPROVED, committed, and pushed to origin. T083 has not
+started and is now unblocked by T082; T084 has not started and remains gated
+by T083.
 
 | Task | Purpose | Model | Review | Depends On | Status |
 |---|---|---|---|---|---|
 | T080 | HITL/risk architecture gate and ADR-008 | STRONG planning | Planning Strong Review | Phase 5 complete | COMPLETE / STRONG REVIEW APPROVED |
 | T081 | Approval persistence and migration | LOW_COST | Strong Review | T080 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
-| T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 | Implementation complete; awaiting Strong Review |
-| T083 | Runtime approval boundary | STRONG | Strong Review | T082 | Not started; gated on completed T082 |
-| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | Not started |
+| T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
+| T083 | Runtime approval boundary | STRONG | Strong Review | T082 | NOT STARTED / UNBLOCKED |
+| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | NOT STARTED |
 | T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | Not started |
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T081 is approved; T082 awaits Strong Review; T083–T084 remain gated by their dependencies.
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T082 are complete and approved. T083 is unblocked and not started; T084 is not started and remains gated by T083.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.

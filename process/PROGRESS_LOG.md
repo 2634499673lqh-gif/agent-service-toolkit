@@ -1,4 +1,28 @@
-### 2026-09-23 — T082 Approval service and decision APIs
+### 2026-09-23 — T082 final approval status recorded
+
+Status: T082 is COMPLETE; independent Strong Review APPROVED; committed and
+pushed to origin. Phase 6 Planning remains APPROVED, frozen, committed, and
+published. T080 and T081 are COMPLETE / APPROVED; ADR-008 is Accepted and
+frozen. T083 is NOT STARTED and is now UNBLOCKED by T082. T084 is NOT STARTED
+and remains gated on T083.
+
+Files changed: `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/tasks/INDEX.md`, `TASK_BACKLOG.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`, and this log.
+
+Validation: `git diff --check` passed. Only documentation status was changed;
+task contracts, DAG, implementation, tests, migrations, and dependencies are
+unchanged.
+
+Learner notes: Strong Review approval closes the T082 gate, so T083 becomes
+available without changing its contract or the Phase 6 DAG. Read the ADR,
+task index, and roadmap to compare the frozen dependency order with current
+status. Exercise: trace why T084 remains unavailable until T083 is complete.
+Do not worry about T083 runtime details until that task starts.
+
+Suggested next task: T083 (unblocked; not started).
+
+### Historical record — 2026-09-23 — T082 implementation before Strong Review
 
 Status: T082 implementation complete; READY FOR INDEPENDENT STRONG REVIEW.
 

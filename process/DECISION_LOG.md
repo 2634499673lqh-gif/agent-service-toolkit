@@ -578,9 +578,11 @@ COMPLETED/FAILED action state. The detailed T081–T084 test matrix is in
 `process/ADR-008.md`.
 
 Status: Accepted; the focused T080 Strong Re-review approved ADR-008 on
-2026-09-23, and its contract is frozen. T080 is complete; T081 is Strong Review
-approved, committed, and pushed. T082 implementation is complete and awaits
-independent Strong Review. T083–T084 remain not started and gated on completed
-T082 and their DAG dependencies. Generic policy/rule engines, credentials,
-workers, distributed locks, real external effects, and exactly-once claims
-remain deferred. See `process/ADR-008.md` and T080–T085.
+2026-09-23, and its contract is frozen. T080 is complete; T081 is complete
+with Strong Review approved, committed, and pushed. T082 is complete, Strong
+Review approved, committed, and pushed to origin. T083 is not started and is
+unblocked by T082; T084 is not started and remains gated by T083 and its DAG
+dependencies.
+Generic policy/rule engines, credentials, workers, distributed locks, real
+external effects, and exactly-once claims remain deferred. See
+`process/ADR-008.md` and T080–T085.

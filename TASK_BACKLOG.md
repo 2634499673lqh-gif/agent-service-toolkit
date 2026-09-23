@@ -197,8 +197,9 @@ Phase 5 defers separate Skill/Tool hierarchies, dynamic registries/plugins/MCP, 
 Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
-committed, and pushed. T082 implementation is complete and awaiting independent
-Strong Review. T083–T084 have not started and remain gated on completed T082.
+committed, and pushed. T082 is complete, Strong Review approved, committed, and
+pushed to origin. T083 has not started and is unblocked by T082. T084 has not
+started and remains gated on T083.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -212,9 +213,10 @@ L3 blocked; approval boundary, state/lifecycle choice, tenant/role policy,
 checkpoint/resume, race, replay, and audit contracts are frozen.
 
 T080 is COMPLETE; its focused Strong Review is APPROVED and ADR-008 is
-Accepted/frozen. T081 is COMPLETE and Strong Review approved. T082's
-implementation is complete and awaits Strong Review; T083–T084 remain gated
-on completed T082.
+Accepted/frozen. T081 is COMPLETE and Strong Review approved, committed, and
+pushed. T082 is COMPLETE with Strong Review APPROVED, committed, and pushed.
+T083 is NOT STARTED and UNBLOCKED; T084 is NOT STARTED and remains gated on
+T083.
 
 ### T081 — Approval persistence and migration [C after T080]
 Implement only the approved tenant-scoped approval record and constraints.
@@ -223,15 +225,17 @@ Status: COMPLETE; Strong Review APPROVED; committed and pushed.
 ### T082 — Approval service and decision APIs [B after T081]
 Create/read/approve/reject with immutable proposed action, owner/admin policy,
 single terminal decision, stale-run checks, and sanitized audit evidence.
-Status: implementation complete; awaiting independent Strong Review.
+Status: COMPLETE; Strong Review APPROVED; committed and pushed to origin.
 
 ### T083 — Runtime approval boundary [A after T082]
 Classify before an effect, persist the checkpoint before waiting, and expose the
 minimal WAITING_APPROVAL result without changing unrelated lifecycle states.
+Status: NOT STARTED; unblocked by completed T082.
 
 ### T084 — Resume and idempotent approved action [A/B after T083]
 Resume the exact run/step after approval, fail closed on rejection/cancellation,
 and prove one approved mock effect under duplicate HTTP/worker delivery.
+Status: NOT STARTED; gated on T083.
 
 ### T085 — Phase 6 final audit [A, read-only after T084]
 Collect migration, authorization, race, replay, redaction, lifecycle, and

@@ -120,9 +120,10 @@ standalone cards because their behavior is covered by T083/T084.
 Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
 Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
 
-T081 is Strong Review approved, committed, and pushed. T082 implementation is
-complete and awaits independent Strong Review. T083–T084 have not started and
-remain gated on completed T082 and their DAG dependencies.
+T081 is COMPLETE and Strong Review approved, committed, and pushed. T082 is
+COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is
+NOT STARTED and unblocked by T082. T084 is NOT STARTED and remains gated on
+T083 and its DAG dependencies.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the

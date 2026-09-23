@@ -109,10 +109,11 @@ Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, permission o
 The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed; Phase 5 implementation is complete and the Phase 5 Final Audit is approved. The initial audit returned NOT APPROVED solely because canonical status documentation was stale; the focused re-review subsequently approved Phase 5, which is complete.
 
 Phase 6 Planning is approved, frozen, committed, and published. T080 is
-complete and approved; T081 Approval persistence is approved, committed, and
-published. T082 adds the service-owned create/reuse and decision boundary with
-protected nested reads and decisions; it is awaiting independent Strong Review.
-T083 runtime pause/resume and T084 action claim/effect work have not started.
+complete and approved; T081 Approval persistence is complete with Strong Review
+approval, committed, and pushed. T082 Approval service and decision APIs are
+complete, Strong Review approved, committed, and pushed to origin. T083 runtime
+pause/resume has not started and is unblocked by T082. T084 action claim/effect
+work has not started and remains gated by T083.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
