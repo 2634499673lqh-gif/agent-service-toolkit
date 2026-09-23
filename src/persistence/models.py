@@ -1,5 +1,6 @@
 """TaskPilot business ORM models."""
 
+import json
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
@@ -19,6 +20,7 @@ from sqlalchemy import (
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from persistence.base import Base
@@ -29,6 +31,46 @@ def utc_now() -> datetime:
     """Return an aware UTC timestamp for application-managed fields."""
 
     return datetime.now(UTC)
+
+
+APPROVAL_JSON_MAX_BYTES = 8192
+
+
+def _validate_approval_json_object(value: object, field_name: str) -> dict[str, Any]:
+    """Validate one bounded, canonical-JSON-compatible Approval object."""
+
+    def is_json_value(candidate: object) -> bool:
+        if candidate is None or isinstance(candidate, (str, bool, int, float)):
+            return True
+        if isinstance(candidate, list):
+            return all(is_json_value(item) for item in candidate)
+        if isinstance(candidate, dict):
+            return all(
+                isinstance(key, str) and is_json_value(item) for key, item in candidate.items()
+            )
+        return False
+
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    try:
+        is_valid_object = is_json_value(value)
+    except RecursionError:
+        is_valid_object = False
+    if not is_valid_object:
+        raise ValueError(f"{field_name} must be a JSON object")
+    try:
+        canonical_json = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
+        raise ValueError(f"{field_name} must be a JSON object") from None
+    if len(canonical_json) > APPROVAL_JSON_MAX_BYTES:
+        raise ValueError(f"{field_name} exceeds {APPROVAL_JSON_MAX_BYTES} UTF-8 bytes")
+    return value
 
 
 class Role(Enum):
@@ -461,4 +503,272 @@ class TaskRun(Base):
             run_number=run_number,
             status=status,
             **kwargs,
+        )
+
+
+class ApprovalRiskLevel(Enum):
+    """Risk level for persisted approval proposals; only L2 creates a row."""
+
+    L2 = "L2"
+
+
+class ApprovalStatus(Enum):
+    """Terminal human decision state for one approval proposal."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ApprovalActionState(Enum):
+    """State of the single approved mock action stored on an Approval."""
+
+    AVAILABLE = "available"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Approval(Base):
+    """Tenant-owned approval evidence linked to a TaskRun, without tenant duplication."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        CheckConstraint(
+            "replan_count BETWEEN 0 AND 1",
+            name="approval_replan_count_range",
+        ),
+        CheckConstraint("step_position >= 0", name="approval_step_position_nonnegative"),
+        CheckConstraint("action_name ~ '[^[:space:]]'", name="approval_action_name_not_blank"),
+        CheckConstraint(
+            "action_version ~ '[^[:space:]]'",
+            name="approval_action_version_not_blank",
+        ),
+        CheckConstraint(
+            "char_length(action_name) <= 128 AND char_length(action_version) <= 64",
+            name="approval_action_identity_length",
+        ),
+        CheckConstraint("risk_level IN ('L2')", name="approval_risk_level_valid"),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected')",
+            name="approval_status_valid",
+        ),
+        CheckConstraint(
+            "action_state IN ('available', 'completed', 'failed')",
+            name="approval_action_state_valid",
+        ),
+        CheckConstraint(
+            "decision_reason IS NULL OR char_length(decision_reason) <= 500",
+            name="approval_decision_reason_length",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(proposed_action) = 'object'",
+            name="approval_proposed_action_object",
+        ),
+        CheckConstraint(
+            "outcome IS NULL OR jsonb_typeof(outcome) = 'object'",
+            name="approval_outcome_object",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND decider_membership_id IS NULL "
+            "AND decided_at IS NULL AND decision_reason IS NULL) OR "
+            "(status IN ('approved', 'rejected') AND "
+            "decider_membership_id IS NOT NULL AND decided_at IS NOT NULL)",
+            name="approval_decision_fields_consistent",
+        ),
+        CheckConstraint(
+            "(action_state = 'available' AND outcome IS NULL "
+            "AND action_finished_at IS NULL) OR "
+            "(action_state = 'completed' AND status = 'approved' "
+            "AND outcome IS NOT NULL AND action_finished_at IS NOT NULL "
+            "AND outcome ? 'step_position' AND outcome ? 'success' "
+            "AND (outcome - ARRAY['step_position', 'success', 'output', "
+            "'error_code', 'error_message']::text[]) = '{}'::jsonb "
+            "AND jsonb_typeof(outcome->'step_position') = 'number' "
+            "AND outcome->'step_position' = to_jsonb(step_position + 1) "
+            "AND jsonb_typeof(outcome->'success') = 'boolean' "
+            "AND outcome->'success' = 'true'::jsonb "
+            "AND jsonb_typeof(outcome->'output') = 'string' "
+            "AND char_length(outcome->>'output') <= 2000 "
+            "AND (outcome->'error_code' IS NULL "
+            "OR outcome->'error_code' = 'null'::jsonb) "
+            "AND (outcome->'error_message' IS NULL "
+            "OR outcome->'error_message' = 'null'::jsonb)) OR "
+            "(action_state = 'failed' AND status = 'approved' "
+            "AND outcome IS NOT NULL AND action_finished_at IS NOT NULL "
+            "AND outcome ? 'step_position' AND outcome ? 'success' "
+            "AND (outcome - ARRAY['step_position', 'success', 'output', "
+            "'error_code', 'error_message']::text[]) = '{}'::jsonb "
+            "AND jsonb_typeof(outcome->'step_position') = 'number' "
+            "AND outcome->'step_position' = to_jsonb(step_position + 1) "
+            "AND jsonb_typeof(outcome->'success') = 'boolean' "
+            "AND outcome->'success' = 'false'::jsonb "
+            "AND (outcome->'output' IS NULL "
+            "OR outcome->'output' = 'null'::jsonb) "
+            "AND jsonb_typeof(outcome->'error_code') = 'string' "
+            "AND outcome->>'error_code' ~ '[^[:space:]]' "
+            "AND char_length(outcome->>'error_code') <= 64 "
+            "AND (outcome->'error_message' IS NULL "
+            "OR outcome->'error_message' = 'null'::jsonb "
+            "OR (jsonb_typeof(outcome->'error_message') = 'string' "
+            "AND char_length(outcome->>'error_message') <= 500)))",
+            name="approval_action_outcome_consistent",
+        ),
+        UniqueConstraint(
+            "task_run_id",
+            "replan_count",
+            "step_position",
+            name="uq_approvals_run_replan_step",
+        ),
+        Index("ix_approvals_task_run_id_status", "task_run_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    task_run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.task_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    replan_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    action_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposed_action: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    risk_level: Mapped[ApprovalRiskLevel] = mapped_column(
+        sa.Enum(
+            ApprovalRiskLevel,
+            name="approval_risk_level",
+            native_enum=False,
+            create_constraint=False,
+            length=2,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+    )
+    requester_membership_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.memberships.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[ApprovalStatus] = mapped_column(
+        sa.Enum(
+            ApprovalStatus,
+            name="approval_status",
+            native_enum=False,
+            create_constraint=False,
+            length=8,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=ApprovalStatus.PENDING,
+        server_default=text("'pending'"),
+    )
+    decider_membership_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.memberships.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    action_state: Mapped[ApprovalActionState] = mapped_column(
+        sa.Enum(
+            ApprovalActionState,
+            name="approval_action_state",
+            native_enum=False,
+            create_constraint=False,
+            length=9,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=ApprovalActionState.AVAILABLE,
+        server_default=text("'available'"),
+    )
+    outcome: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    action_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    def __init__(
+        self,
+        *,
+        task_run_id: UUID,
+        replan_count: int,
+        step_position: int,
+        action_name: str,
+        action_version: str,
+        proposed_action: dict[str, Any],
+        requester_membership_id: UUID,
+        risk_level: ApprovalRiskLevel | str = ApprovalRiskLevel.L2,
+        status: ApprovalStatus | str = ApprovalStatus.PENDING,
+        action_state: ApprovalActionState | str = ApprovalActionState.AVAILABLE,
+        **kwargs: Any,
+    ) -> None:
+        """Build one Approval row with explicit run and actor ownership."""
+
+        if not isinstance(risk_level, ApprovalRiskLevel):
+            risk_level = ApprovalRiskLevel(risk_level)
+        if not isinstance(status, ApprovalStatus):
+            status = ApprovalStatus(status)
+        if not isinstance(action_state, ApprovalActionState):
+            action_state = ApprovalActionState(action_state)
+        super().__init__(
+            task_run_id=task_run_id,
+            replan_count=replan_count,
+            step_position=step_position,
+            action_name=action_name,
+            action_version=action_version,
+            proposed_action=proposed_action,
+            requester_membership_id=requester_membership_id,
+            risk_level=risk_level,
+            status=status,
+            action_state=action_state,
+            **kwargs,
+        )
+
+    @validates("action_name")
+    def validate_action_name(self, _key: str, value: str) -> str:
+        if not value.strip() or len(value) > 128:
+            raise ValueError("action_name must be non-empty and at most 128 characters")
+        return value
+
+    @validates("action_version")
+    def validate_action_version(self, _key: str, value: str) -> str:
+        if not value.strip() or len(value) > 64:
+            raise ValueError("action_version must be non-empty and at most 64 characters")
+        return value
+
+    @validates("decision_reason")
+    def validate_decision_reason(self, _key: str, value: str | None) -> str | None:
+        if value is not None and len(value) > 500:
+            raise ValueError("decision_reason must be at most 500 characters")
+        return value
+
+    @validates("proposed_action")
+    def validate_proposed_action(self, _key: str, value: object) -> dict[str, Any]:
+        return _validate_approval_json_object(value, "proposed_action")
+
+    @validates("outcome")
+    def validate_outcome(self, _key: str, value: object | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        return _validate_approval_json_object(value, "outcome")
+
+    def __repr__(self) -> str:
+        """Expose approval identity/state, never its proposed or outcome payload."""
+
+        return (
+            f"Approval(id={self.id!r}, task_run_id={self.task_run_id!r}, "
+            f"status={self.status!r}, action_state={self.action_state!r})"
         )

@@ -1,3 +1,63 @@
+### 2026-09-23 — T081 Approval persistence implementation
+
+Status: T081 implementation and live PostgreSQL acceptance evidence are
+complete; READY FOR INDEPENDENT STRONG REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`11767adb6e5215d1a671987fefc3fd7eb9e8ae01`; tracked working tree was clean
+before T081 edits (the repository reports pre-existing inaccessible
+`.pytest-tmp-t032/` and `.pytest-tmp-t034/` directories).
+
+Authority: `AGENTS.md`, `process/tasks/T081.md`, accepted/frozen
+`process/ADR-008.md` B1, existing Task/TaskRun/tenant repository/migration and
+transaction conventions, and the existing `ExecutionResult` contract.
+
+What changed: added one Approval ORM model and one `t033_approval` migration;
+Approval identity, L2-only risk, FKs, state checks, JSON object shapes, action
+outcome bounds, uniqueness, and run/status index are persisted. Added SQL
+tenant-scoped reads through Approval -> TaskRun -> Task and flush-only insert
+ownership. Added model/repository contracts and PostgreSQL integration cases
+for migration coexistence/downgrade, tenant isolation, integrity failures,
+FK RESTRICT, valid terminal result shapes, and rollback. Updated the database
+and security guides to reflect that persistence exists while T082+ behavior
+remains deferred. Live PostgreSQL exposed two test assertion issues: PostgreSQL
+reports the unique constraint's backing index alongside the explicit index,
+and a separately loaded ORM row must be compared by identity rather than
+Python object equality. The tests now assert both index entries and compare
+Approval IDs. No production code fix was needed.
+
+Files changed: `src/persistence/models.py`, `src/persistence/repositories.py`,
+`migrations/env.py`, `migrations/versions/20260923_01_approval.py`,
+`tests/persistence/test_foundation.py`,
+`tests/persistence/test_postgres_integration.py`, `docs/DATABASE_DESIGN.md`,
+`docs/SECURITY_HITL.md`, and this log.
+
+Validation run: `uv run pytest tests/persistence/test_foundation.py -q` — 32
+passed. Live PostgreSQL 16 used a separate Compose project on loopback port
+55432 with a new project-scoped volume; the pre-existing
+`agent-service-toolkit_postgres_data` volume was left untouched. The combined
+`scenario_a_langgraph_then_taskpilot_and_downgrade or
+approval_tenant_integrity_constraints_and_rollback` run passed 2 tests (21
+deselected); `scenario_b_taskpilot_then_langgraph` passed 1 test (22
+deselected). Together these verify T033 upgrade/downgrade/re-upgrade,
+coexistence in both setup orders, Approval constraints/FK restrictions,
+tenant-scoped reads, and transaction rollback. `uv run alembic history` — T033
+is the sole head; offline upgrade/downgrade SQL generation also passed.
+`uv run ruff check`, `uv run ruff format --check`, `uv run pyrefly check` (0
+errors), and `git diff --check` passed. The isolated Compose container,
+network, and task-owned volume were removed after testing.
+
+Scope: this evidence follow-up changed only the PostgreSQL integration test
+assertions and this progress entry. No T082 service/API, T083 runtime/resume
+boundary, T084 action claim, production behavior, or dependencies were added.
+
+Learner note: the database proves the durable identity, field shape, and
+ownership path; a repository proves tenant visibility inside SQL; a service
+will later own transitions and transaction commit/rollback. Read ADR-008 B1,
+the Approval model, migration, repository, and the PostgreSQL integration test.
+
+Suggested next task: independent Strong Review of T081.
+
 ### 2026-09-23 — T080 final approval
 
 Status: T080 COMPLETE; Strong Review APPROVED.

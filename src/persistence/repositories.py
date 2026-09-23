@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.identity import canonicalize_email
 from persistence.models import (
+    Approval,
     AuthSession,
     Membership,
     Organization,
@@ -208,6 +209,96 @@ class TaskRunRepository:
                 Task.organization_id == organization_id,
             )
             .order_by(TaskRun.run_number, TaskRun.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+
+class ApprovalRepository:
+    """Tenant-scoped persistence operations for Approval records.
+
+    Every read resolves ownership through Approval -> TaskRun -> Task in SQL.
+    This repository flushes inserts but leaves transaction ownership to the
+    calling service.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def add(self, approval: Approval) -> Approval:
+        """Stage and flush an Approval without committing its transaction."""
+
+        self.session.add(approval)
+        await self.session.flush()
+        return approval
+
+    async def get_for_task_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        approval_id: UUID,
+        principal_organization_id: UUID,
+    ) -> Approval | None:
+        """Load one Approval only through its requested visible Task and run."""
+
+        statement = (
+            select(Approval)
+            .join(TaskRun, TaskRun.id == Approval.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                Approval.id == approval_id,
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_action_identity_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        replan_count: int,
+        step_position: int,
+        principal_organization_id: UUID,
+    ) -> Approval | None:
+        """Load an Approval by its canonical action identity inside one tenant."""
+
+        statement = (
+            select(Approval)
+            .join(TaskRun, TaskRun.id == Approval.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+                Approval.replan_count == replan_count,
+                Approval.step_position == step_position,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def list_for_task_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> list[Approval]:
+        """List a run's Approvals only through the requested visible Task."""
+
+        statement = (
+            select(Approval)
+            .join(TaskRun, TaskRun.id == Approval.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .order_by(Approval.created_at, Approval.id)
         )
         result = await self.session.scalars(statement)
         return list(result)

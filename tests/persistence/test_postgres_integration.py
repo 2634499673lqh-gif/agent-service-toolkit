@@ -29,6 +29,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from persistence.engine import create_async_engine, create_session_factory, get_business_session
 from persistence.models import (
+    Approval,
+    ApprovalActionState,
+    ApprovalStatus,
     AuthSession,
     Membership,
     Organization,
@@ -41,6 +44,7 @@ from persistence.models import (
 )
 from persistence.passwords import hash_password, verify_password
 from persistence.repositories import (
+    ApprovalRepository,
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
@@ -72,7 +76,8 @@ T022A_REVISION = "t022a_membership"
 T023_REVISION = "t023_auth_session"
 T031_REVISION = "t031_task"
 T032_REVISION = "t032_task_run"
-EXPECTED_REVISION = T032_REVISION
+T033_REVISION = "t033_approval"
+EXPECTED_REVISION = T033_REVISION
 
 
 def _configured_test_url() -> str:
@@ -178,8 +183,11 @@ async def _assert_taskpilot_schema(
     users_expected: bool = True,
     memberships_expected: bool = True,
     sessions_expected: bool = True,
+    approvals_expected: bool | None = None,
     expected_tables: set[str] | None = None,
 ) -> None:
+    if approvals_expected is None:
+        approvals_expected = expected_revision == T033_REVISION
     async with engine.connect() as connection:
         schemas = set(await connection.run_sync(lambda conn: inspect(conn).get_schema_names()))
         tables = set(
@@ -334,8 +342,10 @@ async def _assert_taskpilot_schema(
         if sessions_expected:
             expected_tables.add("auth_sessions")
         expected_tables.add("tasks")
-        if expected_revision == T032_REVISION:
+        if expected_revision in {T032_REVISION, T033_REVISION}:
             expected_tables.add("task_runs")
+        if approvals_expected:
+            expected_tables.add("approvals")
     assert tables == expected_tables
     assert revision == expected_revision
     assert version_relation == "taskpilot.alembic_version"
@@ -465,7 +475,7 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.tasks"},
     )
-    if expected_revision in {T031_REVISION, T032_REVISION}:
+    if expected_revision in {T031_REVISION, T032_REVISION, T033_REVISION}:
         assert tasks_relation == "taskpilot.tasks"
         task_columns = {
             column["name"]: column
@@ -525,7 +535,7 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.task_runs"},
     )
-    if expected_revision == T032_REVISION:
+    if expected_revision in {T032_REVISION, T033_REVISION}:
         assert task_runs_relation == "taskpilot.task_runs"
         task_run_columns = {
             column["name"]: column
@@ -585,6 +595,110 @@ async def _assert_taskpilot_schema(
         assert task_run_foreign_keys[0]["options"].get("ondelete") == "RESTRICT"
     else:
         assert task_runs_relation is None
+
+    approvals_relation = await task_connection.scalar(
+        text("SELECT to_regclass(:qualified_name)"),
+        {"qualified_name": "taskpilot.approvals"},
+    )
+    if approvals_expected:
+        assert approvals_relation == "taskpilot.approvals"
+        approval_columns = {
+            column["name"]: column
+            for column in await task_connection.run_sync(
+                lambda conn: inspect(conn).get_columns("approvals", schema="taskpilot")
+            )
+        }
+        assert set(approval_columns) == {
+            "id",
+            "task_run_id",
+            "replan_count",
+            "step_position",
+            "action_name",
+            "action_version",
+            "proposed_action",
+            "risk_level",
+            "requester_membership_id",
+            "status",
+            "decider_membership_id",
+            "decided_at",
+            "decision_reason",
+            "created_at",
+            "updated_at",
+            "action_state",
+            "outcome",
+            "action_finished_at",
+        }
+        assert str(approval_columns["id"]["type"]) == "UUID"
+        assert str(approval_columns["task_run_id"]["type"]) == "UUID"
+        assert approval_columns["proposed_action"]["nullable"] is False
+        assert approval_columns["outcome"]["nullable"] is True
+        for column_name in ("decided_at", "created_at", "updated_at", "action_finished_at"):
+            assert approval_columns[column_name]["type"].timezone is True
+        approval_checks = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_check_constraints("approvals", schema="taskpilot")
+        )
+        assert {constraint["name"] for constraint in approval_checks} == {
+            "ck_approvals_approval_replan_count_range",
+            "ck_approvals_approval_step_position_nonnegative",
+            "ck_approvals_approval_action_name_not_blank",
+            "ck_approvals_approval_action_version_not_blank",
+            "ck_approvals_approval_action_identity_length",
+            "ck_approvals_approval_risk_level_valid",
+            "ck_approvals_approval_status_valid",
+            "ck_approvals_approval_action_state_valid",
+            "ck_approvals_approval_decision_reason_length",
+            "ck_approvals_approval_proposed_action_object",
+            "ck_approvals_approval_outcome_object",
+            "ck_approvals_approval_decision_fields_consistent",
+            "ck_approvals_approval_action_outcome_consistent",
+        }
+        approval_unique_constraints = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_unique_constraints("approvals", schema="taskpilot")
+        )
+        assert {
+            (constraint["name"], tuple(constraint["column_names"]))
+            for constraint in approval_unique_constraints
+        } == {
+            (
+                "uq_approvals_run_replan_step",
+                ("task_run_id", "replan_count", "step_position"),
+            )
+        }
+        approval_indexes = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_indexes("approvals", schema="taskpilot")
+        )
+        assert {(index["name"], tuple(index["column_names"])) for index in approval_indexes} == {
+            ("ix_approvals_task_run_id_status", ("task_run_id", "status")),
+            (
+                "uq_approvals_run_replan_step",
+                ("task_run_id", "replan_count", "step_position"),
+            ),
+        }
+        approval_foreign_keys = await task_connection.run_sync(
+            lambda conn: inspect(conn).get_foreign_keys("approvals", schema="taskpilot")
+        )
+        foreign_keys_by_column = {
+            tuple(foreign_key["constrained_columns"]): foreign_key
+            for foreign_key in approval_foreign_keys
+        }
+        assert set(foreign_keys_by_column) == {
+            ("task_run_id",),
+            ("requester_membership_id",),
+            ("decider_membership_id",),
+        }
+        assert foreign_keys_by_column[("task_run_id",)]["referred_table"] == "task_runs"
+        assert foreign_keys_by_column[("requester_membership_id",)]["referred_table"] == (
+            "memberships"
+        )
+        assert foreign_keys_by_column[("decider_membership_id",)]["referred_table"] == (
+            "memberships"
+        )
+        assert all(
+            foreign_key["options"].get("ondelete") == "RESTRICT"
+            for foreign_key in foreign_keys_by_column.values()
+        )
+    else:
+        assert approvals_relation is None
     await task_connection.close()
 
 
@@ -598,6 +712,12 @@ async def test_scenario_a_langgraph_then_taskpilot_and_downgrade() -> None:
             await _run_alembic(config, "upgrade", "head")
             await _assert_taskpilot_schema(engine)
             await _langgraph_read(database_url, "scenario-a")
+            # T033 -> T032 must remove only Approval persistence.
+            await _run_alembic(config, "downgrade", T032_REVISION)
+            await _assert_taskpilot_schema(engine, expected_revision=T032_REVISION)
+            await _langgraph_read(database_url, "scenario-a")
+            await _run_alembic(config, "upgrade", "head")
+            await _assert_taskpilot_schema(engine)
             # T032 -> T031 must remove only the TaskRun table and active-run index.
             await _run_alembic(config, "downgrade", T031_REVISION)
             await _assert_taskpilot_schema(
@@ -916,6 +1036,309 @@ async def test_task_run_persistence_and_active_run_constraints(
         async with get_business_session(session_factory) as session:
             async with session.begin():
                 await session.execute(delete(Task).where(Task.id == task.id))
+
+
+@pytest.mark.asyncio
+async def test_approval_tenant_integrity_constraints_and_rollback(
+    migrated_engine: AsyncEngine,
+) -> None:
+    session_factory = create_session_factory(migrated_engine)
+    organization_a = Organization(name="Approval Tenant A")
+    organization_b = Organization(name="Approval Tenant B")
+    user_a = User(email="approval-a@example.com", password_hash="opaque-test-hash")
+    user_b = User(email="approval-b@example.com", password_hash="opaque-test-hash")
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization_a)
+            await OrganizationRepository(session).add(organization_b)
+            await UserRepository(session).add(user_a)
+            await UserRepository(session).add(user_b)
+            member_a = Membership(
+                user_id=user_a.id,
+                organization_id=organization_a.id,
+                role=Role.OWNER,
+            )
+            member_b = Membership(
+                user_id=user_b.id,
+                organization_id=organization_b.id,
+                role=Role.OWNER,
+            )
+            await MembershipRepository(session).add(member_a)
+            await MembershipRepository(session).add(member_b)
+            task_a = Task(
+                organization_id=organization_a.id,
+                created_by_user_id=user_a.id,
+                title="Approval tenant A task",
+            )
+            task_b = Task(
+                organization_id=organization_b.id,
+                created_by_user_id=user_b.id,
+                title="Approval tenant B task",
+            )
+            await TaskRepository(session).add(task_a)
+            await TaskRepository(session).add(task_b)
+            run_a = TaskRun(task_id=task_a.id, run_number=1)
+            run_b = TaskRun(task_id=task_b.id, run_number=1)
+            await TaskRunRepository(session).add(run_a)
+            await TaskRunRepository(session).add(run_b)
+            own_approval = Approval(
+                task_run_id=run_a.id,
+                replan_count=0,
+                step_position=0,
+                action_name="send_report",
+                action_version="1",
+                proposed_action={"recipient": "a@example.com"},
+                requester_membership_id=member_a.id,
+            )
+            foreign_approval = Approval(
+                task_run_id=run_b.id,
+                replan_count=0,
+                step_position=0,
+                action_name="send_report",
+                action_version="1",
+                proposed_action={"recipient": "b@example.com"},
+                requester_membership_id=member_b.id,
+            )
+            await ApprovalRepository(session).add(own_approval)
+            await ApprovalRepository(session).add(foreign_approval)
+
+    async with get_business_session(session_factory) as session:
+        repository = ApprovalRepository(session)
+        assert (
+            await repository.get_for_task_run_in_principal_tenant(
+                task_a.id, run_a.id, own_approval.id, organization_a.id
+            )
+        ) is not None
+        assert (
+            await repository.get_for_task_run_in_principal_tenant(
+                task_b.id, run_b.id, foreign_approval.id, organization_a.id
+            )
+            is None
+        )
+        assert (
+            await repository.get_for_task_run_in_principal_tenant(
+                task_a.id, run_b.id, foreign_approval.id, organization_a.id
+            )
+            is None
+        )
+        assert (
+            await repository.get_for_action_identity_in_principal_tenant(
+                task_a.id, run_a.id, 0, 0, organization_a.id
+            )
+        ) is not None
+        assert [
+            approval.id
+            for approval in await repository.list_for_task_run_in_principal_tenant(
+                task_a.id, run_a.id, organization_a.id
+            )
+        ] == [own_approval.id]
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(
+                    Approval(
+                        task_run_id=uuid4(),
+                        replan_count=0,
+                        step_position=1,
+                        action_name="send_report",
+                        action_version="1",
+                        proposed_action={},
+                        requester_membership_id=member_a.id,
+                    )
+                )
+                await session.flush()
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(
+                    Approval(
+                        task_run_id=run_a.id,
+                        replan_count=0,
+                        step_position=1,
+                        action_name="send_report",
+                        action_version="1",
+                        proposed_action={},
+                        requester_membership_id=uuid4(),
+                    )
+                )
+                await session.flush()
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await ApprovalRepository(session).add(
+                    Approval(
+                        task_run_id=run_a.id,
+                        replan_count=0,
+                        step_position=0,
+                        action_name="send_report",
+                        action_version="1",
+                        proposed_action={},
+                        requester_membership_id=member_a.id,
+                    )
+                )
+    for invalid_replan_count, invalid_step_position in ((2, 1), (1, -1)):
+        with pytest.raises(IntegrityError):
+            async with get_business_session(session_factory) as session:
+                async with session.begin():
+                    session.add(
+                        Approval(
+                            task_run_id=run_a.id,
+                            replan_count=invalid_replan_count,
+                            step_position=invalid_step_position,
+                            action_name="send_report",
+                            action_version="1",
+                            proposed_action={},
+                            requester_membership_id=member_a.id,
+                        )
+                    )
+                    await session.flush()
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(
+                    Approval(
+                        task_run_id=run_a.id,
+                        replan_count=1,
+                        step_position=1,
+                        action_name="send_report",
+                        action_version="1",
+                        proposed_action={},
+                        requester_membership_id=member_a.id,
+                        status=ApprovalStatus.APPROVED,
+                    )
+                )
+                await session.flush()
+
+    invalid_enum_insert = text(
+        "INSERT INTO taskpilot.approvals "
+        "(id, task_run_id, replan_count, step_position, action_name, action_version, "
+        "proposed_action, risk_level, requester_membership_id, status, action_state) "
+        "VALUES (:id, :task_run_id, 1, 2, 'send_report', '1', CAST('{}' AS jsonb), "
+        ":risk_level, :requester_membership_id, :status, :action_state)"
+    )
+    for invalid_risk, status, action_state in (
+        ("L1", "pending", "available"),
+        ("L3", "pending", "available"),
+        ("L2", "decided", "available"),
+        ("L2", "pending", "claimed"),
+    ):
+        with pytest.raises(IntegrityError):
+            async with get_business_session(session_factory) as session:
+                async with session.begin():
+                    await session.execute(
+                        invalid_enum_insert,
+                        {
+                            "id": uuid4(),
+                            "task_run_id": run_a.id,
+                            "risk_level": invalid_risk,
+                            "requester_membership_id": member_a.id,
+                            "status": status,
+                            "action_state": action_state,
+                        },
+                    )
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO taskpilot.approvals "
+                        "(id, task_run_id, replan_count, step_position, action_name, "
+                        "action_version, proposed_action, risk_level, requester_membership_id) "
+                        "VALUES (:id, :task_run_id, 1, 3, 'send_report', '1', "
+                        "CAST('[]' AS jsonb), 'L2', :requester_membership_id)"
+                    ),
+                    {
+                        "id": uuid4(),
+                        "task_run_id": run_a.id,
+                        "requester_membership_id": member_a.id,
+                    },
+                )
+
+    valid_finished = Approval(
+        task_run_id=run_a.id,
+        replan_count=1,
+        step_position=4,
+        action_name="send_report",
+        action_version="1",
+        proposed_action={"recipient": "a@example.com"},
+        requester_membership_id=member_a.id,
+        status=ApprovalStatus.APPROVED,
+        decider_membership_id=member_a.id,
+        decided_at=datetime.now(UTC),
+        action_state=ApprovalActionState.COMPLETED,
+        outcome={"step_position": 5, "success": True, "output": "done"},
+        action_finished_at=datetime.now(UTC),
+    )
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await ApprovalRepository(session).add(valid_finished)
+
+    valid_failure = Approval(
+        task_run_id=run_a.id,
+        replan_count=1,
+        step_position=7,
+        action_name="send_report",
+        action_version="1",
+        proposed_action={"recipient": "a@example.com"},
+        requester_membership_id=member_a.id,
+        status=ApprovalStatus.APPROVED,
+        decider_membership_id=member_a.id,
+        decided_at=datetime.now(UTC),
+        action_state=ApprovalActionState.FAILED,
+        outcome={"step_position": 8, "success": False, "error_code": "failed"},
+        action_finished_at=datetime.now(UTC),
+    )
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await ApprovalRepository(session).add(valid_failure)
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                session.add(
+                    Approval(
+                        task_run_id=run_a.id,
+                        replan_count=1,
+                        step_position=5,
+                        action_name="send_report",
+                        action_version="1",
+                        proposed_action={},
+                        requester_membership_id=member_a.id,
+                        status=ApprovalStatus.APPROVED,
+                        decider_membership_id=member_a.id,
+                        decided_at=datetime.now(UTC),
+                        action_state=ApprovalActionState.COMPLETED,
+                        outcome={"step_position": 7, "success": True, "output": "done"},
+                        action_finished_at=datetime.now(UTC),
+                    )
+                )
+                await session.flush()
+
+    for statement in (
+        delete(TaskRun).where(TaskRun.id == run_a.id),
+        delete(Membership).where(Membership.id == member_a.id),
+    ):
+        with pytest.raises(IntegrityError):
+            async with get_business_session(session_factory) as session:
+                async with session.begin():
+                    await session.execute(statement)
+
+    rollback_id = uuid4()
+    async with get_business_session(session_factory) as session:
+        uncommitted = Approval(
+            id=rollback_id,
+            task_run_id=run_a.id,
+            replan_count=1,
+            step_position=6,
+            action_name="send_report",
+            action_version="1",
+            proposed_action={"recipient": "a@example.com"},
+            requester_membership_id=member_a.id,
+        )
+        await ApprovalRepository(session).add(uncommitted)
+    async with get_business_session(session_factory) as session:
+        assert await session.get(Approval, rollback_id) is None
 
 
 @pytest.mark.asyncio

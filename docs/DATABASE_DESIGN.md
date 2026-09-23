@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 identity architecture and the T021–T023 schema, plus the Phase 3 T031/T032/T034 Task domain persistence and repository foundations. ADR-004 and ADR-005 are authoritative.
+This document records the Phase 2 identity architecture and the T021–T023 schema, the Phase 3 T031/T032/T034 Task domain, and T081 Approval persistence. ADR-004, ADR-005, and accepted ADR-008 are authoritative for their respective domains.
 
 ## Ownership and bootstrap
 
@@ -56,6 +56,27 @@ within a Task and terminal history can contain multiple rows. PostgreSQL also
 owns a partial unique index over `task_id` for `pending` and `running` rows;
 this enforces at most one active run per Task. T035 still owns legal lifecycle
 transitions and synchronization between Task and TaskRun states.
+
+## Approval persistence foundation (T081)
+
+`approvals` stores one bounded approval record for a TaskRun plan slot. Its
+canonical identity is unique on `(task_run_id, replan_count, step_position)`;
+`step_position` is zero-based and corresponds to one-based
+`ExecutionResult.step_position`. The row stores the complete bounded JSONB
+proposal, the L2-only risk level, requester/optional decider memberships,
+decision state and timestamps, and the bounded terminal action outcome. Named
+database checks constrain ranges, enums, JSON object types, decision fields,
+and outcome shape. The ORM rejects non-object/non-JSON values and proposals or
+outcomes whose canonical compact UTF-8 JSON exceeds 8,192 bytes.
+
+Ownership is normalized through `approvals.task_run_id -> task_runs.task_id ->
+tasks.organization_id`; Approval has no duplicate Task or tenant column. The
+run and membership foreign keys use `ON DELETE RESTRICT`. The
+`(task_run_id, status)` index supports run/status lookup. `ApprovalRepository`
+keeps the full TaskRun-to-Task join and principal organization predicate in
+every read query; `add()` flushes but leaves commit/rollback to its caller.
+T081 adds persistence only; decision services, HTTP routes, runtime pause and
+resume, and action claims remain later-task work.
 
 ## Tenant-scoped repository boundary (T034)
 
@@ -138,7 +159,7 @@ FastAPI dependencies acquire and close an async SQLAlchemy session. A service co
 
 ## Other domains
 
-Future task, run, approval, knowledge, memory, and audit tables must carry explicit organization ownership and follow the same FK, index, timestamp, and tenant-filter rules. The existing LangGraph SQLite/PostgreSQL adapters remain conversation/checkpoint infrastructure, not TaskPilot business persistence.
+Future knowledge, memory, and audit tables must carry explicit organization ownership and follow the same FK, index, timestamp, and tenant-filter rules. Task, TaskRun, and Approval ownership is already represented by the normalized TaskRun-to-Task path described above. The existing LangGraph SQLite/PostgreSQL adapters remain conversation/checkpoint infrastructure, not TaskPilot business persistence.
 
 Phase 4 planning (proposed ADR-006/T040) preserves this boundary: no
 TaskStep table or migration is introduced; LangGraph checkpoint/store tables
@@ -154,4 +175,4 @@ The first Organization + owner User + owner Membership is created only by `scrip
 
 ## Verification (T021–T026)
 
-The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session` -> `t031_task` -> `t032_task_run`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, transaction rollback, independent sessions, and expired-session cleanup. `tests/persistence/test_foundation.py` asserts that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All of these require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.
+The revision chain is linear and owned entirely by TaskPilot: `t021_organization` -> `t022_user` -> `t022a_membership` -> `t023_auth_session` -> `t031_task` -> `t032_task_run` -> `t033_approval`, with the version table in `taskpilot.alembic_version`. `tests/persistence/test_postgres_integration.py` creates one uniquely named disposable database per scenario and proves fresh-DB creation, LangGraph coexistence in both setup orders, revision metadata and constraints, per-revision downgrade/re-upgrade, tenant scoping, and transaction rollback. `tests/persistence/test_foundation.py` asserts model/repository contracts and that no module under `src/` imports the Alembic toolchain, so application startup can neither migrate nor downgrade. `tests/persistence/test_security_matrix_integration.py` (T026) proves the identity and tenant rules against the same schema. All database-backed checks require `TASKPILOT_TEST_DATABASE_URL`; without it they skip and prove nothing.
