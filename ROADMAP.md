@@ -110,13 +110,24 @@ Phase 4/T051 is approved, complete, and merged to `main`. T060–T064 are implem
 Exit: one deterministic read-only capability is selected and dispatched through the existing Executor; capability context is typed, bounded, provenance-labeled, sanitized, and explainable; retry/replan/checkpoint/resume and tenant boundaries remain unchanged.
 
 No real external effects, credentials, dynamic registry/plugin platform, new persistence, public runtime API, HITL, memory/knowledge subsystem, or exactly-once guarantee is included.
-## Phase 6 — Human-in-the-loop & Safety [STRONG MODEL]
+## Phase 6 — Human-in-the-loop & Safety [PLANNING PACKAGE]
 
-Tasks: see the canonical backlog IDs T080–T088.
+Canonical DAG: `T080 → T081 → T082 → T083 → T084 → T085`.
+T080 freezes proposed ADR-008; T081–T084 are the smallest implementation
+slice; T085 is the independent Phase 6 Final Audit. T086–T088 are retired as
+standalone cards because their behavior is covered by T083/T084.
+
+Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
+roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the
+persistence, request-identity, and atomic mock-outcome contract.
 
 Exit:
-- L2 action cannot execute before approval
-- duplicate approval/action cannot duplicate effect
+- L2 action cannot execute before approval and L3 is blocked;
+- owner/admin decisions are tenant-scoped, immutable, and auditable;
+- checkpoint/resume and cancellation races fail closed;
+- duplicate approval or approved mock delivery cannot duplicate the effect;
+- no generic policy/workflow engine, credentials, worker platform, or real
+  external side effect is introduced.
 
 ## Phase 7 — Observability [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
@@ -211,6 +222,10 @@ Exit:
 The following old roadmap labels are retained only to preserve planning
 history; the canonical live IDs are those listed above and in
 `TASK_BACKLOG.md`:
+
+This table records the older mapping, including the former Phase 6 T080–T088
+split. It does not override the current T080–T085 DAG or assign live work to
+retired T086–T088.
 
 | Old roadmap ID | Canonical ID(s) | Preserved intent |
 |---|---|---|

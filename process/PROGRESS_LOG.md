@@ -1,3 +1,32 @@
+### 2026-09-22 — Phase 6 Planning blocker fixes (B1–B3)
+
+Status: READY FOR PHASE6 PLANNING FOCUSED STRONG RE-REVIEW; not approved.
+
+- B1: froze Approval columns, normalized tenant SQL join, RESTRICT FKs,
+  uniqueness/checks, and repository/service transaction ownership in ADR-008.
+- B2: froze run/replan/step identity, immutable proposal reuse, concurrent
+  creation, first-decision-wins/duplicate 409, and stale-run handling.
+- B3: froze transaction-local claim, NOWAIT busy behavior, durable
+  AVAILABLE/COMPLETED/FAILED, atomic database mock outcome, rollback/replay,
+  and cancellation ordering. No real external effects or general idempotency.
+- Numbering: `git show HEAD:TASK_BACKLOG.md` and `git show HEAD:ROADMAP.md`
+  at `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020` already reserve T080–T088
+  for Phase 6. Keep the current T080–T085 DAG; no ID correction needed.
+- Files changed this pass: process/ADR-008.md, process/tasks/T080.md–T085.md,
+  TASK_BACKLOG.md, ROADMAP.md, process/tasks/INDEX.md, this progress log.
+  Existing planning changes were preserved; DECISION_LOG.md is unchanged in
+  this pass. No production code, tests, migration files, commits or pushes.
+- Validation: inspected current planning diff/cards and existing persistence/
+  lifecycle conventions; checked cross-document consistency and numbering;
+  `git diff --check` passed. No runtime tests apply to this documentation fix.
+- Known limitations: independent focused re-review is pending; the earlier
+  planning package was NOT APPROVED. No implementation is authorized yet.
+- Learner notes: read ADR-008, T081, T082 and T084. Learn why a transaction
+  lock needs no durable CLAIMED state when the mock effect is its own atomic
+  outcome write. Exercise: trace crash before commit versus after commit.
+  External-provider guarantees and worker architecture remain deferred.
+- Suggested next task: independent Phase6 Planning Focused Strong Re-review.
+
 ### 2026-09-22 — Phase 5 Final Approval
 
 Status: PHASE 5 APPROVED — PHASE 5 COMPLETE
@@ -3589,3 +3618,22 @@ Learner notes:
   idempotency, distributed locks, or automatic recovery.
 
 Suggested next task: focused Phase 3 Final Audit B1 re-audit only.
+
+## Phase 6 Planning — 2026-09-22
+
+- Task: Phase 6 HITL/risk/approval/safety planning package.
+- Changed: proposed ADR-008 and task cards T080–T085; narrowed the former
+  T080–T088 sketch to a linear reviewable DAG.
+- Files: `process/ADR-008.md`, `process/tasks/T080.md`–`T085.md`,
+  `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`,
+  `process/DECISION_LOG.md`.
+- Validation: repository inspection, authority cross-check, and
+  `git diff --check`; no production code or tests changed.
+- Result: ready for independent Phase 6 Planning Strong Review.
+- Known limitation: ADR-008 is proposed, not accepted; implementation is
+  explicitly blocked until the planning gate passes.
+- Learner notes: risk classification is a server-side trust-boundary decision;
+  an approval checkpoint pauses before an effect, while business lifecycle and
+  LangGraph persistence remain separate. Read ADR-008 and T080–T084. Exercise:
+  trace why a stale approval cannot authorize a cancelled run. Do not worry yet
+  about real providers, workers, or UI.

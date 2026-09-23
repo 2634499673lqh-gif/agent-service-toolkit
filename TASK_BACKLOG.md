@@ -194,33 +194,44 @@ Integrate with `TaskRuntimeService` and preserve retry/replan/checkpoint/resume 
 Phase 5 defers separate Skill/Tool hierarchies, dynamic registries/plugins/MCP, credentials or real side effects, new persistence, public runtime APIs, HITL, memory/knowledge systems, workers, and exactly-once claims.
 ## Phase 6 — HITL
 
-### T080 — Risk policy design [A]
-Goal: exact mapping L0-L3, server-side enforcement point.
+Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
+the cards below are authoritative. No production code is authorized until the
+planning gate is independently approved.
 
-### T081 — Approval ORM/migration [C after T080]
-Exact approved fields/constraints only.
+Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
+its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
+range. The gap after T064 is inherited, not invented here; keep T080 onward.
+ADR-008 B1–B3 freeze the normalized ownership, unique run/replan/step approval
+identity, and transactional mock outcome used by T081–T084.
 
-### T082 — Approval service [B]
-Create/read/decide with authorization and immutable proposed action.
+### T080 — HITL/risk architecture gate [A, planning only]
+Accept ADR-008: one server-side risk classifier, L0/L1 auto-allow, L2 approval,
+L3 blocked; approval boundary, state/lifecycle choice, tenant/role policy,
+checkpoint/resume, race, replay, and audit contracts are frozen.
 
-### T083 — Approval list/detail APIs [C]
-Read-only endpoints, tenant/policy scoped.
+### T081 — Approval persistence and migration [C after T080]
+Implement only the approved tenant-scoped approval record and constraints.
 
-### T084 — Approve/reject APIs [B]
-Acceptance: unauthorized and duplicate decision tests.
+### T082 — Approval service and decision APIs [B after T081]
+Create/read/approve/reject with immutable proposed action, owner/admin policy,
+single terminal decision, stale-run checks, and sanitized audit evidence.
 
-### T085 — LangGraph interrupt integration [A]
-Goal: persist checkpoint and enter WAITING_APPROVAL before effect.
+### T083 — Runtime approval boundary [A after T082]
+Classify before an effect, persist the checkpoint before waiting, and expose the
+minimal WAITING_APPROVAL result without changing unrelated lifecycle states.
 
-### T086 — Resume after approval [A]
-Goal: resume correct run/step without duplicate work.
+### T084 — Resume and idempotent approved action [A/B after T083]
+Resume the exact run/step after approval, fail closed on rejection/cancellation,
+and prove one approved mock effect under duplicate HTTP/worker delivery.
 
-### T087 — Side-effect idempotency [A/B]
-Goal: approved mock action executes exactly once.
-Mandatory duplicate HTTP/worker retry tests.
+### T085 — Phase 6 final audit [A, read-only after T084]
+Collect migration, authorization, race, replay, redaction, lifecycle, and
+integration evidence; no implementation work.
 
-### T088 — HITL audit events [C/B]
-Goal: decision and execution trace/audit records.
+T086–T088 are retired as standalone cards: their required behavior is covered
+by T083/T084 and the audit. Generic policy engines, workflow engines, worker
+queues, distributed locks, credentials, real external effects, and L3 execution
+remain deferred.
 
 ## Phase 7 — Observability
 

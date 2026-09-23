@@ -558,3 +558,16 @@ Skill/Tool/Context/Invocation tables, public APIs, HITL/approval, workers,
 memory or organization-knowledge infrastructure, generic idempotency, and any
 exactly-once claim. T061–T064 may implement only this contract; any broader
 capability or context system requires a new accepted decision.
+
+## ADR-008 — Phase 6 human approval and safety boundary (proposed)
+
+Date: 2026-09-22
+
+The Phase 6 planning package proposes one server-side L0–L3 risk classifier,
+one tenant-scoped immutable Approval record, owner/admin decisions, and a
+checkpoint-backed WAITING_APPROVAL boundary without changing existing
+Task/TaskRun enums. L2 is approval-gated, L3 is blocked, and one deterministic
+mock effect is protected by an atomic action-key claim. Checkpoint persistence
+remains separate from TaskPilot business persistence. Generic policy/workflow
+engines, credentials, workers, distributed locks, real external effects, and
+exactly-once claims are deferred. See `process/ADR-008.md` and T080–T085.
