@@ -39,7 +39,8 @@ action, risk, actor, or tenant field. Creation reuses the canonical
 `(task_run_id, replan_count, step_position)` record only when the full sanitized
 proposal matches. Reads and decisions include the nested task/run identifiers
 in tenant-scoped SQL. Only active owner/admin members may decide; all repeated
-or competing decisions return 409. T083 still owns runtime pause/resume.
+or competing decisions return 409. T083 implements the internal runtime wait
+and approval revalidation boundary; T084 owns approved action effects.
 
 ## Trace (planned, not implemented)
 

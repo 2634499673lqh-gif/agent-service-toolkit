@@ -1,8 +1,11 @@
 """The small static Planner → Capability → Verifier TaskPilot graph."""
 
+from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
+from pydantic import BaseModel, ConfigDict
 
 from schema.planner import PlanStep
 
@@ -14,7 +17,8 @@ from .failure import FailureClassifier, RuntimeFailure
 from .planner import PlannerNode, PlannerOutputInvalidError
 from .replan import ReplanState, apply_replacement_plan, consume_replan
 from .retry import consume_retry
-from .state import AgentState
+from .risk import RiskRoute, classify_action
+from .state import AgentState, PendingApprovalReference
 from .verifier import VerifierNode, VerifierOutputInvalidError
 
 RETRY_NODE = "retry"
@@ -22,6 +26,19 @@ REPLAN_NODE = "replan"
 TERMINAL_NODE = "terminal"
 _DEFAULT_CAPABILITY_NAME = "deterministic_fixture"
 _EXECUTOR_ADAPTER_NAME = "executor_adapter"
+
+ApprovalGate = Callable[
+    [CapabilityMetadata, ContextEnvelope, AgentState],
+    Awaitable[PendingApprovalReference],
+]
+
+
+class RuntimeGraphContext(BaseModel):
+    """Per-invocation service callback; values never enter checkpoint state."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
+
+    approval_gate: ApprovalGate | None = None
 
 
 class _DefaultPlannerModel:
@@ -80,8 +97,8 @@ def build_runtime_graph(
     """Compile the one bounded graph against an injected LangGraph saver.
 
     ``interrupt_before`` exists only to let integration tests inspect a real
-    mid-run checkpoint.  Production callers leave it unset; no HITL behavior
-    is introduced by this option.
+    mid-run checkpoint. The approval gate is supplied per invocation through
+    non-checkpointed runtime context; only its bounded reference enters state.
     """
 
     planner_node = planner or PlannerNode(_DefaultPlannerModel())
@@ -117,7 +134,10 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
         return {"plan": plan.model_dump(mode="json"), "failure": None}
 
-    async def execute_step(state: AgentState) -> dict[str, object]:
+    async def execute_step(
+        state: AgentState,
+        runtime: Runtime[RuntimeGraphContext],
+    ) -> dict[str, object]:
         if state.plan is None or state.plan_position >= len(state.plan.steps):
             return {"failure": _failure(failure_classifier, "runtime_plan_position_invalid")}
         step = state.plan.steps[state.plan_position]
@@ -128,6 +148,55 @@ def build_runtime_graph(
             )
         except Exception:
             return {"failure": _failure(failure_classifier, "capability_context_invalid")}
+        metadata = capability_dispatcher.metadata_for(capability_name)
+        if isinstance(metadata, RuntimeFailure):
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": failure_classifier.classify(metadata.code).model_dump(mode="json"),
+            }
+        risk_route = classify_action(metadata, context, expected_name=capability_name)
+        if risk_route is RiskRoute.INVALID:
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": _failure(failure_classifier, "risk_classifier_invalid"),
+            }
+        if risk_route is RiskRoute.BLOCKED:
+            return {
+                "capability_context": context.model_dump(mode="json"),
+                "failure": _failure(failure_classifier, "risk_level_blocked"),
+            }
+        if risk_route is RiskRoute.APPROVAL_REQUIRED:
+            runtime_context = getattr(runtime, "context", None)
+            approval_gate = getattr(runtime_context, "approval_gate", None)
+            if approval_gate is None:
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "failure": _failure(failure_classifier, "approval_boundary_missing"),
+                }
+            try:
+                pending_approval = PendingApprovalReference.model_validate(
+                    await approval_gate(metadata, context, state)
+                )
+            except Exception:
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "failure": _failure(failure_classifier, "approval_boundary_failed"),
+                }
+            if (
+                pending_approval.replan_count != state.replan_count
+                or pending_approval.step_position != state.plan_position
+            ):
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "failure": _failure(failure_classifier, "approval_reference_invalid"),
+                }
+            return {
+                "capability_context": None,
+                "pending_approval": pending_approval.model_dump(mode="json"),
+                "execution_result": None,
+                "verification": None,
+                "failure": None,
+            }
         try:
             raw_result = await capability_dispatcher.dispatch(capability_name, step, context)
         except Exception:
@@ -169,8 +238,16 @@ def build_runtime_graph(
         return {
             "capability_context": context.model_dump(mode="json"),
             "execution_result": result.model_dump(mode="json"),
+            "pending_approval": None,
             "failure": None,
         }
+
+    async def approval_wait(state: AgentState) -> dict[str, object]:
+        """End this graph invocation with a durable pending reference."""
+
+        if state.pending_approval is None:
+            return {"failure": _failure(failure_classifier, "approval_reference_invalid")}
+        return {}
 
     async def verify_step(state: AgentState) -> dict[str, object]:
         if state.plan is None or state.execution_result is None:
@@ -262,7 +339,9 @@ def build_runtime_graph(
 
     def route_after_execution(
         state: AgentState,
-    ) -> Literal["verifier", "retry", "replan", "terminal"]:
+    ) -> Literal["verifier", "retry", "replan", "terminal", "approval_wait"]:
+        if state.failure is None and state.pending_approval is not None:
+            return "approval_wait"
         if state.failure is None:
             return "verifier"
         return route_failure(state)
@@ -287,9 +366,10 @@ def build_runtime_graph(
             return "replan"
         return "terminal"
 
-    builder = StateGraph(AgentState)
+    builder = StateGraph(AgentState, context_schema=RuntimeGraphContext)
     builder.add_node("planner", plan_initial)
     builder.add_node("executor", execute_step)
+    builder.add_node("approval_wait", approval_wait)
     builder.add_node("verifier", verify_step)
     builder.add_node(RETRY_NODE, retry_step)
     builder.add_node(REPLAN_NODE, replan_step)
@@ -309,8 +389,10 @@ def build_runtime_graph(
             RETRY_NODE: RETRY_NODE,
             REPLAN_NODE: REPLAN_NODE,
             TERMINAL_NODE: TERMINAL_NODE,
+            "approval_wait": "approval_wait",
         },
     )
+    builder.add_edge("approval_wait", END)
     builder.add_conditional_edges(
         "verifier",
         route_after_verification,

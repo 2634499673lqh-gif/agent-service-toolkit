@@ -1,4 +1,132 @@
-### 2026-09-23 — T082 final approval status recorded
+### 2026-09-23 — T083 focused Strong Re-review approval recorded
+
+Status: T083 COMPLETE; focused Strong Re-review APPROVED. The implementation
+remains uncommitted. T080–T082 are COMPLETE / APPROVED; ADR-008 remains
+Accepted and frozen. T084 is NOT STARTED and UNBLOCKED by T083.
+
+Review history: the initial T083 Strong Review returned NOT APPROVED for one
+blocker: the missing runtime proposal-mismatch resume test. That PostgreSQL
+negative test was added, the affected runtime suites and static checks passed,
+and the focused Strong Re-review approved T083. The implementation and
+blocker-fix entries below remain historical records of those stages.
+
+What changed: synchronized current T083/T084 status in the roadmap, backlog,
+task index, ADR-008, Decision Log, architecture status, and this progress log.
+No production code or tests changed in this final status sync.
+
+Validation: `git diff --check` passed.
+
+Scope: no T084 implementation, code, tests, migrations, or dependencies were
+changed. No commit or push was performed.
+
+### 2026-09-23 — T083 proposal-mismatch blocker fix
+
+Status: the missing PostgreSQL resume negative case is implemented; READY FOR
+FOCUSED T083 STRONG RE-REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`, HEAD
+`920349cbba99cfc6b8108f6a483036b8213419ab`. T083 implementation and status
+documentation were already present as working-tree changes; this blocker fix
+adds one test and this progress entry only.
+
+What changed: added a PostgreSQL resume test that first creates a durable
+pending Approval, then changes the checkpoint's current PlanStep instruction
+without changing the Approval row. Resume detects the proposal mismatch,
+invokes no protected capability, and resolves the run to FAILED through T035.
+The test checks that all Approval proposal, decision, action, actor, and
+timestamp fields remain unchanged, and that the Task's user-authored title and
+description remain unchanged. No production code change was needed.
+
+Validation: the new PostgreSQL test passed (1 test); the full
+`tests/runtime/test_task_runtime_postgres.py` suite passed (27 tests); focused
+runtime regression excluding the PostgreSQL module passed (126 tests). Ruff
+check and format passed for the changed test, Pyrefly reported 0 errors, and
+`git diff --check` passed. PostgreSQL 16 ran through a task-specific Compose
+project with a new project-scoped volume; each test database was isolated and
+dropped by the fixture. The Compose container/network were removed after the
+run; the dedicated volume was preserved.
+
+Scope: no production validation, approval API, migration, dependency, or T084
+action-claim/effect semantics changed.
+
+Suggested next task: focused Strong Re-review of the T083 proposal-mismatch
+blocker.
+
+### 2026-09-23 — T083 runtime approval boundary implementation
+
+Status: T083 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+Phase 6 Planning remains APPROVED, frozen, committed, and published. T080–T082
+are complete and approved; ADR-008 remains Accepted and frozen. T084 is NOT
+STARTED and remains gated on T083 approval.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`920349cbba99cfc6b8108f6a483036b8213419ab`; tracked working tree clean before
+T083 edits. The pre-existing ignored `.pytest-tmp-t032/` and
+`.pytest-tmp-t034/` directories were inaccessible and left untouched.
+
+Authority: `AGENTS.md`, `process/tasks/T083.md`, accepted/frozen
+`process/ADR-008.md` B1/B2, approved T081 Approval persistence and T082
+Approval service, plus existing runtime, checkpoint, principal, membership,
+tenant, and T035 lifecycle contracts.
+
+What changed: added the server-wired four-level classifier and prevented
+direct capability dispatch from bypassing L2/L3 routing. L0/L1 keep automatic
+execution; L3 fails closed. L2 creates/reuses the canonical durable Approval,
+commits it before an independent checkpoint write, and returns
+`WAITING_APPROVAL` only after verifying the exact bounded reference was stored.
+Resume rechecks active tenant membership, live Task/TaskRun state, canonical
+identity, and the immutable proposal against Approval persistence. Pending rows
+wait; approved rows return `APPROVED_ACTION_READY` without executing an effect;
+rejection resolves through T035. Cancellation/terminal state wins. Failed
+checkpoint persistence leaves the run recoverable, and retry reuses the same
+Approval row. Checkpoints carry no Approval status, proposal, or actor authority.
+
+Files changed: runtime implementation in `src/runtime/` and
+`src/service/task_runtime.py` / `src/service/approval_service.py`; tests in
+`tests/runtime/`; synchronized current-state docs in `ROADMAP.md`,
+`TASK_BACKLOG.md`, `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/tasks/INDEX.md`, `docs/ARCHITECTURE.md`, `docs/API_CONVENTIONS.md`,
+`docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`, `docs/SECURITY_HITL.md`,
+`docs/USER_GUIDE.md`, and this log.
+
+Validation: real disposable PostgreSQL 16 through repository Compose project
+`taskpilot-t083-live-20260923` (fresh project volume; test-created databases
+were isolated and dropped by fixtures). `uv run pytest -q
+tests/runtime/test_task_runtime_postgres.py` passed 26 tests, including
+L0/L1/L2/L3 routing, wait/checkpoint, approved and rejected resume, replay after
+checkpoint failure, malformed/stale reference and wrong action slot, tenant
+and membership checks,
+cancellation, and concurrent approved resume. The combined runtime, Approval
+API, and T035 PostgreSQL regression command
+`uv run pytest -q tests/runtime tests/service/test_approval_api_postgres.py
+tests/service/test_task_lifecycle_postgres.py` passed 164 tests. A second
+focused runtime unit command, `uv run pytest -q tests/runtime/test_risk.py
+tests/runtime/test_capability.py tests/runtime/test_task_runtime.py`, passed 38
+tests. `uv run ruff check`
+passed; Ruff format check passed for all 10 changed Python files;
+`uv run pyrefly check` reported 0 errors; `git diff --check` passed. A full-tree
+Ruff format scan returned exit 1 on access-denied warnings from the two
+pre-existing ignored pytest temp directories, while reporting all 164 Python
+files formatted. The task-owned Compose container/network were stopped and
+removed; its dedicated volume was preserved.
+
+Scope: no T084 action claim/effect logic, TaskRun enum change, migration,
+dependency, public runtime API, workflow/policy framework, distributed lock, or
+real external effect was added. T035 remains lifecycle owner.
+
+Learner notes: a checkpoint helps recover a run but cannot approve an action;
+the tenant-scoped Approval row remains the business truth. Read
+`src/runtime/risk.py`, `src/runtime/graph.py`, `src/service/task_runtime.py`,
+`src/service/approval_service.py`, and
+`tests/runtime/test_task_runtime_postgres.py`. Exercise: corrupt the pending
+reference in a local test and observe that runtime fails through T035 without
+dispatching the capability. Do not worry about exactly-once effects yet; T084
+owns the bounded mock action claim.
+
+Suggested next task: independent Strong Review of T083; start T084 only after
+T083 approval.
+
+### Historical record — 2026-09-23 — T082 final approval status recorded
 
 Status: T082 is COMPLETE; independent Strong Review APPROVED; committed and
 pushed to origin. Phase 6 Planning remains APPROVED, frozen, committed, and

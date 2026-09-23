@@ -53,6 +53,10 @@ class ApprovalConflictError(ApprovalError):
     """The requested create or decision conflicts with durable Approval state."""
 
 
+class ApprovalRunNotActiveError(ApprovalConflictError):
+    """A runtime checkpoint references a cancelled or terminal business run."""
+
+
 @dataclass(frozen=True, slots=True)
 class ApprovalProposal:
     """Trusted server-selected action metadata and its typed, validated arguments.
@@ -165,6 +169,75 @@ class ApprovalService:
         return await self.approvals.list_for_task_run_in_principal_tenant(
             task_id, task_run_id, principal.organization_id
         )
+
+    async def validate_runtime_resume(
+        self,
+        principal: CurrentPrincipal,
+        *,
+        task_id: UUID,
+        task_run_id: UUID,
+        approval_id: UUID,
+        replan_count: int,
+        step_position: int,
+        proposal: ApprovalProposal,
+    ) -> Approval | None:
+        """Revalidate a checkpoint reference against active business state.
+
+        ``None`` means the reference, canonical slot, or immutable proposal did
+        not match. An inactive or terminal run raises the same non-disclosing
+        conflict as create/decision, so stale checkpoint data cannot win over
+        T035 lifecycle state.
+        """
+
+        try:
+            if (
+                not isinstance(replan_count, int)
+                or isinstance(replan_count, bool)
+                or replan_count not in (0, 1)
+                or not isinstance(step_position, int)
+                or isinstance(step_position, bool)
+                or step_position < 0
+            ):
+                await self.session.rollback()
+                return None
+
+            task, run = await self._lock_task_and_run(principal, task_id, task_run_id)
+            if not await self._is_active_run(task, run):
+                raise ApprovalRunNotActiveError(APPROVAL_CONFLICT_DETAIL)
+            approval = await self.approvals.get_for_update_for_task_run_in_principal_tenant(
+                task.id,
+                run.id,
+                approval_id,
+                principal.organization_id,
+            )
+            if approval is None:
+                await self.session.commit()
+                return None
+
+            await self._active_membership(principal, for_update=True)
+            try:
+                canonical_proposal = self._canonical_proposal(proposal)
+            except ApprovalConflictError:
+                await self.session.rollback()
+                return None
+            if (
+                approval.replan_count != replan_count
+                or approval.step_position != step_position
+                or not self._same_proposal(
+                    approval,
+                    proposal.action_name,
+                    proposal.action_version,
+                    canonical_proposal,
+                )
+            ):
+                await self.session.commit()
+                return None
+
+            await self.session.commit()
+            return approval
+        except BaseException:
+            await self.session.rollback()
+            raise
 
     async def get(
         self,

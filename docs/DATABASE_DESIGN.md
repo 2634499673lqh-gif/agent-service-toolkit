@@ -79,8 +79,8 @@ T082's `ApprovalService` owns create/reuse and decision transactions, locking
 Task -> TaskRun -> Approval, and commits or rolls back the supplied session.
 Its protected nested read/decision routes return sanitized proposal and
 decision fields. Create/reuse is service-only: trusted runtime wiring supplies
-the already selected action and validated arguments. Runtime pause/resume and
-action claims remain T083/T084 work.
+the already selected action and validated arguments. T083 implements runtime
+pause/resume; action claims remain T084 work.
 
 ## Tenant-scoped repository boundary (T034)
 

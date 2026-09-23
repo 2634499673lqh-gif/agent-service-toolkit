@@ -68,12 +68,12 @@ redaction are deferred to T014.
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
-| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs, T038 TaskRun APIs, and T081/T082 Approval persistence and protected decision APIs are implemented; approval runtime remains later Phase 6 work | 2 (done) / 3 / 6 |
+| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs, T038 TaskRun APIs, T081/T082 Approval persistence and protected decision APIs, and T083 internal approval boundary | 2 (done) / 3 / 6 |
 | Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, T038 start/inspect integration, and the T040–T050 internal runtime | TaskStep schema, public runtime API, idempotency | 3/4 |
 | Planner/executor/verifier/recovery | T040–T050 typed AgentState, Planner → Executor → Verifier runtime, bounded retry/replan, and verification | External tools/providers, broader context and recovery capabilities | 4/5 |
 | Checkpoint/resume | T050 LangGraph checkpoint/resume bound to a tenant-validated durable TaskRun | Worker/queue orchestration, HITL resume, and external-effect guarantees | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
-| Human approval | T081 Approval persistence and T082 protected reads/decisions; accepted ADR-008 | T083 runtime classification/pause/resume; T084 action claim and bounded mock effect | 6 |
+| Human approval | T081 Approval persistence, T082 protected reads/decisions, T083 server-side classification and approval pause/resume; accepted ADR-008 | T084 action claim and bounded mock effect | 6 |
 | Observability/audit | Logging, run UUID, optional Langfuse/LangSmith | Correlated TaskPilot IDs, sanitized events, metrics and audit truth | 7 |
 | Evaluation | Unit/integration/smoke tests, fake model | Versioned deterministic task evals and safety/workflow metrics | 8 |
 | Product UI | Streamlit chat, threads, voice/feedback | Login, tasks/runs/steps/traces/approvals/files; retain Streamlit first | 9 |
@@ -112,8 +112,9 @@ Phase 6 Planning is approved, frozen, committed, and published. T080 is
 complete and approved; T081 Approval persistence is complete with Strong Review
 approval, committed, and pushed. T082 Approval service and decision APIs are
 complete, Strong Review approved, committed, and pushed to origin. T083 runtime
-pause/resume has not started and is unblocked by T082. T084 action claim/effect
-work has not started and remains gated by T083.
+approval boundary is complete with focused Strong Re-review approved; its
+implementation remains uncommitted. T084 action claim/effect work has not
+started and is unblocked by T083.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
@@ -128,8 +129,8 @@ The implemented runtime is an internal, deterministic LangGraph topology:
   business persistence and LangGraph checkpoint ownership remain separate.
 
 The following boundaries remain deferred: persistent TaskStep, a public runtime
-HTTP API, worker/queue execution, Phase 6 runtime approval pause/resume, action
-claim/effect handling, real external tools or providers, and any production
+HTTP API, worker/queue execution, action claim/effect handling, real external
+tools or providers, and any production
 deployment claim. Checkpoint or graph progress never grants authorization,
 and Phase 4 makes no exactly-once execution guarantee.
 

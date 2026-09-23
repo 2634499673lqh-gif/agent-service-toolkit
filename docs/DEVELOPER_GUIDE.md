@@ -216,8 +216,8 @@ rather than fetched and compared in Python, and tenant existence must be
 resolved before any role check. `APPROVAL_DECISION_ROLES` freezes the documented
 owner/admin approval gate. T081 adds Approval persistence and T082 applies this
 gate to the protected nested approve/reject routes after SQL visibility is
-established; T083/T084 still own runtime pause/resume and action claim/effect
-behavior.
+established. T083 adds the internal runtime approval wait/resume boundary;
+T084 owns action claims and bounded effect behavior.
 
 ### Security matrix (T026)
 

@@ -35,7 +35,8 @@ from runtime.replan import (
     consume_replan,
 )
 from runtime.retry import RETRY_BUDGET, RetryDecision, consume_retry
-from runtime.state import AgentState, TerminalOutcome
+from runtime.risk import RiskRoute, classify_action
+from runtime.state import AgentState, PendingApprovalReference, TerminalOutcome
 from runtime.verifier import (
     VerifierModel,
     VerifierNode,
@@ -63,9 +64,12 @@ __all__ = [
     "FailureClassification",
     "FailureClassifier",
     "RuntimeFailure",
+    "RiskRoute",
     "build_runtime_graph",
     "AgentState",
+    "PendingApprovalReference",
     "TerminalOutcome",
+    "classify_action",
     "PlannerModel",
     "PlannerNode",
     "PlannerOutputInvalidError",
