@@ -104,6 +104,15 @@ Request IDs come from the existing middleware, task and run IDs come from
 server-validated rows, and trace IDs are observational rather than
 authorization credentials.
 
+T093 wires this path through the bounded runtime graph. The graph emits one
+server-selected `executor` AgentRun observation for each capability boundary,
+using the zero-based `(replan_count, step_position, retry_count)` coordinates;
+the capability dispatch emits its ToolCall child with `call_index = 0`. The
+service persists both rows only after the graph result is known, through the
+existing tenant-scoped repositories. HTTP request IDs come from the middleware
+context; background execution stores `NULL`. No `task_step_id` is synthesized,
+and neither the checkpoint nor model output can supply a trace authority.
+
 Timing is UTC with nullable integer millisecond durations. Errors use bounded
 normalized class/code/message fields. Provider usage is either a bounded
 known object or an explicit unavailable reason; unavailable values are never

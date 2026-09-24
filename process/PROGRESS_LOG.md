@@ -1,3 +1,63 @@
+### 2026-09-24 — T093 post-review status synchronization
+
+Status: T093 correlation propagation implementation and required validation are
+complete; Strong Review APPROVED. T094 and T095 are the next DAG tasks.
+
+Changed: synchronized current-state summaries in `TASK_BACKLOG.md`,
+`ROADMAP.md`, and `process/tasks/INDEX.md`. The implementation entry below is
+preserved as its dated historical record; its ready-for-review status is not
+rewritten.
+
+Validation: targeted T093 status consistency searches, `git diff --check`, and
+final diff inspection. No implementation, test, migration, contract, DAG, or
+Phase 7 architecture changes were made.
+
+Learner notes: status summaries advance after a review, while dated progress
+entries keep the state they recorded at that time. Read the Phase 7 sections in
+`TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, and this log.
+
+### 2026-09-24 — T093 observability correlation wiring
+
+Status: T093 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+T091/T092 are approved, committed, and pushed. T094 and later remain not
+started.
+
+Changed: added the smallest explicit runtime observation handoff. The existing
+middleware request UUID is carried through invocation-only graph context; the
+tenant-validated TaskRun supplies the durable parent; and each capability
+boundary records zero-based `(replan_count, step_position, retry_count)`
+coordinates, a server-selected `executor` AgentRun, and its server-selected
+capability ToolCall child. Background work keeps `request_id = NULL`. Rows are
+flushed through the existing tenant-scoped repositories in the service-owned
+transaction, with no TaskStep row, task/tenant duplicate, checkpoint authority,
+lifecycle change, approval change, or external tracing framework.
+
+Files changed: `src/runtime/graph.py`, `src/runtime/__init__.py`,
+`src/service/task_runtime.py`, `tests/runtime/test_t093_correlation.py`,
+`tests/runtime/test_task_runtime_postgres.py`,
+`docs/ARCHITECTURE.md`, `docs/API_CONVENTIONS.md`,
+`docs/OBSERVABILITY_EVAL.md`, and this log.
+
+Validation: T093 correlation tests passed (2); affected runtime suite passed
+(128 passed, 34 skipped); the runtime PostgreSQL regression passed (34 tests,
+including a real persisted request -> TaskRun -> AgentRun -> ToolCall chain);
+observability foundation/logging/service tests passed (23 passed, 5 warnings);
+Ruff, formatting, Pyrefly, compilation, and `git diff --check` passed. T093's
+ADR gate is deterministic unit/static, with the additional PostgreSQL runtime
+evidence recorded as an affected regression.
+
+Known limitation: public trace timeline projection, timing/error normalization,
+usage, cost, and provider adapters remain deferred to T094–T097.
+
+Learner notes: the graph emits immutable observation data, while the runtime
+service owns tenant validation and persistence. Read `src/runtime/graph.py`,
+`src/service/task_runtime.py`, `src/persistence/models.py`,
+`src/persistence/repositories.py`, and ADR-009. Exercise: trace one retry and
+verify that only `retry_count` changes while `task_run_id` stays fixed. Do not
+worry yet about the public timeline API or cost calculation.
+
+Suggested next task: independent T093 Strong Review.
+
 ### 2026-09-24 — T091/T092 focused Strong Review blocker fix
 
 Status: T091/T092 implementation and live PostgreSQL evidence are complete;

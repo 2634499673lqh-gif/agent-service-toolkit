@@ -56,6 +56,15 @@ Failure, retry, and replan rows remain visible. T092 owns persisted-payload
 redaction tests and T097 owns response-redaction tests; T098 only audits their
 evidence.
 
+T093 supplies the internal correlation labels that a future trace response may
+project: the request middleware UUID when present, the tenant-validated
+`task_run_id`, zero-based `(replan_count, step_position, retry_count)`
+coordinates, server-generated `agent_run_id`, and server-generated
+`tool_call_id`. `task_id` is reconstructed through the TaskRun -> Task join;
+`task_step_id` is intentionally absent until TaskStep persistence is approved.
+These labels are observational only and never select a tenant, authorize a
+read, resume a checkpoint, or approve an action.
+
 ## Knowledge/files
 
 Exact endpoints should follow the existing codebase conventions after Phase 0.

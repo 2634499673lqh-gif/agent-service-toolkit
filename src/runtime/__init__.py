@@ -18,7 +18,12 @@ from runtime.context import (
 )
 from runtime.executor import DeterministicExecutor, ExecutionResult, Executor
 from runtime.failure import FailureClassification, FailureClassifier, RuntimeFailure
-from runtime.graph import build_runtime_graph
+from runtime.graph import (
+    RuntimeGraphContext,
+    RuntimeObservation,
+    RuntimeObservationSink,
+    build_runtime_graph,
+)
 from runtime.planner import (
     PlannerModel,
     PlannerNode,
@@ -66,6 +71,9 @@ __all__ = [
     "RuntimeFailure",
     "RiskRoute",
     "build_runtime_graph",
+    "RuntimeGraphContext",
+    "RuntimeObservation",
+    "RuntimeObservationSink",
     "AgentState",
     "PendingApprovalReference",
     "TerminalOutcome",

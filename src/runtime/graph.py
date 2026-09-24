@@ -1,11 +1,13 @@
 """The small static Planner → Capability → Verifier TaskPilot graph."""
 
 from collections.abc import Awaitable, Callable
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Any, Literal, Protocol, runtime_checkable
+from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schema.planner import PlanStep
 
@@ -33,12 +35,58 @@ ApprovalGate = Callable[
 ]
 
 
+class RuntimeObservation(BaseModel):
+    """One bounded observation emitted at the runtime capability boundary.
+
+    This is an in-process handoff only.  The service that owns the durable
+    TaskRun decides whether and when to persist the observation; nothing in
+    this model is checkpointed or used as authority.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID | None = None
+    task_run_id: str
+    replan_count: int = Field(ge=0, le=1)
+    step_position: int = Field(ge=0, le=7)
+    retry_count: int = Field(ge=0, le=1)
+    agent_name: str = Field(min_length=1, max_length=128)
+    agent_status: Literal["succeeded", "failed", "waiting_approval", "unknown"]
+    tool_name: str | None = Field(default=None, max_length=128)
+    call_index: int | None = Field(default=None, ge=0, le=999)
+    tool_status: Literal["succeeded", "failed", "unknown"] | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] | None = None
+    error_class: Literal["RETRY", "REPLAN", "TERMINAL", "UNKNOWN"] | None = None
+    error_code: str | None = Field(default=None, max_length=64)
+    error_message: str | None = Field(default=None, max_length=500)
+    started_at: datetime
+    finished_at: datetime | None = None
+
+    @field_validator("task_run_id", mode="before")
+    @classmethod
+    def canonical_task_run_id(cls, value: object) -> str:
+        try:
+            return str(UUID(str(value)))
+        except (TypeError, ValueError):
+            raise ValueError("observation task_run_id must be a valid UUID") from None
+
+
+@runtime_checkable
+class RuntimeObservationSink(Protocol):
+    """Small explicit sink used by the graph; persistence stays in the service."""
+
+    async def record(self, observation: RuntimeObservation) -> None: ...
+
+
 class RuntimeGraphContext(BaseModel):
     """Per-invocation service callback; values never enter checkpoint state."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
     approval_gate: ApprovalGate | None = None
+    observation_sink: RuntimeObservationSink | None = None
+    request_id: UUID | None = None
 
 
 class _DefaultPlannerModel:
@@ -138,6 +186,46 @@ def build_runtime_graph(
         state: AgentState,
         runtime: Runtime[RuntimeGraphContext],
     ) -> dict[str, object]:
+        started_at = datetime.now(UTC)
+        runtime_context = getattr(runtime, "context", None)
+        observation_sink = getattr(runtime_context, "observation_sink", None)
+        request_id = getattr(runtime_context, "request_id", None)
+
+        async def observe(
+            *,
+            agent_status: Literal["succeeded", "failed", "waiting_approval", "unknown"],
+            context: ContextEnvelope | None = None,
+            tool_status: Literal["succeeded", "failed", "unknown"] | None = None,
+            result: dict[str, Any] | None = None,
+            error: RuntimeFailure | None = None,
+            tool_name: str | None = None,
+        ) -> None:
+            if observation_sink is None:
+                return
+            if state.plan is None:
+                return
+            await observation_sink.record(
+                RuntimeObservation(
+                    request_id=request_id,
+                    task_run_id=state.task_run_id,
+                    replan_count=state.replan_count,
+                    step_position=state.plan_position,
+                    retry_count=state.retry_count,
+                    agent_name="executor",
+                    agent_status=agent_status,
+                    tool_name=tool_name,
+                    call_index=0 if tool_name is not None else None,
+                    tool_status=tool_status,
+                    arguments=({} if context is None else context.model_dump(mode="json")),
+                    result=result,
+                    error_class=None if error is None else error.classification,
+                    error_code=None if error is None else error.code,
+                    error_message=None if error is None else error.sanitized_message,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                )
+            )
+
         if state.execution_result is not None and state.pending_approval is None:
             return {"capability_context": None, "failure": None}
         if state.plan is None or state.plan_position >= len(state.plan.steps):
@@ -149,49 +237,67 @@ def build_runtime_graph(
                 current_step=step,
             )
         except Exception:
+            await observe(
+                agent_status="failed",
+                error=_failure(failure_classifier, "capability_context_invalid"),
+            )
             return {"failure": _failure(failure_classifier, "capability_context_invalid")}
         metadata = capability_dispatcher.metadata_for(capability_name)
         if isinstance(metadata, RuntimeFailure):
+            await observe(agent_status="failed", context=context, error=metadata)
             return {
                 "capability_context": context.model_dump(mode="json"),
                 "failure": failure_classifier.classify(metadata.code).model_dump(mode="json"),
             }
         risk_route = classify_action(metadata, context, expected_name=capability_name)
         if risk_route is RiskRoute.INVALID:
+            failure = _failure(failure_classifier, "risk_classifier_invalid")
+            await observe(agent_status="failed", context=context, error=failure)
             return {
                 "capability_context": context.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "risk_classifier_invalid"),
+                "failure": failure,
             }
         if risk_route is RiskRoute.BLOCKED:
+            failure = _failure(failure_classifier, "risk_level_blocked")
+            await observe(agent_status="failed", context=context, error=failure)
             return {
                 "capability_context": context.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "risk_level_blocked"),
+                "failure": failure,
             }
         if risk_route is RiskRoute.APPROVAL_REQUIRED:
-            runtime_context = getattr(runtime, "context", None)
             approval_gate = getattr(runtime_context, "approval_gate", None)
             if approval_gate is None:
+                failure = _failure(failure_classifier, "approval_boundary_missing")
+                await observe(agent_status="failed", context=context, error=failure)
                 return {
                     "capability_context": context.model_dump(mode="json"),
-                    "failure": _failure(failure_classifier, "approval_boundary_missing"),
+                    "failure": failure,
                 }
             try:
                 pending_approval = PendingApprovalReference.model_validate(
                     await approval_gate(metadata, context, state)
                 )
             except Exception:
+                failure = _failure(failure_classifier, "approval_boundary_failed")
+                await observe(agent_status="failed", context=context, error=failure)
                 return {
                     "capability_context": context.model_dump(mode="json"),
-                    "failure": _failure(failure_classifier, "approval_boundary_failed"),
+                    "failure": failure,
                 }
             if (
                 pending_approval.replan_count != state.replan_count
                 or pending_approval.step_position != state.plan_position
             ):
+                failure = _failure(failure_classifier, "approval_reference_invalid")
+                await observe(agent_status="failed", context=context, error=failure)
                 return {
                     "capability_context": context.model_dump(mode="json"),
-                    "failure": _failure(failure_classifier, "approval_reference_invalid"),
+                    "failure": failure,
                 }
+            await observe(
+                agent_status="waiting_approval",
+                context=context,
+            )
             return {
                 "capability_context": None,
                 "pending_approval": pending_approval.model_dump(mode="json"),
@@ -202,14 +308,29 @@ def build_runtime_graph(
         try:
             raw_result = await capability_dispatcher.dispatch(capability_name, step, context)
         except Exception:
+            failure = _failure(failure_classifier, "capability_execution_failed")
+            await observe(
+                agent_status="failed",
+                context=context,
+                tool_status="failed",
+                error=failure,
+                tool_name=capability_name,
+            )
             return {
                 "capability_context": context.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "capability_execution_failed"),
+                "failure": failure,
             }
         if isinstance(raw_result, RuntimeFailure):
             failure = failure_classifier.classify(
                 raw_result.code,
                 raw_result.sanitized_message,
+            )
+            await observe(
+                agent_status="failed",
+                context=context,
+                tool_status="failed",
+                error=failure,
+                tool_name=capability_name,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -218,25 +339,57 @@ def build_runtime_graph(
         try:
             result = ExecutionResult.model_validate(raw_result)
         except Exception:
+            failure = _failure(failure_classifier, "capability_output_invalid")
+            await observe(
+                agent_status="failed",
+                context=context,
+                tool_status="failed",
+                error=failure,
+                tool_name=capability_name,
+            )
             return {
                 "capability_context": context.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "capability_output_invalid"),
+                "failure": failure,
             }
         if result.step_position != step.position:
+            failure = _failure(failure_classifier, "capability_output_invalid")
+            await observe(
+                agent_status="failed",
+                context=context,
+                tool_status="failed",
+                result=result.model_dump(mode="json"),
+                error=failure,
+                tool_name=capability_name,
+            )
             return {
                 "capability_context": context.model_dump(mode="json"),
                 "execution_result": result.model_dump(mode="json"),
-                "failure": _failure(failure_classifier, "capability_output_invalid"),
+                "failure": failure,
             }
         if not result.success:
             failure = failure_classifier.classify(
                 result.error_code or "executor_failed", result.error_message
+            )
+            await observe(
+                agent_status="failed",
+                context=context,
+                tool_status="failed",
+                result=result.model_dump(mode="json"),
+                error=failure,
+                tool_name=capability_name,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
                 "execution_result": result.model_dump(mode="json"),
                 "failure": failure.model_dump(mode="json"),
             }
+        await observe(
+            agent_status="succeeded",
+            context=context,
+            tool_status="succeeded",
+            result=result.model_dump(mode="json"),
+            tool_name=capability_name,
+        )
         return {
             "capability_context": context.model_dump(mode="json"),
             "execution_result": result.model_dump(mode="json"),
@@ -418,4 +571,9 @@ def _failure(classifier: FailureClassifier, code: str) -> RuntimeFailure:
     return classifier.classify(code)
 
 
-__all__ = ["build_runtime_graph"]
+__all__ = [
+    "RuntimeGraphContext",
+    "RuntimeObservation",
+    "RuntimeObservationSink",
+    "build_runtime_graph",
+]

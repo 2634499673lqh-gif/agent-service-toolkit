@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from persistence.engine import create_async_engine
 from persistence.models import (
+    AgentRun,
     Approval,
     ApprovalActionState,
     ApprovalStatus,
@@ -31,6 +32,7 @@ from persistence.models import (
     TaskRun,
     TaskRunStatus,
     TaskStatus,
+    ToolCall,
     User,
 )
 from runtime import (
@@ -51,6 +53,7 @@ from service.approval_service import (
     ApprovalService,
     ApprovedActionService,
 )
+from service.logging import reset_request_id, set_request_id
 from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService
 from service.task_runtime import (
@@ -388,6 +391,49 @@ async def test_postgres_pending_runtime_creates_checkpoint_and_succeeds(seeded_t
     assert await _run_count(session_factory, task_id) == 1
     checkpoint = await saver.aget_tuple({"configurable": {"thread_id": f"taskpilot-run:{run_id}"}})
     assert checkpoint is not None
+
+
+@pytest.mark.asyncio
+async def test_postgres_runtime_persists_t093_correlation_chain(seeded_task) -> None:
+    session_factory, saver, organization_id, task_id, _ = seeded_task
+    run_id = await _start_run(session_factory, task_id, organization_id)
+    request_id = uuid4()
+    request_token = set_request_id(str(request_id))
+    try:
+        async with session_factory() as session:
+            result = await TaskRuntimeService(saver).execute_run(
+                session,
+                organization_id=organization_id,
+                task_id=task_id,
+                task_run_id=run_id,
+            )
+    finally:
+        reset_request_id(request_token)
+
+    assert result.terminal_outcome == "SUCCEEDED"
+    async with session_factory() as session:
+        agent_runs = list(
+            await session.scalars(select(AgentRun).where(AgentRun.task_run_id == run_id))
+        )
+        tool_calls = list(
+            await session.scalars(
+                select(ToolCall)
+                .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+                .where(AgentRun.task_run_id == run_id)
+            )
+        )
+
+    assert len(agent_runs) == len(tool_calls) == 1
+    agent_run = agent_runs[0]
+    tool_call = tool_calls[0]
+    assert agent_run.request_id == request_id
+    assert agent_run.task_run_id == run_id
+    assert (agent_run.replan_count, agent_run.step_position, agent_run.retry_count) == (0, 0, 0)
+    assert agent_run.agent_name == "executor"
+    assert tool_call.agent_run_id == agent_run.id
+    assert tool_call.call_index == 0
+    assert not hasattr(agent_run, "task_id")
+    assert not hasattr(tool_call, "organization_id")
 
 
 @pytest.mark.asyncio
