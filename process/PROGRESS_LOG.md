@@ -4279,3 +4279,98 @@ ADR-008 remains Proposed pending T080 Strong Review.
 - Validation: git diff --check and repository consistency inspection; no runtime tests or PostgreSQL started.
 - Known limitation: ADR-009 and the planning package await independent Planning Strong Review.
 - Learner notes: observability records evidence while business tables remain authoritative. Read ADR-009, T090, T091, T097, and T098. Exercise: trace how a tenant-scoped query reconstructs one retry. Do not worry yet about external tracing or billing.
+### 2026-09-24 — T094 + T095 observability normalization
+
+Status: T094/T095 implementation COMPLETE; READY FOR T094/T095 STRONG REVIEW.
+T096 and later remain not started.
+
+What changed:
+- Added pure runtime observability normalizers for aware UTC timestamps,
+  bounded duration derivation, sanitized error text, and normalized provider
+  usage with explicit unavailable reasons.
+- Extended the existing RuntimeObservation/ExecutionResult handoff with
+  normalized usage and allowlisted provider metadata. The service persists
+  those values through the existing AgentRun/ToolCall rows.
+- Preserved the existing observational status vocabulary and retry/replan
+  coordinates; TaskRun lifecycle and tenant/security ownership remain
+  unchanged.
+- Added deterministic positive/negative tests for T094 timing, error, retry,
+  replan, lifecycle non-authority, and T095 known/derived/unavailable,
+  malformed, negative, and numeric-bound cases.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/executor.py`
+- `src/runtime/graph.py`
+- `src/runtime/__init__.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_observability_normalization.py`
+- `tests/runtime/test_t093_correlation.py`
+- `docs/OBSERVABILITY_EVAL.md`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused T094/T095 tests: 17 passed.
+- T093 correlation plus T094/T095 tests: 20 passed.
+- Runtime regression: 146 passed, 34 skipped.
+- Observability/foundation persistence regression: 35 passed.
+- Full suite: 571 passed, 124 skipped.
+- PostgreSQL persistence/runtime command attempted; 59 tests skipped because
+  `TASKPILOT_TEST_DATABASE_URL` is not configured in this environment.
+- `uv run alembic check` could not start because `TASKPILOT_DATABASE_URL` is
+  not configured; no migration files changed.
+- Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed.
+
+Known limitations:
+- No migration was needed: the approved T091/T092 schema already enforces the
+  frozen timing, usage, metadata, status, and tenant ownership constraints.
+- Live PostgreSQL evidence must be rerun in an environment with the required
+  disposable test database before Strong Review.
+
+Learner notes:
+- Problem solved: runtime evidence now records bounded timing and honest token
+  availability without confusing observation status with business lifecycle.
+- Read `src/runtime/observability.py`, `src/runtime/graph.py`,
+  `src/service/task_runtime.py`, `src/persistence/models.py`, and
+  `tests/runtime/test_observability_normalization.py`.
+- Key concept: `unavailable` is a known fact about missing provider data, while
+  `NULL` means no usage observation applied; neither is numeric zero.
+- Exercise: pass a provider payload with valid input/output counts but no total,
+  then inspect the derived total and persisted AgentRun usage shape.
+- Do not worry yet about pricing, cost, timeline queries, or external tracing.
+
+Suggested next task: T094/T095 independent Strong Review with live PostgreSQL
+evidence available.
+### 2026-09-24 — T094/T095 focused blocker fix
+
+Status: blocker fix COMPLETE; READY FOR FOCUSED T094/T095 STRONG RE-REVIEW.
+
+What changed:
+- Provider-backed `ExecutionResult` values identified by provider metadata now
+  convert missing usage to `{"status":"unavailable","reason":"not_returned"}`
+  before graph state and observation persistence. Non-provider results retain
+  `usage = NULL`.
+- Provider metadata now reuses the existing observability redaction matcher at
+  the runtime boundary and rejects credential-bearing values, including
+  Authorization/Bearer text, before checkpoint/state propagation.
+- Added focused tests for provider/non-provider usage distinction, consistent
+  AgentRun/ToolCall usage, unsafe metadata rejection, safe metadata preservation,
+  and checkpoint/runtime observation protection.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/executor.py`
+- `tests/runtime/test_observability_normalization.py`
+- `tests/runtime/test_t093_correlation.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused blocker plus existing T094/T095 tests: 25 passed.
+- T093–T095/runtime regression: 151 passed, 34 skipped.
+- Affected service tests: 30 passed.
+- Ruff format/check, Pyrefly, and `git diff --check` passed.
+- No PostgreSQL or migration work was required for this runtime-boundary fix.
+
+Scope remains limited to the two Strong Review blockers. No T096+ work,
+schema/migration redesign, generic provider/security framework, commit, or push
+was performed.

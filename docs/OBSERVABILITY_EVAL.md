@@ -113,11 +113,27 @@ existing tenant-scoped repositories. HTTP request IDs come from the middleware
 context; background execution stores `NULL`. No `task_step_id` is synthesized,
 and neither the checkpoint nor model output can supply a trace authority.
 
-Timing is UTC with nullable integer millisecond durations. Errors use bounded
-normalized class/code/message fields. Provider usage is either a bounded
-known object or an explicit unavailable reason; unavailable values are never
-zero. Cost is a deterministic estimate from an explicit price table, not
-billing truth.
+### T094/T095 normalization boundary
+
+T094 validates aware timestamps, canonicalizes them to UTC, and derives a
+nullable integer `duration_ms` from the two endpoints only. Durations are
+bounded to 24 hours; an open or missing endpoint remains `NULL`. AgentRun and
+ToolCall statuses are observational values, so TaskRun lifecycle remains the
+authoritative `pending/running/succeeded/failed/cancelled` state machine. Error
+class, code, and sanitized message are bounded; an unclassifiable error uses
+`UNKNOWN`, while no error uses `NULL`. A retry is a new AgentRun row with the
+same replan and incremented retry coordinate. A replan increments the replan
+coordinate and starts at step position zero; prior evidence is retained.
+
+T095 normalizes provider usage to either a known object containing bounded
+integer token counts or `{"status":"unavailable","reason":...}` with one of
+`not_returned`, `unsupported`, or `malformed`. A missing total is derived only
+from valid input and output counts. Missing, malformed, negative, or oversized
+values never become numeric zero. Provider metadata is restricted to
+allowlisted provider/model/response identifiers and 2,048 compact UTF-8 bytes.
+The normalized usage and metadata flow through the existing runtime collector
+into AgentRun/ToolCall rows; `NULL` remains reserved for an observation where
+no provider usage applied.
 
 The trace query applies the principal organization predicate in SQL, returns a
 bounded sanitized timeline in stable order, and preserves failure/retry/replan

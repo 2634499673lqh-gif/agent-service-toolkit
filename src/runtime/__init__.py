@@ -24,6 +24,17 @@ from runtime.graph import (
     RuntimeObservationSink,
     build_runtime_graph,
 )
+from runtime.observability import (
+    NormalizedProviderUsage,
+    ProviderUsage,
+    ProviderUsageUnavailable,
+    adapt_provider_usage,
+    normalize_provider_metadata,
+    normalize_provider_usage,
+    normalize_usage,
+    normalize_utc_timestamp,
+    unavailable_usage,
+)
 from runtime.planner import (
     PlannerModel,
     PlannerNode,
@@ -69,6 +80,15 @@ __all__ = [
     "FailureClassification",
     "FailureClassifier",
     "RuntimeFailure",
+    "ProviderUsage",
+    "ProviderUsageUnavailable",
+    "NormalizedProviderUsage",
+    "adapt_provider_usage",
+    "normalize_provider_metadata",
+    "normalize_provider_usage",
+    "normalize_usage",
+    "normalize_utc_timestamp",
+    "unavailable_usage",
     "RiskRoute",
     "build_runtime_graph",
     "RuntimeGraphContext",

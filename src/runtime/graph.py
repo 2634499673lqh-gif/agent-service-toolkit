@@ -7,7 +7,7 @@ from uuid import UUID
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from schema.planner import PlanStep
 
@@ -16,6 +16,13 @@ from .capability import CapabilityDispatcher, CapabilityMetadata
 from .context import ContextBuilder, ContextEnvelope
 from .executor import ExecutionResult, Executor
 from .failure import FailureClassifier, RuntimeFailure
+from .observability import (
+    duration_ms,
+    normalize_provider_metadata,
+    normalize_provider_usage,
+    normalize_utc_timestamp,
+    sanitize_error_text,
+)
 from .planner import PlannerNode, PlannerOutputInvalidError
 from .replan import ReplanState, apply_replacement_plan, consume_replan
 from .retry import consume_retry
@@ -51,15 +58,17 @@ class RuntimeObservation(BaseModel):
     step_position: int = Field(ge=0, le=7)
     retry_count: int = Field(ge=0, le=1)
     agent_name: str = Field(min_length=1, max_length=128)
-    agent_status: Literal["succeeded", "failed", "waiting_approval", "unknown"]
+    agent_status: Literal["running", "succeeded", "failed", "waiting_approval", "unknown"]
     tool_name: str | None = Field(default=None, max_length=128)
     call_index: int | None = Field(default=None, ge=0, le=999)
-    tool_status: Literal["succeeded", "failed", "unknown"] | None = None
+    tool_status: Literal["running", "succeeded", "failed", "unknown"] | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
     result: dict[str, Any] | None = None
     error_class: Literal["RETRY", "REPLAN", "TERMINAL", "UNKNOWN"] | None = None
     error_code: str | None = Field(default=None, max_length=64)
     error_message: str | None = Field(default=None, max_length=500)
+    usage: dict[str, Any] | None = None
+    provider_metadata: dict[str, str] | None = None
     started_at: datetime
     finished_at: datetime | None = None
 
@@ -70,6 +79,53 @@ class RuntimeObservation(BaseModel):
             return str(UUID(str(value)))
         except (TypeError, ValueError):
             raise ValueError("observation task_run_id must be a valid UUID") from None
+
+    @field_validator("started_at", "finished_at")
+    @classmethod
+    def timestamps_must_be_aware(cls, value: datetime | None, info: Any) -> datetime | None:
+        if value is None:
+            return None
+        return normalize_utc_timestamp(value, info.field_name)
+
+    @field_validator("error_message")
+    @classmethod
+    def error_message_must_be_sanitized(cls, value: str | None) -> str | None:
+        return sanitize_error_text(value, field_name="error_message", maximum=500)
+
+    @field_validator("error_code")
+    @classmethod
+    def error_code_must_be_bounded(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("error_code must not be blank")
+        return sanitize_error_text(value, field_name="error_code", maximum=64)
+
+    @field_validator("usage")
+    @classmethod
+    def usage_must_be_normalized(cls, value: object) -> dict[str, Any] | None:
+        return None if value is None else normalize_provider_usage(value)
+
+    @field_validator("provider_metadata")
+    @classmethod
+    def provider_metadata_must_be_bounded(cls, value: object) -> dict[str, str] | None:
+        return normalize_provider_metadata(value)
+
+    @model_validator(mode="after")
+    def finish_must_follow_start(self) -> "RuntimeObservation":
+        duration_ms(self.started_at, self.finished_at)
+        error_present = any(
+            value is not None for value in (self.error_class, self.error_code, self.error_message)
+        )
+        if self.agent_status in {"running", "succeeded", "waiting_approval"} and error_present:
+            raise ValueError("normal AgentRun observations cannot carry error fields")
+        if self.tool_status in {"running", "succeeded"} and error_present:
+            raise ValueError("normal ToolCall observations cannot carry error fields")
+        return self
+
+    @property
+    def duration_ms(self) -> int | None:
+        """Return bounded duration derived from the two event timestamps."""
+
+        return duration_ms(self.started_at, self.finished_at)
 
 
 @runtime_checkable
@@ -193,12 +249,14 @@ def build_runtime_graph(
 
         async def observe(
             *,
-            agent_status: Literal["succeeded", "failed", "waiting_approval", "unknown"],
+            agent_status: Literal["running", "succeeded", "failed", "waiting_approval", "unknown"],
             context: ContextEnvelope | None = None,
-            tool_status: Literal["succeeded", "failed", "unknown"] | None = None,
+            tool_status: Literal["running", "succeeded", "failed", "unknown"] | None = None,
             result: dict[str, Any] | None = None,
             error: RuntimeFailure | None = None,
             tool_name: str | None = None,
+            usage: dict[str, Any] | None = None,
+            provider_metadata: dict[str, str] | None = None,
         ) -> None:
             if observation_sink is None:
                 return
@@ -221,6 +279,8 @@ def build_runtime_graph(
                     error_class=None if error is None else error.classification,
                     error_code=None if error is None else error.code,
                     error_message=None if error is None else error.sanitized_message,
+                    usage=usage,
+                    provider_metadata=provider_metadata,
                     started_at=started_at,
                     finished_at=datetime.now(UTC),
                 )
@@ -360,6 +420,8 @@ def build_runtime_graph(
                 result=result.model_dump(mode="json"),
                 error=failure,
                 tool_name=capability_name,
+                usage=result.usage,
+                provider_metadata=result.provider_metadata,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -377,6 +439,8 @@ def build_runtime_graph(
                 result=result.model_dump(mode="json"),
                 error=failure,
                 tool_name=capability_name,
+                usage=result.usage,
+                provider_metadata=result.provider_metadata,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -389,6 +453,8 @@ def build_runtime_graph(
             tool_status="succeeded",
             result=result.model_dump(mode="json"),
             tool_name=capability_name,
+            usage=result.usage,
+            provider_metadata=result.provider_metadata,
         )
         return {
             "capability_context": context.model_dump(mode="json"),

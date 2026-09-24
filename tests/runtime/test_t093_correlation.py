@@ -6,7 +6,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import Task, TaskRun, TaskRunStatus, TaskStatus
-from runtime import DeterministicExecutor
+from runtime import DeterministicExecutor, ExecutionResult
 from service.logging import reset_request_id, set_request_id
 from service.task_runtime import TaskRuntimeService
 
@@ -78,6 +78,27 @@ class CapturingToolCalls:
         return row
 
 
+class UsageExecutor:
+    async def execute(self, step, _task_input):
+        return ExecutionResult(
+            step_position=step.position,
+            success=True,
+            output="usage-aware",
+            usage={"input_tokens": 4, "output_tokens": 3},
+            provider_metadata={"provider": "fixture", "model": "fixture-v1"},
+        )
+
+
+class MissingUsageProviderExecutor:
+    async def execute(self, step, _task_input):
+        return ExecutionResult(
+            step_position=step.position,
+            success=True,
+            output="provider-without-usage",
+            provider_metadata={"provider": "fixture", "model": "fixture-v1"},
+        )
+
+
 def _pair() -> tuple[Task, TaskRun]:
     task = Task(
         id=TASK_ID,
@@ -139,6 +160,8 @@ async def test_t093_success_wires_request_task_run_step_agent_and_tool() -> None
     assert call.agent_run_id == agent.id
     assert call.call_index == 0
     assert call.tool_name == "deterministic_fixture"
+    assert agent.usage is None
+    assert call.usage is None
     assert not hasattr(agent, "task_id")
     assert not hasattr(agent, "organization_id")
     assert not hasattr(call, "task_id")
@@ -158,3 +181,39 @@ async def test_t093_background_work_keeps_request_id_null_and_retry_coordinate()
         (0, 0, 1),
     ]
     assert [call.agent_run_id for call in calls] == [agent.id for agent in agents]
+
+
+@pytest.mark.asyncio
+async def test_t095_known_usage_and_provider_metadata_propagate_to_observations() -> None:
+    result, _lifecycle, agents, calls = await _execute(executor=UsageExecutor())
+
+    assert result.state.execution_result is not None
+    assert result.state.execution_result.usage == {
+        "status": "known",
+        "input_tokens": 4,
+        "output_tokens": 3,
+        "total_tokens": 7,
+    }
+    assert result.state.execution_result.provider_metadata == {
+        "provider": "fixture",
+        "model": "fixture-v1",
+    }
+    assert agents[0].usage == {
+        "status": "known",
+        "input_tokens": 4,
+        "output_tokens": 3,
+        "total_tokens": 7,
+    }
+    assert agents[0].provider_metadata == {"provider": "fixture", "model": "fixture-v1"}
+    assert calls[0].usage == agents[0].usage
+
+
+@pytest.mark.asyncio
+async def test_t095_provider_missing_usage_is_explicit_and_consistent() -> None:
+    result, _lifecycle, agents, calls = await _execute(executor=MissingUsageProviderExecutor())
+
+    expected = {"status": "unavailable", "reason": "not_returned"}
+    assert result.state.execution_result is not None
+    assert result.state.execution_result.usage == expected
+    assert agents[0].usage == expected
+    assert calls[0].usage == expected

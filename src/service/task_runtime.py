@@ -1071,6 +1071,8 @@ class TaskRuntimeService:
                     error_message=observation.error_message,
                     started_at=observation.started_at,
                     finished_at=observation.finished_at,
+                    usage=observation.usage,
+                    provider_metadata=observation.provider_metadata,
                 )
                 # The repository flushes and normally assigns the model default;
                 # this fallback keeps the parent ID available for a test double
@@ -1097,6 +1099,7 @@ class TaskRuntimeService:
                     ),
                     error_code=observation.error_code,
                     error_message=observation.error_message,
+                    usage=observation.usage,
                 )
                 if tool_call.id is None:
                     setattr(tool_call, "id", uuid4())
