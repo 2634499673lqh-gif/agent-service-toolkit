@@ -88,11 +88,12 @@ Prefer:
 - evidence-based verification
 - human-labeled golden cases for subjective outputs
 
-## Phase 7 planning contract (ADR-009)
+## Phase 7 persistence contract and implementation (ADR-009; T091/T092)
 
 Phase 7 keeps Task and TaskRun as the business authority. The durable
 observability path is ToolCall -> AgentRun -> TaskRun -> Task ->
 organization; AgentRun and ToolCall never duplicate tenant authority.
+The T034 migration and tenant-scoped repositories now persist these rows.
 TaskStep persistence remains deferred, so the step coordinate is the
 zero-based pair (replan_count, step_position), with retry_count identifying a
 bounded retry.

@@ -1,3 +1,108 @@
+### 2026-09-24 — T091/T092 focused Strong Review blocker fix
+
+Status: T091/T092 implementation and live PostgreSQL evidence are complete;
+focused Strong Re-review is APPROVED. T093 is next; later Phase 7 work remains
+not started.
+
+Changed: strengthened `tests/persistence/test_postgres_integration.py` with a
+minimal live PostgreSQL matrix for foreign-parent rejection, AgentRun and
+ToolCall range/name/version checks, invalid timing and duration, normalized
+usage, provider metadata size, payload object/size checks, and status/error
+consistency. The test also reads stored PostgreSQL JSONB values and AgentRun
+error text to prove ORM redaction of ToolCall arguments/results and AgentRun
+provider metadata/error messages, while checking persisted usage shapes and
+nullable boundaries. Direct SQL is used only to exercise database constraints;
+redaction is verified on supported ORM construction.
+
+Environment: ran PostgreSQL 16 in isolated Compose project
+`taskpilot-t091-t092-blocker-verified-20260924`; its container, network, and
+volume were removed after validation. No production code or schema changed
+during this blocker fix. The test accepts PostgreSQL `DataError` as well as
+`IntegrityError` for a `varchar(64)` overflow rejection.
+
+Validation: the focused live test passed; the existing observability unit tests
+and full PostgreSQL persistence integration passed together as 28 tests. Ruff,
+format, Pyrefly, compilation, `uv lock --check`, and `git diff --check` passed.
+
+Suggested next task: focused T091/T092 Strong Re-review.
+
+### 2026-09-24 — T091/T092 focused PostgreSQL evidence unblock
+
+Status: live PostgreSQL evidence complete; T091/T092 implementation is ready
+for independent Strong Review. T093 and later Phase 7 work remain not started.
+
+Environment: started the existing per-user Docker Desktop installation, created
+an isolated repository Compose project named
+`taskpilot-t091-t092-pg-20260924`, and ran PostgreSQL 16 without touching the
+existing Compose project or volumes. The project container, network, and volume
+were removed after validation.
+
+Finding and fix: the first live insert showed that nullable JSONB fields bound
+Python `None` as JSON `null`, which violated the SQL NULL-aware bounds checks.
+Mapped T091/T092 nullable JSONB fields with `none_as_null=True` in
+`src/persistence/models.py`. No migration or public contract change was needed.
+
+Validation: `tests/persistence/test_postgres_integration.py` passed 24 tests,
+including T034 upgrade, T034 -> T033 downgrade, re-upgrade, database
+constraints, tenant isolation, FK RESTRICT, uniqueness, and rollback evidence.
+Focused persistence tests passed 35 tests. Ruff check/format, Pyrefly,
+`uv lock --check`, offline Alembic upgrade/downgrade generation, compilation,
+and `git diff --check` passed.
+
+Known warnings are dependency/Alembic deprecations only. No T093+ code,
+commit, or push was added.
+
+Suggested next task: independent T091/T092 Strong Review.
+
+### 2026-09-24 — T091 + T092 AgentRun and ToolCall persistence implementation
+
+Status: T091 and T092 implementation complete; live PostgreSQL evidence is
+pending before independent Strong Review. T093 and later Phase 7 work remain
+not started.
+
+Baseline: branch `phase-7-observability`, HEAD `8791bb758affdf3e5ba7c1981eced4a57c432129`,
+clean tracked working tree before implementation. Authority: accepted/frozen
+ADR-009 plus `process/tasks/T091.md` and `process/tasks/T092.md`.
+
+Changed: added `AgentRun` and `ToolCall` PostgreSQL ORM models, bounded status,
+error, timing, usage, provider metadata, and sanitized payload validation;
+added tenant-scoped flush-only repositories; registered both models in Alembic;
+and added linear revision `t034_observability` with RESTRICT foreign keys,
+canonical uniqueness keys, JSON/timing/bounds checks, and downgrade support.
+ToolCall arguments/results redact secret-bearing fields before JSONB persistence.
+No tenant/task duplicate columns, runtime correlation wiring, lifecycle changes,
+approval authority, checkpoint changes, external tracing, or public trace API
+were added.
+
+Files changed: `src/persistence/models.py`, `src/persistence/repositories.py`,
+`src/persistence/__init__.py`, `migrations/env.py`,
+`migrations/versions/20260924_01_observability.py`, focused persistence tests,
+and the database/observability status documentation.
+
+Validation: focused model/repository tests passed (35 tests); the affected
+persistence module passed with 35 tests and 24 PostgreSQL tests skipped because
+`TASKPILOT_TEST_DATABASE_URL` and Docker PostgreSQL were unavailable in this
+environment. Full suite passed (551 passed, 122 skipped); affected service/runtime regression passed (382 passed, 50 skipped).
+Alembic offline SQL generation through `t034_observability`, Ruff
+check/format, Python compilation, and `git diff --check` passed. Live
+PostgreSQL evidence remains required for the Strong Review environment.
+
+Known limitation: live PostgreSQL upgrade/downgrade, uniqueness, FK RESTRICT,
+tenant visibility, and rollback evidence could not run without the repository's
+disposable PostgreSQL service; no fallback shared database was used.
+
+Learner notes: observation rows are evidence joined through TaskRun ownership;
+they do not become a second tenant or lifecycle authority. Read
+`src/persistence/models.py`, `src/persistence/repositories.py`,
+`migrations/versions/20260924_01_observability.py`,
+`tests/persistence/test_observability_foundation.py`, and ADR-009. Exercise:
+trace the SQL joins used to hide a foreign-tenant ToolCall, then inspect the
+sanitized JSON stored by the model. Do not worry yet about correlation wiring,
+usage adapters, timeline APIs, or external tracing.
+
+Suggested next task: independent T091/T092 Strong Review with live PostgreSQL
+evidence.
+
 ### 2026-09-24 — Phase 7 Planning focused blocker fix
 
 Task: complete the focused planning/docs-only blocker window after the Phase 7

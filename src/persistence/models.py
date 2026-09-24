@@ -1,6 +1,9 @@
 """TaskPilot business ORM models."""
 
 import json
+import math
+import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
@@ -34,6 +37,221 @@ def utc_now() -> datetime:
 
 
 APPROVAL_JSON_MAX_BYTES = 8192
+OBSERVABILITY_JSON_MAX_BYTES = 8192
+PROVIDER_METADATA_MAX_BYTES = 2048
+MAX_DURATION_MS = 86_400_000
+MAX_USAGE_TOKENS = 1_000_000_000_000
+
+_OBSERVABILITY_REDACTED = "[REDACTED]"
+_OBSERVABILITY_SENSITIVE_KEY = re.compile(
+    r"(?:^|[_-])(?:api[_-]?key|access[_-]?token|auth(?:orization)?|bearer|"
+    r"credentials?|dsn|connection[_-]?(?:string|url)|password|private[_-]?key|"
+    r"secret|token)(?:$|[_-])",
+    re.IGNORECASE,
+)
+_OBSERVABILITY_AUTHORIZATION = re.compile(r"(?i)(\bauthorization\s*[:=]\s*bearer\s+)([^\s,;]+)")
+_OBSERVABILITY_URL_CREDENTIAL = re.compile(
+    r"(\b[a-z][a-z0-9+.-]*://[^\s/:@]+:)([^\s/@]+)(@)", re.IGNORECASE
+)
+_OBSERVABILITY_KEY_VALUE = re.compile(
+    r"(?i)(\b(?:api[_-]?key|access[_-]?token|authorization|bearer|password|"
+    r"private[_-]?key|secret|token)\b\s*[:=]\s*[\"']?)([^\"'\s,};]+)"
+)
+
+
+def _is_sensitive_observability_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
+    return (
+        normalized
+        in {
+            "apikey",
+            "accesstoken",
+            "authorization",
+            "bearer",
+            "credential",
+            "credentials",
+            "dsn",
+            "password",
+            "privatekey",
+            "secret",
+            "token",
+        }
+        or _OBSERVABILITY_SENSITIVE_KEY.search(key) is not None
+    )
+
+
+def _redact_observability_text(value: str) -> str:
+    """Mask common credential forms before an observation reaches JSONB."""
+
+    redacted = _OBSERVABILITY_AUTHORIZATION.sub(rf"\1{_OBSERVABILITY_REDACTED}", value)
+    redacted = _OBSERVABILITY_URL_CREDENTIAL.sub(rf"\1{_OBSERVABILITY_REDACTED}\3", redacted)
+    return _OBSERVABILITY_KEY_VALUE.sub(rf"\1{_OBSERVABILITY_REDACTED}", redacted)
+
+
+def _redact_observability_value(value: object, *, key: str | None = None) -> object:
+    """Recursively redact secret-bearing payload fields without mutating input."""
+
+    if key is not None and _is_sensitive_observability_key(key):
+        return _OBSERVABILITY_REDACTED
+    if hasattr(value, "get_secret_value"):
+        return _OBSERVABILITY_REDACTED
+    if isinstance(value, Mapping):
+        return {
+            item_key: _redact_observability_value(item, key=str(item_key))
+            for item_key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_observability_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_observability_text(value)
+    return value
+
+
+def _validate_observability_json_object(value: object, field_name: str) -> dict[str, Any]:
+    """Redact and validate one compact JSON object for observation storage."""
+
+    try:
+        redacted = _redact_observability_value(value)
+    except RecursionError:
+        raise ValueError(f"{field_name} must be a JSON object") from None
+
+    def is_json_value(candidate: object) -> bool:
+        if candidate is None or isinstance(candidate, (str, bool, int)):
+            return True
+        if isinstance(candidate, float):
+            return math.isfinite(candidate)
+        if isinstance(candidate, list):
+            return all(is_json_value(item) for item in candidate)
+        if isinstance(candidate, dict):
+            return all(
+                isinstance(key, str) and is_json_value(item) for key, item in candidate.items()
+            )
+        return False
+
+    if not isinstance(redacted, dict) or not is_json_value(redacted):
+        raise ValueError(f"{field_name} must be a JSON object")
+    try:
+        encoded = json.dumps(
+            redacted,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
+        raise ValueError(f"{field_name} must be a JSON object") from None
+    if len(encoded) > OBSERVABILITY_JSON_MAX_BYTES:
+        raise ValueError(f"{field_name} exceeds {OBSERVABILITY_JSON_MAX_BYTES} UTF-8 bytes")
+    return redacted
+
+
+def _validate_usage(value: object, field_name: str = "usage") -> dict[str, Any] | None:
+    """Validate the normalized T095 usage shape without inventing zero values."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be a normalized usage object")
+    status = value.get("status")
+    if status == "unavailable":
+        if set(value) != {"status", "reason"} or value.get("reason") not in {
+            "not_returned",
+            "unsupported",
+            "malformed",
+        }:
+            raise ValueError(f"{field_name} has an invalid unavailable shape")
+        return dict(value)
+    if status != "known":
+        raise ValueError(f"{field_name} has an invalid status")
+    required = {"status", "input_tokens", "output_tokens", "total_tokens"}
+    if not required.issubset(value) or set(value) - required - {"cached_input_tokens"}:
+        raise ValueError(f"{field_name} has an invalid known shape")
+    for key in required - {"status"} | (
+        {"cached_input_tokens"} if "cached_input_tokens" in value else set()
+    ):
+        token_count = value[key]
+        if (
+            isinstance(token_count, bool)
+            or not isinstance(token_count, int)
+            or not 0 <= token_count <= MAX_USAGE_TOKENS
+        ):
+            raise ValueError(f"{field_name}.{key} is out of bounds")
+    return dict(value)
+
+
+def _usage_check_sql(column: str) -> str:
+    """Return the database shape check shared by both observation tables."""
+
+    def bounded_token(key: str) -> str:
+        return (
+            f"jsonb_typeof({column}->'{key}') = 'number' AND "
+            f"CASE WHEN ({column}->>'{key}') ~ '^[0-9]+$' "
+            f"THEN (({column}->>'{key}')::numeric BETWEEN 0 AND 1000000000000) "
+            "ELSE FALSE END"
+        )
+
+    return (
+        f"{column} IS NULL OR (jsonb_typeof({column}) = 'object' AND ("
+        f"(({column}->>'status') = 'unavailable' AND "
+        f"({column}->>'reason') IN ('not_returned', 'unsupported', 'malformed') AND "
+        f"({column} - ARRAY['status', 'reason']::text[]) = '{{}}'::jsonb) OR "
+        f"(({column}->>'status') = 'known' AND "
+        f"({column} ? 'input_tokens') AND ({column} ? 'output_tokens') AND "
+        f"({column} ? 'total_tokens') AND {bounded_token('input_tokens')} AND "
+        f"{bounded_token('output_tokens')} AND {bounded_token('total_tokens')} AND "
+        f"(NOT ({column} ? 'cached_input_tokens') OR {bounded_token('cached_input_tokens')}) AND "
+        f"({column} - ARRAY['status', 'input_tokens', 'output_tokens', 'total_tokens', "
+        f"'cached_input_tokens']::text[]) = '{{}}'::jsonb))"
+        ")"
+    )
+
+
+def _validate_provider_metadata(value: object) -> dict[str, Any] | None:
+    """Keep only compact provider/model/response identifiers in metadata."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("provider_metadata must be a JSON object")
+    allowed_keys = {
+        "provider",
+        "model",
+        "version",
+        "response_id",
+        "request_id",
+        "provider_request_id",
+    }
+    if set(value) - allowed_keys:
+        raise ValueError("provider_metadata contains a non-allowlisted key")
+    sanitized = _validate_observability_json_object(value, "provider_metadata")
+    if any(not isinstance(item, str) for item in sanitized.values()):
+        raise ValueError("provider_metadata values must be strings")
+    try:
+        encoded = json.dumps(
+            sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeEncodeError, RecursionError):
+        raise ValueError("provider_metadata must be a JSON object") from None
+    if len(encoded) > PROVIDER_METADATA_MAX_BYTES:
+        raise ValueError(f"provider_metadata exceeds {PROVIDER_METADATA_MAX_BYTES} UTF-8 bytes")
+    return sanitized
+
+
+def _normalize_utc(value: datetime, field_name: str) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be timezone-aware")
+    return value.astimezone(UTC)
+
+
+def _derive_duration_ms(started_at: datetime, finished_at: datetime | None) -> int | None:
+    if finished_at is None:
+        return None
+    if finished_at < started_at:
+        raise ValueError("finished_at must not precede started_at")
+    duration_ms = int((finished_at - started_at).total_seconds() * 1000)
+    if not 0 <= duration_ms <= MAX_DURATION_MS:
+        raise ValueError(f"duration_ms must be between 0 and {MAX_DURATION_MS}")
+    return duration_ms
 
 
 def _validate_approval_json_object(value: object, field_name: str) -> dict[str, Any]:
@@ -503,6 +721,495 @@ class TaskRun(Base):
             run_number=run_number,
             status=status,
             **kwargs,
+        )
+
+
+class AgentRunStatus(Enum):
+    """Observational status for one server-selected agent invocation."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    WAITING_APPROVAL = "waiting_approval"
+    UNKNOWN = "unknown"
+
+
+class ToolCallStatus(Enum):
+    """Observational status for one tool dispatch attempt."""
+
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
+class ObservabilityErrorClass(Enum):
+    """Normalized runtime error classification stored on observation rows."""
+
+    RETRY = "RETRY"
+    REPLAN = "REPLAN"
+    TERMINAL = "TERMINAL"
+    UNKNOWN = "UNKNOWN"
+
+
+# Both rows use the same frozen error vocabulary; the aliases keep the model
+# names discoverable for callers that reason from either table.
+AgentRunErrorClass = ObservabilityErrorClass
+ToolCallErrorClass = ObservabilityErrorClass
+
+
+def _validate_observation_name(value: str, field_name: str, maximum: int) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+        raise ValueError(f"{field_name} must be non-empty and at most {maximum} characters")
+    return value
+
+
+def _validate_observation_error_code(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip() or len(value) > 64:
+        raise ValueError("error_code must be non-empty and at most 64 characters")
+    return _redact_observability_text(value)
+
+
+def _validate_observation_error_message(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 500:
+        raise ValueError("error_message must be at most 500 characters")
+    if "traceback" in value.casefold() or "\n" in value or "\r" in value:
+        raise ValueError("error_message must be a sanitized single-line message")
+    return _redact_observability_text(value)
+
+
+class AgentRun(Base):
+    """One immutable observation of a server-selected agent/node invocation."""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        CheckConstraint("replan_count BETWEEN 0 AND 1", name="agent_run_replan_count_range"),
+        CheckConstraint("step_position BETWEEN 0 AND 7", name="agent_run_step_position_range"),
+        CheckConstraint("retry_count BETWEEN 0 AND 1", name="agent_run_retry_count_range"),
+        CheckConstraint("agent_name ~ '[^[:space:]]'", name="agent_run_name_not_blank"),
+        CheckConstraint("char_length(agent_name) <= 128", name="agent_run_name_length"),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed', 'waiting_approval', 'unknown')",
+            name="agent_run_status_valid",
+        ),
+        CheckConstraint(
+            "error_class IS NULL OR error_class IN ('RETRY', 'REPLAN', 'TERMINAL', 'UNKNOWN')",
+            name="agent_run_error_class_valid",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR (error_code ~ '[^[:space:]]' AND char_length(error_code) <= 64)",
+            name="agent_run_error_code_bounds",
+        ),
+        CheckConstraint(
+            "error_message IS NULL OR char_length(error_message) <= 500",
+            name="agent_run_error_message_length",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="agent_run_finish_not_before_start",
+        ),
+        CheckConstraint(
+            "duration_ms IS NULL OR (finished_at IS NOT NULL "
+            "AND duration_ms BETWEEN 0 AND 86400000 "
+            "AND duration_ms = floor(extract(epoch FROM (finished_at - started_at)) * 1000)::integer)",
+            name="agent_run_duration_bounds",
+        ),
+        CheckConstraint(
+            "(finished_at IS NULL AND duration_ms IS NULL) OR finished_at IS NOT NULL",
+            name="agent_run_duration_requires_finish",
+        ),
+        CheckConstraint(
+            "(status IN ('running', 'succeeded', 'waiting_approval') AND error_class IS NULL "
+            "AND error_code IS NULL AND error_message IS NULL) OR "
+            "status IN ('failed', 'unknown')",
+            name="agent_run_error_consistency",
+        ),
+        CheckConstraint(_usage_check_sql("usage"), name="agent_run_usage_shape"),
+        CheckConstraint(
+            "provider_metadata IS NULL OR (jsonb_typeof(provider_metadata) = 'object' "
+            "AND octet_length(provider_metadata::text) <= 2048)",
+            name="agent_run_provider_metadata_bounds",
+        ),
+        UniqueConstraint(
+            "task_run_id",
+            "replan_count",
+            "step_position",
+            "retry_count",
+            "agent_name",
+            name="uq_agent_runs_invocation",
+        ),
+        Index("ix_agent_runs_task_run_id", "task_run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    task_run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.task_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    request_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    replan_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    step_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[AgentRunStatus] = mapped_column(
+        sa.Enum(
+            AgentRunStatus,
+            name="agent_run_status",
+            native_enum=False,
+            create_constraint=False,
+            length=16,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=AgentRunStatus.UNKNOWN,
+        server_default=text("'unknown'"),
+    )
+    error_class: Mapped[ObservabilityErrorClass | None] = mapped_column(
+        sa.Enum(
+            ObservabilityErrorClass,
+            name="observability_error_class",
+            native_enum=False,
+            create_constraint=False,
+            length=8,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    provider_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        task_run_id: UUID,
+        replan_count: int,
+        step_position: int,
+        retry_count: int,
+        agent_name: str,
+        started_at: datetime,
+        request_id: UUID | None = None,
+        status: AgentRunStatus | str = AgentRunStatus.UNKNOWN,
+        error_class: ObservabilityErrorClass | str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        finished_at: datetime | None = None,
+        duration_ms: int | None = None,
+        usage: dict[str, Any] | None = None,
+        provider_metadata: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(status, AgentRunStatus):
+            status = AgentRunStatus(status)
+        if error_class is not None and not isinstance(error_class, ObservabilityErrorClass):
+            error_class = ObservabilityErrorClass(error_class)
+        started_at = _normalize_utc(started_at, "started_at")
+        finished_at = None if finished_at is None else _normalize_utc(finished_at, "finished_at")
+        derived_duration = _derive_duration_ms(started_at, finished_at)
+        if duration_ms is not None and duration_ms != derived_duration:
+            raise ValueError("duration_ms must be derived from started_at and finished_at")
+        agent_name = _validate_observation_name(agent_name, "agent_name", 128)
+        error_code = _validate_observation_error_code(error_code)
+        error_message = _validate_observation_error_message(error_message)
+        if status in {
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.SUCCEEDED,
+            AgentRunStatus.WAITING_APPROVAL,
+        } and (error_class is not None or error_code is not None or error_message is not None):
+            raise ValueError("normal AgentRun observations cannot carry error fields")
+        super().__init__(
+            task_run_id=task_run_id,
+            request_id=request_id,
+            replan_count=replan_count,
+            step_position=step_position,
+            retry_count=retry_count,
+            agent_name=agent_name,
+            status=status,
+            error_class=error_class,
+            error_code=error_code,
+            error_message=error_message,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=derived_duration,
+            usage=_validate_usage(usage),
+            provider_metadata=_validate_provider_metadata(provider_metadata),
+            **kwargs,
+        )
+
+    @validates("agent_name")
+    def validate_agent_name(self, _key: str, value: str) -> str:
+        return _validate_observation_name(value, "agent_name", 128)
+
+    @validates("duration_ms")
+    def validate_duration(self, _key: str, value: int | None) -> int | None:
+        started_at = getattr(self, "started_at", None)
+        finished_at = getattr(self, "finished_at", None)
+        expected = None if started_at is None else _derive_duration_ms(started_at, finished_at)
+        if value != expected:
+            raise ValueError("duration_ms must be derived from started_at and finished_at")
+        return value
+
+    @validates("error_code")
+    def validate_error_code(self, _key: str, value: str | None) -> str | None:
+        return _validate_observation_error_code(value)
+
+    @validates("error_message")
+    def validate_error_message(self, _key: str, value: str | None) -> str | None:
+        return _validate_observation_error_message(value)
+
+    @validates("usage")
+    def validate_usage(self, _key: str, value: object) -> dict[str, Any] | None:
+        return _validate_usage(value)
+
+    @validates("provider_metadata")
+    def validate_provider_metadata(self, _key: str, value: object) -> dict[str, Any] | None:
+        return _validate_provider_metadata(value)
+
+    def __repr__(self) -> str:
+        return (
+            f"AgentRun(id={self.id!r}, task_run_id={self.task_run_id!r}, "
+            f"agent_name={self.agent_name!r}, status={self.status!r})"
+        )
+
+
+class ToolCall(Base):
+    """One immutable, sanitized tool-dispatch observation beneath an AgentRun."""
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        CheckConstraint("call_index BETWEEN 0 AND 999", name="tool_call_index_range"),
+        CheckConstraint("tool_name ~ '[^[:space:]]'", name="tool_call_name_not_blank"),
+        CheckConstraint("char_length(tool_name) <= 128", name="tool_call_name_length"),
+        CheckConstraint(
+            "tool_version IS NULL OR (tool_version ~ '[^[:space:]]' AND char_length(tool_version) <= 64)",
+            name="tool_call_version_bounds",
+        ),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed', 'unknown')",
+            name="tool_call_status_valid",
+        ),
+        CheckConstraint(
+            "error_class IS NULL OR error_class IN ('RETRY', 'REPLAN', 'TERMINAL', 'UNKNOWN')",
+            name="tool_call_error_class_valid",
+        ),
+        CheckConstraint(
+            "error_code IS NULL OR (error_code ~ '[^[:space:]]' AND char_length(error_code) <= 64)",
+            name="tool_call_error_code_bounds",
+        ),
+        CheckConstraint(
+            "error_message IS NULL OR char_length(error_message) <= 500",
+            name="tool_call_error_message_length",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="tool_call_finish_not_before_start",
+        ),
+        CheckConstraint(
+            "duration_ms IS NULL OR (finished_at IS NOT NULL "
+            "AND duration_ms BETWEEN 0 AND 86400000 "
+            "AND duration_ms = floor(extract(epoch FROM (finished_at - started_at)) * 1000)::integer)",
+            name="tool_call_duration_bounds",
+        ),
+        CheckConstraint(
+            "(finished_at IS NULL AND duration_ms IS NULL) OR finished_at IS NOT NULL",
+            name="tool_call_duration_requires_finish",
+        ),
+        CheckConstraint(
+            "(status IN ('running', 'succeeded') AND error_class IS NULL "
+            "AND error_code IS NULL AND error_message IS NULL) OR status IN ('failed', 'unknown')",
+            name="tool_call_error_consistency",
+        ),
+        CheckConstraint("jsonb_typeof(arguments) = 'object'", name="tool_call_arguments_object"),
+        CheckConstraint("octet_length(arguments::text) <= 8192", name="tool_call_arguments_size"),
+        CheckConstraint(
+            "result IS NULL OR jsonb_typeof(result) = 'object'", name="tool_call_result_object"
+        ),
+        CheckConstraint(
+            "result IS NULL OR octet_length(result::text) <= 8192",
+            name="tool_call_result_size",
+        ),
+        CheckConstraint(_usage_check_sql("usage"), name="tool_call_usage_shape"),
+        UniqueConstraint("agent_run_id", "call_index", name="uq_tool_calls_agent_run_index"),
+        Index("ix_tool_calls_agent_run_id", "agent_run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    agent_run_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("taskpilot.agent_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    call_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    tool_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[ToolCallStatus] = mapped_column(
+        sa.Enum(
+            ToolCallStatus,
+            name="tool_call_status",
+            native_enum=False,
+            create_constraint=False,
+            length=9,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
+        default=ToolCallStatus.UNKNOWN,
+        server_default=text("'unknown'"),
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    error_class: Mapped[ObservabilityErrorClass | None] = mapped_column(
+        sa.Enum(
+            ObservabilityErrorClass,
+            name="observability_error_class",
+            native_enum=False,
+            create_constraint=False,
+            length=8,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=True,
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    usage: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    def __init__(
+        self,
+        *,
+        agent_run_id: UUID,
+        call_index: int,
+        tool_name: str,
+        started_at: datetime,
+        arguments: dict[str, Any],
+        tool_version: str | None = None,
+        status: ToolCallStatus | str = ToolCallStatus.UNKNOWN,
+        finished_at: datetime | None = None,
+        duration_ms: int | None = None,
+        result: dict[str, Any] | None = None,
+        error_class: ObservabilityErrorClass | str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        usage: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(status, ToolCallStatus):
+            status = ToolCallStatus(status)
+        if error_class is not None and not isinstance(error_class, ObservabilityErrorClass):
+            error_class = ObservabilityErrorClass(error_class)
+        started_at = _normalize_utc(started_at, "started_at")
+        finished_at = None if finished_at is None else _normalize_utc(finished_at, "finished_at")
+        derived_duration = _derive_duration_ms(started_at, finished_at)
+        if duration_ms is not None and duration_ms != derived_duration:
+            raise ValueError("duration_ms must be derived from started_at and finished_at")
+        tool_name = _validate_observation_name(tool_name, "tool_name", 128)
+        if tool_version is not None:
+            tool_version = _validate_observation_name(tool_version, "tool_version", 64)
+        error_code = _validate_observation_error_code(error_code)
+        error_message = _validate_observation_error_message(error_message)
+        if status in {ToolCallStatus.RUNNING, ToolCallStatus.SUCCEEDED} and (
+            error_class is not None or error_code is not None or error_message is not None
+        ):
+            raise ValueError("normal ToolCall observations cannot carry error fields")
+        super().__init__(
+            agent_run_id=agent_run_id,
+            call_index=call_index,
+            tool_name=tool_name,
+            tool_version=tool_version,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=derived_duration,
+            arguments=_validate_observability_json_object(arguments, "arguments"),
+            result=(
+                None if result is None else _validate_observability_json_object(result, "result")
+            ),
+            error_class=error_class,
+            error_code=error_code,
+            error_message=error_message,
+            usage=_validate_usage(usage),
+            **kwargs,
+        )
+
+    @validates("tool_name")
+    def validate_tool_name(self, _key: str, value: str) -> str:
+        return _validate_observation_name(value, "tool_name", 128)
+
+    @validates("duration_ms")
+    def validate_duration(self, _key: str, value: int | None) -> int | None:
+        started_at = getattr(self, "started_at", None)
+        finished_at = getattr(self, "finished_at", None)
+        expected = None if started_at is None else _derive_duration_ms(started_at, finished_at)
+        if value != expected:
+            raise ValueError("duration_ms must be derived from started_at and finished_at")
+        return value
+
+    @validates("tool_version")
+    def validate_tool_version(self, _key: str, value: str | None) -> str | None:
+        return None if value is None else _validate_observation_name(value, "tool_version", 64)
+
+    @validates("arguments")
+    def validate_arguments(self, _key: str, value: object) -> dict[str, Any]:
+        return _validate_observability_json_object(value, "arguments")
+
+    @validates("result")
+    def validate_result(self, _key: str, value: object) -> dict[str, Any] | None:
+        return None if value is None else _validate_observability_json_object(value, "result")
+
+    @validates("error_code")
+    def validate_error_code(self, _key: str, value: str | None) -> str | None:
+        return _validate_observation_error_code(value)
+
+    @validates("error_message")
+    def validate_error_message(self, _key: str, value: str | None) -> str | None:
+        return _validate_observation_error_message(value)
+
+    @validates("usage")
+    def validate_usage(self, _key: str, value: object) -> dict[str, Any] | None:
+        return _validate_usage(value)
+
+    def __repr__(self) -> str:
+        return (
+            f"ToolCall(id={self.id!r}, agent_run_id={self.agent_run_id!r}, "
+            f"tool_name={self.tool_name!r}, call_index={self.call_index!r}, status={self.status!r})"
         )
 
 

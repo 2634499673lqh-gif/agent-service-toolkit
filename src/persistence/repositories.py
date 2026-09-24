@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.identity import canonicalize_email
 from persistence.models import (
+    AgentRun,
     Approval,
     AuthSession,
     Membership,
@@ -17,6 +18,7 @@ from persistence.models import (
     Task,
     TaskRun,
     TaskRunStatus,
+    ToolCall,
     User,
 )
 
@@ -239,6 +241,248 @@ class TaskRunRepository:
                 Task.organization_id == organization_id,
             )
             .order_by(TaskRun.run_number, TaskRun.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+
+class AgentRunRepository:
+    """Tenant-scoped persistence operations for AgentRun observations."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def _parent_in_principal_tenant(
+        self, task_run_id: UUID, principal_organization_id: UUID
+    ) -> TaskRun | None:
+        statement = (
+            select(TaskRun)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def add(self, agent_run: AgentRun, principal_organization_id: UUID) -> AgentRun:
+        """Validate the tenant-scoped parent, then flush without committing."""
+
+        if (
+            await self._parent_in_principal_tenant(agent_run.task_run_id, principal_organization_id)
+            is None
+        ):
+            raise ValueError("TaskRun parent is not visible in the organization")
+        self.session.add(agent_run)
+        await self.session.flush()
+        return agent_run
+
+    async def add_in_principal_tenant(
+        self, agent_run: AgentRun, principal_organization_id: UUID
+    ) -> AgentRun:
+        """Named alias for callers that want the tenant boundary explicit."""
+
+        return await self.add(agent_run, principal_organization_id)
+
+    async def get_in_principal_tenant(
+        self, agent_run_id: UUID, principal_organization_id: UUID
+    ) -> AgentRun | None:
+        """Load one observation only through TaskRun -> Task ownership in SQL."""
+
+        statement = (
+            select(AgentRun)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                AgentRun.id == agent_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_task_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        agent_run_id: UUID,
+        principal_organization_id: UUID,
+    ) -> AgentRun | None:
+        """Load one observation through the requested visible Task and run."""
+
+        statement = (
+            select(AgentRun)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                AgentRun.id == agent_run_id,
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def list_for_task_run_in_principal_tenant(
+        self, task_id: UUID, task_run_id: UUID, principal_organization_id: UUID
+    ) -> list[AgentRun]:
+        """List immutable AgentRun evidence in deterministic event order."""
+
+        statement = (
+            select(AgentRun)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .order_by(AgentRun.started_at, AgentRun.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+
+class ToolCallRepository:
+    """Tenant-scoped persistence operations for ToolCall observations."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def _parent_in_principal_tenant(
+        self, agent_run_id: UUID, principal_organization_id: UUID
+    ) -> AgentRun | None:
+        statement = (
+            select(AgentRun)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                AgentRun.id == agent_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def add(self, tool_call: ToolCall, principal_organization_id: UUID) -> ToolCall:
+        """Validate the tenant-scoped AgentRun parent, then flush only."""
+
+        if (
+            await self._parent_in_principal_tenant(
+                tool_call.agent_run_id, principal_organization_id
+            )
+            is None
+        ):
+            raise ValueError("AgentRun parent is not visible in the organization")
+        self.session.add(tool_call)
+        await self.session.flush()
+        return tool_call
+
+    async def add_in_principal_tenant(
+        self, tool_call: ToolCall, principal_organization_id: UUID
+    ) -> ToolCall:
+        """Named alias for callers that want the tenant boundary explicit."""
+
+        return await self.add(tool_call, principal_organization_id)
+
+    async def get_in_principal_tenant(
+        self, tool_call_id: UUID, principal_organization_id: UUID
+    ) -> ToolCall | None:
+        """Load one ToolCall only through AgentRun -> TaskRun -> Task in SQL."""
+
+        statement = (
+            select(ToolCall)
+            .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                ToolCall.id == tool_call_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_agent_run_in_principal_tenant(
+        self,
+        agent_run_id: UUID,
+        tool_call_id: UUID,
+        principal_organization_id: UUID,
+    ) -> ToolCall | None:
+        """Load one ToolCall beneath a visible AgentRun."""
+
+        statement = (
+            select(ToolCall)
+            .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                ToolCall.id == tool_call_id,
+                AgentRun.id == agent_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def get_for_task_run_in_principal_tenant(
+        self,
+        task_id: UUID,
+        task_run_id: UUID,
+        tool_call_id: UUID,
+        principal_organization_id: UUID,
+    ) -> ToolCall | None:
+        """Load one ToolCall through an explicitly visible Task and TaskRun."""
+
+        statement = (
+            select(ToolCall)
+            .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                ToolCall.id == tool_call_id,
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+        )
+        return await self.session.scalar(statement)
+
+    async def list_for_agent_run_in_principal_tenant(
+        self, agent_run_id: UUID, principal_organization_id: UUID
+    ) -> list[ToolCall]:
+        """List one AgentRun's calls inside the principal tenant."""
+
+        statement = (
+            select(ToolCall)
+            .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                AgentRun.id == agent_run_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .order_by(ToolCall.call_index, ToolCall.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
+    async def list_for_task_run_in_principal_tenant(
+        self, task_id: UUID, task_run_id: UUID, principal_organization_id: UUID
+    ) -> list[ToolCall]:
+        """List all calls for a visible TaskRun through the normalized path."""
+
+        statement = (
+            select(ToolCall)
+            .join(AgentRun, AgentRun.id == ToolCall.agent_run_id)
+            .join(TaskRun, TaskRun.id == AgentRun.task_run_id)
+            .join(Task, Task.id == TaskRun.task_id)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.task_id == task_id,
+                Task.id == task_id,
+                Task.organization_id == principal_organization_id,
+            )
+            .order_by(ToolCall.started_at, AgentRun.id, ToolCall.call_index, ToolCall.id)
         )
         result = await self.session.scalars(statement)
         return list(result)

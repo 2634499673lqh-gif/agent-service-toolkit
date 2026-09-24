@@ -19,6 +19,7 @@ from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
 from persistence.models import (
     APPROVAL_JSON_MAX_BYTES,
+    AgentRun,
     Approval,
     ApprovalActionState,
     ApprovalRiskLevel,
@@ -31,6 +32,7 @@ from persistence.models import (
     TaskRun,
     TaskRunStatus,
     TaskStatus,
+    ToolCall,
     User,
     utc_now,
 )
@@ -61,6 +63,8 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.tasks",
         "taskpilot.task_runs",
         "taskpilot.approvals",
+        "taskpilot.agent_runs",
+        "taskpilot.tool_calls",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
@@ -69,6 +73,8 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
     assert Task.__table__.schema == "taskpilot"
     assert TaskRun.__table__.schema == "taskpilot"
     assert Approval.__table__.schema == "taskpilot"
+    assert AgentRun.__table__.schema == "taskpilot"
+    assert ToolCall.__table__.schema == "taskpilot"
 
 
 def test_approval_metadata_declares_frozen_identity_and_integrity_contract() -> None:

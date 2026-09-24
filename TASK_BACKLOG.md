@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; implementation is ready to begin with T091/T092.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 is next and later tasks are not started.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -254,9 +254,11 @@ Phase 7 planning is defined by ADR-009 and task cards T090–T098. DAG: `T090 �
 Goal: decide DB events vs external trace backend responsibilities.
 
 ### T091 — AgentRun persistence [C/B]
-Approved schema only.
+Implementation and live PostgreSQL evidence complete; Strong Review APPROVED.
+Approved schema only; no correlation wiring.
 
 ### T092 — ToolCall persistence [C/B]
+Implementation and live PostgreSQL evidence complete; Strong Review APPROVED.
 Approved schema only, including persisted-payload redaction tests.
 
 ### T093 — Correlation propagation [B]

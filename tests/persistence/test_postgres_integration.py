@@ -1,6 +1,7 @@
 """Disposable PostgreSQL verification for TaskPilot migration coexistence."""
 
 import asyncio
+import json
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -24,11 +25,13 @@ from psycopg import AsyncConnection, errors, sql
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from sqlalchemy import delete, insert, inspect, make_url, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from persistence.engine import create_async_engine, create_session_factory, get_business_session
 from persistence.models import (
+    AgentRun,
+    AgentRunStatus,
     Approval,
     ApprovalActionState,
     ApprovalStatus,
@@ -40,16 +43,20 @@ from persistence.models import (
     TaskRun,
     TaskRunStatus,
     TaskStatus,
+    ToolCall,
+    ToolCallStatus,
     User,
 )
 from persistence.passwords import hash_password, verify_password
 from persistence.repositories import (
+    AgentRunRepository,
     ApprovalRepository,
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
     TaskRepository,
     TaskRunRepository,
+    ToolCallRepository,
     UserRepository,
 )
 from persistence.tokens import generate_token, hash_token
@@ -77,7 +84,8 @@ T023_REVISION = "t023_auth_session"
 T031_REVISION = "t031_task"
 T032_REVISION = "t032_task_run"
 T033_REVISION = "t033_approval"
-EXPECTED_REVISION = T033_REVISION
+T034_REVISION = "t034_observability"
+EXPECTED_REVISION = T034_REVISION
 
 
 def _configured_test_url() -> str:
@@ -184,10 +192,13 @@ async def _assert_taskpilot_schema(
     memberships_expected: bool = True,
     sessions_expected: bool = True,
     approvals_expected: bool | None = None,
+    observability_expected: bool | None = None,
     expected_tables: set[str] | None = None,
 ) -> None:
     if approvals_expected is None:
-        approvals_expected = expected_revision == T033_REVISION
+        approvals_expected = expected_revision in {T033_REVISION, T034_REVISION}
+    if observability_expected is None:
+        observability_expected = expected_revision == T034_REVISION
     async with engine.connect() as connection:
         schemas = set(await connection.run_sync(lambda conn: inspect(conn).get_schema_names()))
         tables = set(
@@ -342,10 +353,12 @@ async def _assert_taskpilot_schema(
         if sessions_expected:
             expected_tables.add("auth_sessions")
         expected_tables.add("tasks")
-        if expected_revision in {T032_REVISION, T033_REVISION}:
+        if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION}:
             expected_tables.add("task_runs")
         if approvals_expected:
             expected_tables.add("approvals")
+        if observability_expected:
+            expected_tables.update({"agent_runs", "tool_calls"})
     assert tables == expected_tables
     assert revision == expected_revision
     assert version_relation == "taskpilot.alembic_version"
@@ -475,7 +488,7 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.tasks"},
     )
-    if expected_revision in {T031_REVISION, T032_REVISION, T033_REVISION}:
+    if expected_revision in {T031_REVISION, T032_REVISION, T033_REVISION, T034_REVISION}:
         assert tasks_relation == "taskpilot.tasks"
         task_columns = {
             column["name"]: column
@@ -535,7 +548,7 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.task_runs"},
     )
-    if expected_revision in {T032_REVISION, T033_REVISION}:
+    if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION}:
         assert task_runs_relation == "taskpilot.task_runs"
         task_run_columns = {
             column["name"]: column
@@ -712,6 +725,12 @@ async def test_scenario_a_langgraph_then_taskpilot_and_downgrade() -> None:
             await _run_alembic(config, "upgrade", "head")
             await _assert_taskpilot_schema(engine)
             await _langgraph_read(database_url, "scenario-a")
+            # T034 -> T033 must remove only observability persistence.
+            await _run_alembic(config, "downgrade", T033_REVISION)
+            await _assert_taskpilot_schema(engine, expected_revision=T033_REVISION)
+            await _langgraph_read(database_url, "scenario-a")
+            await _run_alembic(config, "upgrade", "head")
+            await _assert_taskpilot_schema(engine)
             # T033 -> T032 must remove only Approval persistence.
             await _run_alembic(config, "downgrade", T032_REVISION)
             await _assert_taskpilot_schema(engine, expected_revision=T032_REVISION)
@@ -2378,3 +2397,588 @@ async def test_real_database_failure_rolls_back_and_never_echoes_the_hash(
             select(User).where(User.normalized_email == "taken@example.com")
         )
         assert len(list(users)) == 1
+
+
+@pytest.mark.asyncio
+async def test_observability_persistence_is_bounded_tenant_scoped_and_restrictive(
+    migrated_engine: AsyncEngine,
+) -> None:
+    """T091/T092 live PostgreSQL evidence for ownership, idempotency, and rollback."""
+
+    session_factory = create_session_factory(migrated_engine)
+    async with migrated_engine.connect() as connection:
+        for table_name, expected_unique in (
+            ("agent_runs", {"uq_agent_runs_invocation"}),
+            ("tool_calls", {"uq_tool_calls_agent_run_index"}),
+        ):
+            columns = await connection.run_sync(
+                lambda conn, name=table_name: inspect(conn).get_columns(name, schema="taskpilot")
+            )
+            column_by_name = {column["name"]: column for column in columns}
+            timestamp_columns = {"started_at", "finished_at", "created_at", "updated_at"}
+            assert all(column_by_name[name]["type"].timezone for name in timestamp_columns)
+            assert not {"organization_id", "task_id"}.intersection(column_by_name)
+            unique = await connection.run_sync(
+                lambda conn, name=table_name: inspect(conn).get_unique_constraints(
+                    name, schema="taskpilot"
+                )
+            )
+            assert expected_unique <= {constraint["name"] for constraint in unique}
+            foreign_keys = await connection.run_sync(
+                lambda conn, name=table_name: inspect(conn).get_foreign_keys(
+                    name, schema="taskpilot"
+                )
+            )
+            assert len(foreign_keys) == 1
+            assert foreign_keys[0]["options"].get("ondelete") == "RESTRICT"
+
+    organization_a = Organization(name="Trace Tenant A")
+    organization_b = Organization(name="Trace Tenant B")
+    user_a = User(email="trace-a@example.com", password_hash="opaque-a")
+    user_b = User(email="trace-b@example.com", password_hash="opaque-b")
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization_a)
+            await OrganizationRepository(session).add(organization_b)
+            await UserRepository(session).add(user_a)
+            await UserRepository(session).add(user_b)
+            task_a = Task(
+                organization_id=organization_a.id,
+                created_by_user_id=user_a.id,
+                title="Trace task A",
+            )
+            task_b = Task(
+                organization_id=organization_b.id,
+                created_by_user_id=user_b.id,
+                title="Trace task B",
+            )
+            await TaskRepository(session).add(task_a)
+            await TaskRepository(session).add(task_b)
+            run_a = TaskRun(task_id=task_a.id, run_number=1)
+            run_b = TaskRun(task_id=task_b.id, run_number=1)
+            await TaskRunRepository(session).add(run_a)
+            await TaskRunRepository(session).add(run_b)
+
+    started_at = datetime.now(UTC)
+    agent_a = AgentRun(
+        task_run_id=run_a.id,
+        replan_count=0,
+        step_position=0,
+        retry_count=0,
+        agent_name="planner",
+        status=AgentRunStatus.SUCCEEDED,
+        started_at=started_at,
+        finished_at=started_at + timedelta(milliseconds=3),
+    )
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await AgentRunRepository(session).add(agent_a, organization_a.id)
+            call_a = ToolCall(
+                agent_run_id=agent_a.id,
+                call_index=0,
+                tool_name="inspect",
+                status=ToolCallStatus.SUCCEEDED,
+                started_at=started_at,
+                arguments={"api_key": "secret-must-not-persist"},
+            )
+            await ToolCallRepository(session).add(call_a, organization_a.id)
+
+    async with get_business_session(session_factory) as session:
+        assert (
+            await AgentRunRepository(session).get_in_principal_tenant(agent_a.id, organization_a.id)
+            is not None
+        )
+        assert (
+            await AgentRunRepository(session).get_in_principal_tenant(agent_a.id, organization_b.id)
+            is None
+        )
+        loaded_call = await ToolCallRepository(session).get_in_principal_tenant(
+            call_a.id, organization_a.id
+        )
+        assert loaded_call is not None
+        assert loaded_call.arguments == {"api_key": "[REDACTED]"}
+        assert (
+            await ToolCallRepository(session).get_in_principal_tenant(call_a.id, organization_b.id)
+            is None
+        )
+
+    duplicate_agent = AgentRun(
+        task_run_id=run_a.id,
+        replan_count=0,
+        step_position=0,
+        retry_count=0,
+        agent_name="planner",
+        status=AgentRunStatus.RUNNING,
+        started_at=started_at,
+    )
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await AgentRunRepository(session).add(duplicate_agent, organization_a.id)
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                duplicate_call = ToolCall(
+                    agent_run_id=agent_a.id,
+                    call_index=0,
+                    tool_name="inspect",
+                    started_at=started_at,
+                    arguments={},
+                )
+                await ToolCallRepository(session).add(duplicate_call, organization_a.id)
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text("DELETE FROM taskpilot.agent_runs WHERE id = :id"),
+                    {"id": agent_a.id},
+                )
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text("DELETE FROM taskpilot.task_runs WHERE id = :id"),
+                    {"id": run_a.id},
+                )
+
+    with pytest.raises(IntegrityError):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO taskpilot.tool_calls "
+                        "(id, agent_run_id, call_index, tool_name, status, started_at, arguments) "
+                        "VALUES (:id, :agent_run_id, 1000, 'inspect', 'running', :started_at, '{}'::jsonb)"
+                    ),
+                    {"id": uuid4(), "agent_run_id": agent_a.id, "started_at": started_at},
+                )
+
+    foreign_agent = AgentRun(
+        task_run_id=run_a.id,
+        replan_count=0,
+        step_position=1,
+        retry_count=0,
+        agent_name="foreign-attempt",
+        started_at=started_at,
+    )
+    with pytest.raises(ValueError, match="not visible"):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                await AgentRunRepository(session).add(foreign_agent, organization_b.id)
+
+    rolled_back_id = uuid4()
+    with pytest.raises(RuntimeError, match="trace rollback"):
+        async with get_business_session(session_factory) as session:
+            async with session.begin():
+                rolled_back = AgentRun(
+                    id=rolled_back_id,
+                    task_run_id=run_a.id,
+                    replan_count=1,
+                    step_position=0,
+                    retry_count=0,
+                    agent_name="rollback",
+                    started_at=started_at,
+                )
+                await AgentRunRepository(session).add(rolled_back, organization_a.id)
+                raise RuntimeError("trace rollback")
+    async with get_business_session(session_factory) as session:
+        assert (
+            await AgentRunRepository(session).get_in_principal_tenant(
+                rolled_back_id, organization_a.id
+            )
+            is None
+        )
+
+
+@pytest.mark.asyncio
+async def test_observability_postgres_checks_and_persisted_redaction(
+    migrated_engine: AsyncEngine,
+) -> None:
+    """Exercise DB checks directly and verify sanitized values after reload."""
+
+    session_factory = create_session_factory(migrated_engine)
+    organization = Organization(name="Constraint Tenant")
+    user = User(email="constraint@example.com", password_hash="opaque")
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await OrganizationRepository(session).add(organization)
+            await UserRepository(session).add(user)
+            task = Task(
+                organization_id=organization.id,
+                created_by_user_id=user.id,
+                title="Constraint task",
+            )
+            await TaskRepository(session).add(task)
+            task_run = TaskRun(task_id=task.id, run_number=1)
+            await TaskRunRepository(session).add(task_run)
+
+    started_at = datetime.now(UTC)
+    agent = AgentRun(
+        id=uuid4(),
+        task_run_id=task_run.id,
+        replan_count=0,
+        step_position=0,
+        retry_count=0,
+        agent_name="constraint-agent",
+        status=AgentRunStatus.SUCCEEDED,
+        started_at=started_at,
+        finished_at=started_at + timedelta(milliseconds=4),
+        usage={"status": "unavailable", "reason": "not_returned"},
+        provider_metadata={
+            "provider": "fixture",
+            "model": "fixture-model",
+            "response_id": "api_key=agent-provider-secret",
+        },
+    )
+    call = ToolCall(
+        agent_run_id=agent.id,
+        call_index=0,
+        tool_name="constraint-tool",
+        status=ToolCallStatus.SUCCEEDED,
+        started_at=started_at,
+        arguments={
+            "api_key": "argument-secret",
+            "nested": {"password": "nested-secret"},
+            "authorization": "Bearer argument-token",
+        },
+        result={
+            "access_token": "result-secret",
+            "nested": {"dsn": "postgresql://user:password@example.test/db"},
+        },
+        usage={"status": "unavailable", "reason": "unsupported"},
+    )
+    nullable_agent = AgentRun(
+        id=uuid4(),
+        task_run_id=task_run.id,
+        replan_count=1,
+        step_position=0,
+        retry_count=0,
+        agent_name="nullable-agent",
+        status=AgentRunStatus.RUNNING,
+        started_at=started_at,
+    )
+    failed_agent = AgentRun(
+        id=uuid4(),
+        task_run_id=task_run.id,
+        replan_count=1,
+        step_position=1,
+        retry_count=0,
+        agent_name="failed-agent",
+        status=AgentRunStatus.FAILED,
+        error_class="TERMINAL",
+        error_code="provider_error",
+        error_message="provider failed: api_key=agent-error-secret",
+        started_at=started_at,
+    )
+    async with get_business_session(session_factory) as session:
+        async with session.begin():
+            await AgentRunRepository(session).add(agent, organization.id)
+            await ToolCallRepository(session).add(call, organization.id)
+            await AgentRunRepository(session).add(nullable_agent, organization.id)
+            await AgentRunRepository(session).add(failed_agent, organization.id)
+
+    async with get_business_session(session_factory) as session:
+        stored_agent = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT provider_metadata, usage FROM taskpilot.agent_runs WHERE id = :id"
+                    ),
+                    {"id": agent.id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        stored_call = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT arguments, result, usage FROM taskpilot.tool_calls WHERE id = :id"
+                    ),
+                    {"id": call.id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        stored_nullable_agent = (
+            (
+                await session.execute(
+                    text(
+                        "SELECT provider_metadata, usage FROM taskpilot.agent_runs WHERE id = :id"
+                    ),
+                    {"id": nullable_agent.id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+        stored_failed_agent = (
+            (
+                await session.execute(
+                    text("SELECT error_message FROM taskpilot.agent_runs WHERE id = :id"),
+                    {"id": failed_agent.id},
+                )
+            )
+            .mappings()
+            .one()
+        )
+
+    assert stored_agent["provider_metadata"] == {
+        "provider": "fixture",
+        "model": "fixture-model",
+        "response_id": "api_key=[REDACTED]",
+    }
+    assert stored_agent["usage"] == {"status": "unavailable", "reason": "not_returned"}
+    assert stored_nullable_agent["provider_metadata"] is None
+    assert stored_nullable_agent["usage"] is None
+    assert stored_failed_agent["error_message"] == "provider failed: api_key=[REDACTED]"
+    assert "agent-error-secret" not in stored_failed_agent["error_message"]
+    assert stored_call["arguments"] == {
+        "api_key": "[REDACTED]",
+        "nested": {"password": "[REDACTED]"},
+        "authorization": "[REDACTED]",
+    }
+    assert stored_call["result"] == {
+        "access_token": "[REDACTED]",
+        "nested": {"dsn": "[REDACTED]"},
+    }
+    assert stored_call["usage"] == {"status": "unavailable", "reason": "unsupported"}
+
+    async def assert_rejected(statement: str, parameters: dict[str, object]) -> None:
+        with pytest.raises((DataError, IntegrityError)):
+            async with get_business_session(session_factory) as session:
+                async with session.begin():
+                    await session.execute(text(statement), parameters)
+
+    # These inserts intentionally bypass ORM validation: they prove the
+    # database constraints independently of the application sanitization path.
+    agent_insert = (
+        "INSERT INTO taskpilot.agent_runs "
+        "(id, task_run_id, replan_count, step_position, retry_count, agent_name, "
+        "status, error_message, started_at, finished_at, duration_ms, usage, provider_metadata) "
+        "VALUES (:id, :task_run_id, :replan_count, :step_position, :retry_count, :agent_name, "
+        ":status, :error_message, :started_at, :finished_at, :duration_ms, "
+        "CAST(:usage_json AS jsonb), CAST(:metadata_json AS jsonb))"
+    )
+    tool_insert = (
+        "INSERT INTO taskpilot.tool_calls "
+        "(id, agent_run_id, call_index, tool_name, tool_version, status, error_message, "
+        "started_at, finished_at, duration_ms, arguments, result, usage) "
+        "VALUES (:id, :agent_run_id, :call_index, :tool_name, :tool_version, :status, "
+        ":error_message, :started_at, :finished_at, :duration_ms, "
+        "CAST(:arguments_json AS jsonb), CAST(:result_json AS jsonb), "
+        "CAST(:usage_json AS jsonb))"
+    )
+    base_agent_parameters = {
+        "task_run_id": task_run.id,
+        "replan_count": 0,
+        "step_position": 0,
+        "retry_count": 0,
+        "agent_name": "db-check",
+        "status": "running",
+        "error_message": None,
+        "started_at": started_at,
+        "finished_at": None,
+        "duration_ms": None,
+        "usage_json": None,
+        "metadata_json": None,
+    }
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "task_run_id": uuid4(),
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "step_position": 8,
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "replan_count": 2,
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "retry_count": 2,
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "agent_name": "   ",
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "finished_at": started_at - timedelta(milliseconds=1),
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "finished_at": started_at + timedelta(milliseconds=4),
+            "duration_ms": 3,
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "finished_at": started_at + timedelta(days=1, milliseconds=1),
+            "duration_ms": 86_400_001,
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "usage_json": json.dumps(
+                {
+                    "status": "known",
+                    "input_tokens": 1_000_000_000_001,
+                    "output_tokens": 0,
+                    "total_tokens": 1_000_000_000_001,
+                }
+            ),
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "metadata_json": json.dumps({"provider": "x" * 2100}),
+        },
+    )
+    await assert_rejected(
+        agent_insert,
+        {
+            **base_agent_parameters,
+            "id": uuid4(),
+            "status": "succeeded",
+            "error_message": "unexpected error",
+        },
+    )
+
+    base_tool_parameters = {
+        "agent_run_id": agent.id,
+        "call_index": 10,
+        "tool_name": "db-check",
+        "tool_version": None,
+        "status": "running",
+        "error_message": None,
+        "started_at": started_at,
+        "finished_at": None,
+        "duration_ms": None,
+        "arguments_json": "{}",
+        "result_json": None,
+        "usage_json": None,
+    }
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "agent_run_id": uuid4(),
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "tool_version": "v" * 65,
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "finished_at": started_at + timedelta(milliseconds=4),
+            "duration_ms": 3,
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "arguments_json": "[]",
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "arguments_json": json.dumps({"value": "x" * 9000}),
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "result_json": "[]",
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "result_json": json.dumps({"value": "x" * 9000}),
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "usage_json": json.dumps(
+                {
+                    "status": "known",
+                    "input_tokens": 1,
+                    "output_tokens": 1_000_000_000_001,
+                    "total_tokens": 1_000_000_000_002,
+                }
+            ),
+        },
+    )
+    await assert_rejected(
+        tool_insert,
+        {
+            **base_tool_parameters,
+            "id": uuid4(),
+            "status": "succeeded",
+            "error_message": "unexpected error",
+        },
+    )
