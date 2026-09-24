@@ -1,4 +1,23 @@
-### 2026-09-24 — T084 bounded approved-action implementation
+### 2026-09-24 — T085 focused Final Audit re-review approved
+
+Status: T080–T084 are COMPLETE / APPROVED, committed, and pushed. The initial
+T085 Final Audit returned NOT APPROVED for a documentation-only status blocker;
+the blocker was fixed, and focused Final Audit re-review APPROVED T085.
+ADR-008 remains Accepted and frozen. Phase 6 is COMPLETE; Phase 7 has NOT
+STARTED.
+
+This final sync updated only current-state Phase 6 status documentation. The
+initial audit result and its remediation remain in the historical entry below.
+Validation: `git diff --check` passed; only documentation files changed.
+Next task: no Phase 7 work was started by this status sync.
+
+### Historical record — 2026-09-24 — T085 Final Audit documentation-status blocker
+
+Status: T080–T084 are COMPLETE / APPROVED; T084 Strong Review is APPROVED and its implementation is committed and pushed. ADR-008 is Accepted and frozen. T085 initial Final Audit is COMPLETE / NOT APPROVED solely because current-state documentation was stale; focused Final Audit re-review is pending. T085 is not approved and Phase 7 has not started.
+
+This entry records the current canonical status after correcting stale T084 statements in Phase 6 architecture, user, database, developer, security, backlog, roadmap, decision, task index, and ADR records. Earlier implementation and review entries below are historical records.
+
+### Historical record — 2026-09-24 — T084 bounded approved-action implementation
 
 Status: T084 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
 T080–T083 are COMPLETE / APPROVED; ADR-008 remains Accepted and frozen. T085
@@ -33,7 +52,7 @@ precedence, stale identity, tenant isolation, checkpoint recovery, and T035
 lifecycle ownership. Ruff check/format, Pyrefly (0 errors), and `git diff --check`
 passed.
 
-Scope: T085 was not started. No migrations, dependencies, workers, external
+Scope: T085 was not started at this historical point. No migrations, dependencies, workers, external
 effects, generic exactly-once framework, distributed locks, or workflow/policy
 engine were added.
 

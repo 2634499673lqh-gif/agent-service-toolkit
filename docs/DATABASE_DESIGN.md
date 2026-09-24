@@ -80,7 +80,7 @@ Task -> TaskRun -> Approval, and commits or rolls back the supplied session.
 Its protected nested read/decision routes return sanitized proposal and
 decision fields. Create/reuse is service-only: trusted runtime wiring supplies
 the already selected action and validated arguments. T083 implements runtime
-pause/resume; action claims remain T084 work.
+pause/resume; T084 implements the bounded action claim and deterministic mock outcome; generic effect infrastructure remains deferred.
 
 ## Tenant-scoped repository boundary (T034)
 

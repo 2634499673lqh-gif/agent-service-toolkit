@@ -155,7 +155,7 @@ T026 is a tests-only card; it changed no production behavior and is the authorit
 
 ## Known deferrals
 
-- T081 adds the constrained Approval persistence table and tenant-scoped repository; T082 adds service-owned create/reuse, protected nested reads, and approve/reject decisions. T083 adds the server-derived L0/L1/L2/L3 runtime boundary, durable L2 wait/resume lookup, and checkpoint reference validation. Approval creation accepts only an internal trusted proposal, and decisions derive the actor from the active principal. T084 action claim/effect behavior remains unimplemented. No permission tables or generic policy engine are added.
+- T081 adds the constrained Approval persistence table and tenant-scoped repository; T082 adds service-owned create/reuse, protected nested reads, and approve/reject decisions. T083 adds the server-derived L0/L1/L2/L3 runtime boundary, durable L2 wait/resume lookup, and checkpoint reference validation. Approval creation accepts only an internal trusted proposal, and decisions derive the actor from the active principal. T084 bounded action claim/effect behavior is implemented and approved; generic effect infrastructure remains deferred. No permission tables or generic policy engine are added.
 - T036/T037/T038 now provide protected Task create/list/get/update/cancel and
   tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. Login
   remains outside HTTP scope; principal resolution and authorization use the
@@ -177,7 +177,7 @@ select a tenant, user, membership, role, or tool authority. Phase 4 added no
 runtime approval boundary, `WAITING_APPROVAL` state, HTTP idempotency, worker
 claim, or real external side effect. T081/T082 later add Approval persistence
 and its protected decision surface. T083 extends the internal runtime with
-approval pause/resume; T084 owns action claims. T051 Final Audit is
+approval pause/resume; T084 implements bounded action claims and deterministic mock outcomes. T051 Final Audit is
 approved; Phase 4 is complete and merged to `main`.
 
 

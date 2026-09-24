@@ -198,9 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is complete with focused Strong Review approved; its
-implementation remains uncommitted. T084 implementation is complete and
-awaiting independent Strong Review.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 has NOT STARTED.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -216,9 +214,7 @@ checkpoint/resume, race, replay, and audit contracts are frozen.
 T080 is COMPLETE; its focused Strong Review is APPROVED and ADR-008 is
 Accepted/frozen. T081 is COMPLETE and Strong Review approved, committed, and
 pushed. T082 is COMPLETE with Strong Review APPROVED, committed, and pushed.
-T083 is COMPLETE with focused Strong Review APPROVED; its implementation
-remains uncommitted. T084 implementation is COMPLETE and awaiting independent
-Strong Review.
+T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed.
 
 ### T081 — Approval persistence and migration [C after T080]
 Implement only the approved tenant-scoped approval record and constraints.
@@ -242,6 +238,8 @@ Status: IMPLEMENTATION COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
 ### T085 — Phase 6 final audit [A, read-only after T084]
 Collect migration, authorization, race, replay, redaction, lifecycle, and
 integration evidence; no implementation work.
+Status: Initial Final Audit NOT APPROVED for a documentation-only blocker;
+blocker fixed; focused Final Audit re-review APPROVED. Phase 6 COMPLETE.
 
 T086–T088 are retired as standalone cards: their required behavior is covered
 by T083/T084 and the audit. Generic policy engines, workflow engines, worker

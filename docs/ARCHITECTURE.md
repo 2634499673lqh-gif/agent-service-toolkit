@@ -104,17 +104,14 @@ Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABA
 
 Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence and protected nested read/decision routes. `ApprovalService.create_or_reuse` is internal to trusted runtime wiring. T040–T050 provide the committed internal bounded runtime described below. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
 
-## Current TaskPilot implementation status — Phase 6 in progress
+## Current TaskPilot implementation status — Phase 6 complete
 
 The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed; Phase 5 implementation is complete and the Phase 5 Final Audit is approved. The initial audit returned NOT APPROVED solely because canonical status documentation was stale; the focused re-review subsequently approved Phase 5, which is complete.
 
 Phase 6 Planning is approved, frozen, committed, and published. T080 is
 complete and approved; T081 Approval persistence is complete with Strong Review
 approval, committed, and pushed. T082 Approval service and decision APIs are
-complete, Strong Review approved, committed, and pushed to origin. T083 runtime
-approval boundary is complete with focused Strong Re-review approved; its
-implementation remains uncommitted. T084 action claim/effect work has not
-started and awaits independent Strong Review.
+complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE, and Phase 7 has NOT STARTED.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
