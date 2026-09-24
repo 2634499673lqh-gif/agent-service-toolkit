@@ -107,7 +107,7 @@ T084 is COMPLETE; Strong Review APPROVED; committed and pushed.
 | T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
 | T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | FOCUSED FINAL AUDIT RE-REVIEW APPROVED; PHASE 6 COMPLETE |
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094 and T095 are the next DAG tasks.
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 is the next DAG task.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.
@@ -121,9 +121,9 @@ T081–T084 follow ADR-008 B1–B3 for schema, canonical identity and mock claim
 | T091 | AgentRun persistence (implementation and PostgreSQL evidence complete) | LOW_COST/STANDARD | Strong Review APPROVED | T090 |
 | T092 | ToolCall persistence (implementation and PostgreSQL evidence complete) | LOW_COST/STANDARD | Strong Review APPROVED | T090 |
 | T093 | Correlation propagation | STANDARD | Strong Review APPROVED | T091, T092 |
-| T094 | Latency/status/error normalization | LOW_COST/STANDARD | Strong Review | T093 |
-| T095 | Token usage adapter | LOW_COST/STANDARD | Strong Review | T093 |
-| T096 | Deterministic cost estimator | LOW_COST | Strong Review | T095 |
+| T094 | Latency/status/error normalization | LOW_COST/STANDARD | Strong Review APPROVED | T093 |
+| T095 | Token usage adapter | LOW_COST/STANDARD | Strong Review APPROVED | T093 |
+| T096 | Deterministic cost estimator | LOW_COST | Strong Review APPROVED | T095 |
 | T097 | Tenant-safe trace query API | LOW_COST/STANDARD | Strong Review | T091–T096 |
 | T098 | Phase 7 Final Audit | STRONG read-only | Phase Final Audit | T097 |
 

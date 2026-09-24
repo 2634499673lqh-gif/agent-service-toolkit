@@ -135,6 +135,21 @@ The normalized usage and metadata flow through the existing runtime collector
 into AgentRun/ToolCall rows; `NULL` remains reserved for an observation where
 no provider usage applied.
 
+### T096 cost estimate boundary
+
+T096 uses an explicit in-process `PricingTable` keyed by `(provider, model,
+version)`. Each `PricingEntry` validates bounded non-negative `Decimal` prices
+per 1,000 tokens and a bounded currency. The pure `estimate_cost` function
+accepts known normalized usage, computes input plus output cost in Decimal
+arithmetic, rounds with `ROUND_HALF_UP` to six fractional places, and returns a
+fixed-scale decimal string with its currency. A known provider/model with a
+missing version returns `missing_price`; an unsupported provider/model returns
+`unsupported_model`. Unavailable or partial usage returns `usage_unavailable`,
+and a result above `10^18` currency units returns `overflow`. Unknown results
+contain a reason and never fabricate numeric zero. These values are
+informational observability estimates, not billing authority; there is no
+remote pricing lookup, refresh loop, ledger, or billing behavior.
+
 The trace query applies the principal organization predicate in SQL, returns a
 bounded sanitized timeline in stable order, and preserves failure/retry/replan
 rows. T092 owns persisted-payload redaction tests; T097 owns timeline-response

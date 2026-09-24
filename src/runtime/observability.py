@@ -3,15 +3,26 @@
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import (
+    ROUND_HALF_UP,
+    Decimal,
+    InvalidOperation,
+    localcontext,
+)
+from types import MappingProxyType
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from persistence.models import _redact_observability_text
 
 MAX_USAGE_TOKENS = 1_000_000_000_000
 MAX_DURATION_MS = 86_400_000
 PROVIDER_METADATA_MAX_BYTES = 2_048
+MAX_PRICE_INTEGER_DIGITS = 12
+MAX_PRICE_FRACTIONAL_DIGITS = 6
+COST_ESTIMATE_QUANTUM = Decimal("0.000001")
+MAX_COST_UNITS = Decimal("1000000000000000000")
 
 UsageUnavailableReason = Literal["not_returned", "unsupported", "malformed"]
 
@@ -38,6 +49,197 @@ class ProviderUsageUnavailable(BaseModel):
 
 
 NormalizedProviderUsage = ProviderUsage | ProviderUsageUnavailable
+
+CostUnknownReason = Literal[
+    "missing_price",
+    "unsupported_model",
+    "usage_unavailable",
+    "overflow",
+]
+PricingKey = tuple[str, str, str]
+CostEstimate = dict[str, str]
+
+
+class PricingEntry(BaseModel):
+    """One bounded in-process price for a provider model version."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    version: str = Field(min_length=1, max_length=32)
+    input_price_per_1k: Decimal
+    output_price_per_1k: Decimal
+    currency: str = Field(min_length=1, max_length=8)
+
+    @field_validator("provider", "model", "version", "currency")
+    @classmethod
+    def identifiers_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("pricing identifiers and currency must not be blank")
+        return value
+
+    @field_validator("input_price_per_1k", "output_price_per_1k", mode="before")
+    @classmethod
+    def prices_must_be_bounded_decimals(cls, value: object) -> Decimal:
+        if not isinstance(value, Decimal):
+            raise ValueError("pricing values must be Decimal instances")
+        if not value.is_finite() or value < 0:
+            raise ValueError("pricing values must be finite and non-negative")
+        decimal_tuple = value.as_tuple()
+        digits = decimal_tuple.digits
+        exponent = decimal_tuple.exponent
+        if not isinstance(exponent, int):
+            raise ValueError("pricing values must be finite Decimal instances")
+        fractional_digits = max(-exponent, 0)
+        integer_digits = max(len(digits) + exponent, 0)
+        if integer_digits > MAX_PRICE_INTEGER_DIGITS:
+            raise ValueError(
+                f"pricing values may have at most {MAX_PRICE_INTEGER_DIGITS} integer digits"
+            )
+        if fractional_digits > MAX_PRICE_FRACTIONAL_DIGITS:
+            raise ValueError(
+                f"pricing values may have at most {MAX_PRICE_FRACTIONAL_DIGITS} fractional digits"
+            )
+        return value
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        """Return the canonical lookup key."""
+
+        return (self.provider, self.model, self.version)
+
+
+class PricingTable:
+    """Immutable lookup table for deterministic in-process pricing."""
+
+    def __init__(
+        self,
+        entries: Mapping[tuple[str, str, str], PricingEntry | Mapping[str, object]]
+        | list[PricingEntry | Mapping[str, object]]
+        | tuple[PricingEntry | Mapping[str, object], ...] = (),
+    ) -> None:
+        if isinstance(entries, Mapping):
+            source = []
+            for key, value in entries.items():
+                if (
+                    not isinstance(key, tuple)
+                    or len(key) != 3
+                    or not all(isinstance(item, str) for item in key)
+                ):
+                    raise ValueError("pricing table keys must be (provider, model, version) tuples")
+                entry = (
+                    value if isinstance(value, PricingEntry) else PricingEntry.model_validate(value)
+                )
+                if entry.key != key:
+                    raise ValueError("pricing table key does not match its pricing entry")
+                source.append(entry)
+        else:
+            source = [
+                entry if isinstance(entry, PricingEntry) else PricingEntry.model_validate(entry)
+                for entry in entries
+            ]
+        table: dict[tuple[str, str, str], PricingEntry] = {}
+        for entry in source:
+            if entry.key in table:
+                raise ValueError(f"duplicate pricing entry for {entry.key!r}")
+            table[entry.key] = entry
+        self._entries = MappingProxyType(table)
+
+    def lookup(
+        self, provider: str, model: str, version: str
+    ) -> tuple[PricingEntry | None, CostUnknownReason | None]:
+        """Resolve an exact version and distinguish unsupported from missing price."""
+
+        if not all(isinstance(value, str) and value.strip() for value in (provider, model)):
+            return None, "unsupported_model"
+        model_is_configured = any(
+            entry.provider == provider and entry.model == model for entry in self._entries.values()
+        )
+        if not isinstance(version, str) or not version.strip():
+            return None, "missing_price" if model_is_configured else "unsupported_model"
+        exact = self._entries.get((provider, model, version))
+        if exact is not None:
+            return exact, None
+        if model_is_configured:
+            return None, "missing_price"
+        return None, "unsupported_model"
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def __iter__(self):
+        return iter(self._entries)
+
+    def __getitem__(self, key: PricingKey) -> PricingEntry:
+        return self._entries[key]
+
+
+PricingConfiguration = PricingTable
+
+
+def _unknown_cost(reason: CostUnknownReason) -> CostEstimate:
+    """Create the canonical non-numeric estimate shape."""
+
+    return {"status": "unknown", "reason": reason}
+
+
+def _coerce_pricing_table(
+    pricing: PricingTable
+    | Mapping[tuple[str, str, str], PricingEntry | Mapping[str, object]]
+    | list[PricingEntry | Mapping[str, object]]
+    | tuple[PricingEntry | Mapping[str, object], ...],
+) -> PricingTable:
+    return pricing if isinstance(pricing, PricingTable) else PricingTable(pricing)
+
+
+def estimate_cost(
+    usage: object,
+    pricing: PricingTable
+    | Mapping[tuple[str, str, str], PricingEntry | Mapping[str, object]]
+    | list[PricingEntry | Mapping[str, object]]
+    | tuple[PricingEntry | Mapping[str, object], ...],
+    *,
+    provider: str,
+    model: str,
+    version: str,
+) -> CostEstimate:
+    """Estimate informational cost from normalized usage and explicit pricing.
+
+    The estimator deliberately returns a plain JSON-shaped mapping. Unknown
+    values contain a reason and never fabricate a numeric zero.
+    """
+
+    if isinstance(usage, (ProviderUsage, ProviderUsageUnavailable)):
+        normalized_usage = usage.model_dump(mode="python")
+    elif isinstance(usage, Mapping) and usage.get("status") == "known":
+        if "total_tokens" not in usage:
+            return _unknown_cost("usage_unavailable")
+        normalized_usage = normalize_provider_usage(usage)
+    else:
+        normalized_usage = unavailable_usage("malformed")
+    if normalized_usage.get("status") != "known":
+        return _unknown_cost("usage_unavailable")
+
+    table = _coerce_pricing_table(pricing)
+    entry, lookup_reason = table.lookup(provider, model, version)
+    if entry is None:
+        return _unknown_cost(lookup_reason or "missing_price")
+
+    input_tokens = normalized_usage["input_tokens"]
+    output_tokens = normalized_usage["output_tokens"]
+    try:
+        with localcontext() as context:
+            context.prec = 50
+            total = (Decimal(input_tokens) / Decimal(1000)) * entry.input_price_per_1k + (
+                Decimal(output_tokens) / Decimal(1000)
+            ) * entry.output_price_per_1k
+            if total > MAX_COST_UNITS:
+                return _unknown_cost("overflow")
+            rounded = total.quantize(COST_ESTIMATE_QUANTUM, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, OverflowError):
+        return _unknown_cost("overflow")
+    return {"status": "known", "currency": entry.currency, "amount": f"{rounded:.6f}"}
 
 
 def unavailable_usage(reason: UsageUnavailableReason) -> dict[str, Any]:
@@ -195,13 +397,24 @@ def sanitize_error_text(value: str | None, *, field_name: str, maximum: int) -> 
 
 
 __all__ = [
+    "COST_ESTIMATE_QUANTUM",
+    "MAX_COST_UNITS",
     "MAX_DURATION_MS",
+    "MAX_PRICE_FRACTIONAL_DIGITS",
+    "MAX_PRICE_INTEGER_DIGITS",
     "MAX_USAGE_TOKENS",
+    "CostEstimate",
+    "CostUnknownReason",
     "NormalizedProviderUsage",
+    "PricingConfiguration",
+    "PricingEntry",
+    "PricingKey",
+    "PricingTable",
     "ProviderUsage",
     "ProviderUsageUnavailable",
     "adapt_provider_usage",
     "duration_ms",
+    "estimate_cost",
     "normalize_provider_metadata",
     "normalize_provider_usage",
     "normalize_usage",

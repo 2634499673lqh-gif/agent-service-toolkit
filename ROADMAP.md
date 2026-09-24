@@ -121,7 +121,7 @@ Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
 Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
 
 T081 is COMPLETE and Strong Review approved, committed, and pushed. T082 is
-COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094 and T095 are the next DAG tasks.
+COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 is the next DAG task.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the
@@ -141,9 +141,9 @@ Planning authority: ADR-009. DAG: `T090 → (T091, T092) → T093 → (T094, T09
 
 T091 and T092 implementation and live PostgreSQL evidence are complete with
 Strong Review APPROVED. T093 correlation propagation implementation and
-required validation are complete with Strong Review APPROVED. T094
-latency/status/error normalization and T095 token usage adapter are the next
-DAG tasks.
+required validation are complete with Strong Review APPROVED. T094/T095
+normalization is Strong Review APPROVED. T096 deterministic cost estimation is
+implemented and Strong Review APPROVED; T097 is the next DAG task.
 
 Tasks:
 - T090 trace data model decision

@@ -1,3 +1,16 @@
+### 2026-09-24 — T096 post-review status synchronization
+
+Status: T096 implementation and required validation are complete; Strong Review
+APPROVED. T097 is the next DAG task.
+
+Changed: synchronized current-state summaries in `TASK_BACKLOG.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`, `process/tasks/INDEX.md`, and this log. The dated T096
+implementation entry below remains historical and is not rewritten.
+
+Validation: targeted T096 status consistency search, `git diff --check`, and
+final diff inspection. No implementation, test, migration, contract, or DAG
+changes were made.
+
 ### 2026-09-24 — T093 post-review status synchronization
 
 Status: T093 correlation propagation implementation and required validation are
@@ -4374,3 +4387,60 @@ Validation:
 Scope remains limited to the two Strong Review blockers. No T096+ work,
 schema/migration redesign, generic provider/security framework, commit, or push
 was performed.
+
+### 2026-09-24 — T096 deterministic cost estimator
+
+Status: T096 implementation COMPLETE; READY FOR T096 STRONG REVIEW.
+T097 and later remain not started.
+
+What changed:
+- Added bounded `PricingEntry` and deterministic in-process `PricingTable`
+  keyed by `(provider, model, version)`.
+- Added a pure `estimate_cost` function using Decimal arithmetic, explicit
+  ROUND_HALF_UP six-place rounding, fixed-scale amount strings, and the
+  `10^18` overflow boundary.
+- Distinguished `missing_price`, `unsupported_model`,
+  `usage_unavailable`, and `overflow`; unavailable usage never becomes numeric
+  zero and no billing or remote pricing behavior was introduced.
+- Added deterministic table-driven arithmetic, rounding, bounds, lookup,
+  unavailable/partial usage, and overflow tests.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_t096_cost_estimator.py`
+- `docs/OBSERVABILITY_EVAL.md`
+- `docs/ARCHITECTURE.md`
+- `TASK_BACKLOG.md`
+- `ROADMAP.md`
+- `process/tasks/INDEX.md`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused T096 tests: 19 passed.
+- Runtime regression: 170 passed, 34 skipped.
+- Observability/persistence and runtime-service regression: 8 passed, 40
+  skipped because live PostgreSQL is not configured.
+- Full suite: 595 passed, 124 skipped.
+- Ruff, formatting, targeted runtime Pyrefly, compilation, `uv lock --check`,
+  and `git diff --check` passed. Full-repository Pyrefly still reports its
+  pre-existing `src/streamlit_app.py` issues; no T096 file is involved.
+
+Known limitations:
+- Cost remains an informational estimate. No estimate is persisted as billing
+  authority, and no public trace query is added before T097.
+
+Learner notes:
+- Problem solved: known bounded token usage can be converted into a stable
+  cost estimate without inventing values when usage or pricing is unavailable.
+- Read `src/runtime/observability.py`, `src/runtime/__init__.py`,
+  `tests/runtime/test_t096_cost_estimator.py`, `docs/OBSERVABILITY_EVAL.md`,
+  and ADR-009.
+- Key concept: Decimal arithmetic and explicit unknown reasons keep an
+  observability estimate deterministic without turning it into billing truth.
+- Exercise: add a second version for the same model and verify that an absent
+  version returns `missing_price` while an absent model returns
+  `unsupported_model`.
+- Do not worry yet about tenant-safe timeline queries or billing systems.
+
+Suggested next task: independent T096 Strong Review.

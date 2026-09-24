@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094 and T095 are the next DAG tasks.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 is the next DAG task.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -265,18 +265,20 @@ Approved schema only, including persisted-payload redaction tests.
 Goal: request→task→run→step→agent→tool IDs connected.
 
 ### T094 — Latency/status/error metrics [C/B]
-Goal: record normalized timing/error fields.
+Goal: record normalized timing/error fields. Implementation and Strong Review
+are approved.
 
 ### T095 — Token usage adapter [C/B]
 Goal: normalize provider usage when returned; handle unavailable values honestly.
+Implementation and Strong Review are approved.
 
 ### T096 — Cost estimator [C]
 Goal: configurable price table/calculation, not hardcoded business truth.
-Tests deterministic.
+Tests deterministic. Implementation and Strong Review are approved.
 
 ### T097 — Trace query API [C/B]
 Goal: retrieve ordered sanitized execution timeline, including response-redaction
-tests.
+tests. T097 is the next DAG task.
 
 ### T098 — Phase 7 Final Audit [A, read-only after T097]
 Fresh-eyes, independent, non-mutating audit of ADR-009, T091–T097 evidence,
