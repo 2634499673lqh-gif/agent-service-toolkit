@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
 from schema.planner import Plan
 
@@ -14,6 +14,16 @@ from .planner import PlannerTaskInput
 from .verifier import VerificationResult
 
 TerminalOutcome = Literal["SUCCEEDED", "FAILED"]
+
+
+class PendingApprovalReference(BaseModel):
+    """Bounded checkpoint lookup data; it carries no decision authority."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approval_id: UUID
+    replan_count: StrictInt = Field(ge=0, le=1)
+    step_position: StrictInt = Field(ge=0)
 
 
 class AgentState(BaseModel):
@@ -37,6 +47,7 @@ class AgentState(BaseModel):
     failure: RuntimeFailure | None = None
     retry_count: int = Field(default=0, ge=0)
     replan_count: int = Field(default=0, ge=0)
+    pending_approval: PendingApprovalReference | None = None
     terminal_outcome: TerminalOutcome | None = None
 
     @field_validator("task_id", "task_run_id", mode="before")
@@ -72,4 +83,4 @@ class AgentState(BaseModel):
         return self.model_dump(mode="json")
 
 
-__all__ = ["AgentState", "TerminalOutcome"]
+__all__ = ["AgentState", "PendingApprovalReference", "TerminalOutcome"]

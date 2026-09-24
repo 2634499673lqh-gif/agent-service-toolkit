@@ -1,3 +1,471 @@
+### 2026-09-24 — T085 focused Final Audit re-review approved
+
+Status: T080–T084 are COMPLETE / APPROVED, committed, and pushed. The initial
+T085 Final Audit returned NOT APPROVED for a documentation-only status blocker;
+the blocker was fixed, and focused Final Audit re-review APPROVED T085.
+ADR-008 remains Accepted and frozen. Phase 6 is COMPLETE; Phase 7 has NOT
+STARTED.
+
+This final sync updated only current-state Phase 6 status documentation. The
+initial audit result and its remediation remain in the historical entry below.
+Validation: `git diff --check` passed; only documentation files changed.
+Next task: no Phase 7 work was started by this status sync.
+
+### Historical record — 2026-09-24 — T085 Final Audit documentation-status blocker
+
+Status: T080–T084 are COMPLETE / APPROVED; T084 Strong Review is APPROVED and its implementation is committed and pushed. ADR-008 is Accepted and frozen. T085 initial Final Audit is COMPLETE / NOT APPROVED solely because current-state documentation was stale; focused Final Audit re-review is pending. T085 is not approved and Phase 7 has not started.
+
+This entry records the current canonical status after correcting stale T084 statements in Phase 6 architecture, user, database, developer, security, backlog, roadmap, decision, task index, and ADR records. Earlier implementation and review entries below are historical records.
+
+### Historical record — 2026-09-24 — T084 bounded approved-action implementation
+
+Status: T084 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+T080–T083 are COMPLETE / APPROVED; ADR-008 remains Accepted and frozen. T085
+has not started.
+
+What changed: added the tenant-scoped approved-action transaction with the
+canonical `(task_run_id, replan_count, step_position)` identity, Task → TaskRun
+→ Approval NOWAIT locking, durable AVAILABLE/COMPLETED/FAILED transitions, and
+atomic bounded `ExecutionResult` outcome storage. Approved runtime resume now
+executes the deterministic in-process mock, stores/replays its outcome, and
+continues checkpoint recovery through the existing verifier and T035 lifecycle.
+Failure, proposal mismatch, cancellation, terminal state, tenant mismatch, and
+checkpoint replay remain fail-closed. The checkpoint retains only the bounded
+lookup reference and cached outcome, so business Approval state is re-read on
+recovery. No external effect or durable CLAIMED state was added.
+
+Files changed for T084: `src/persistence/repositories.py`,
+`src/service/approval_service.py`, `src/service/task_runtime.py`, and
+`tests/runtime/test_task_runtime_postgres.py`. The status records in the
+roadmap, backlog, task index, ADR-008, Decision Log, architecture document,
+and this log were synchronized to implementation complete / awaiting review.
+
+Validation: focused runtime unit regression passed (15 tests); runtime suite
+excluding PostgreSQL passed (126 tests); persistence foundation tests passed
+(32 tests). Live PostgreSQL evidence used the repository Compose PostgreSQL 16
+service in isolated project `taskpilot-t084-blockers-20260924`, with 33 T084
+runtime tests passing and 12 Approval API/T035 lifecycle tests passing. The
+live tests covered approved execution, NOWAIT concurrency, replay of completed
+and failed outcomes, transaction rollback before commit, atomic outcome/state
+writes, post-commit checkpoint failure recovery, cancellation and terminal
+precedence, stale identity, tenant isolation, checkpoint recovery, and T035
+lifecycle ownership. Ruff check/format, Pyrefly (0 errors), and `git diff --check`
+passed.
+
+Scope: T085 was not started at this historical point. No migrations, dependencies, workers, external
+effects, generic exactly-once framework, distributed locks, or workflow/policy
+engine were added.
+
+Suggested next task: independent Strong Review of T084 using the completed
+live PostgreSQL evidence.
+
+### Historical record — 2026-09-23 — T083 focused Strong Re-review approval recorded
+
+Status: T083 COMPLETE; focused Strong Re-review APPROVED. The implementation
+remains uncommitted. T080–T082 are COMPLETE / APPROVED; ADR-008 remains
+Accepted and frozen. T084 is NOT STARTED and UNBLOCKED by T083.
+
+Review history: the initial T083 Strong Review returned NOT APPROVED for one
+blocker: the missing runtime proposal-mismatch resume test. That PostgreSQL
+negative test was added, the affected runtime suites and static checks passed,
+and the focused Strong Re-review approved T083. The implementation and
+blocker-fix entries below remain historical records of those stages.
+
+What changed: synchronized current T083/T084 status in the roadmap, backlog,
+task index, ADR-008, Decision Log, architecture status, and this progress log.
+No production code or tests changed in this final status sync.
+
+Validation: `git diff --check` passed.
+
+Scope: no T084 implementation, code, tests, migrations, or dependencies were
+changed. No commit or push was performed.
+
+### 2026-09-23 — T083 proposal-mismatch blocker fix
+
+Status: the missing PostgreSQL resume negative case is implemented; READY FOR
+FOCUSED T083 STRONG RE-REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`, HEAD
+`920349cbba99cfc6b8108f6a483036b8213419ab`. T083 implementation and status
+documentation were already present as working-tree changes; this blocker fix
+adds one test and this progress entry only.
+
+What changed: added a PostgreSQL resume test that first creates a durable
+pending Approval, then changes the checkpoint's current PlanStep instruction
+without changing the Approval row. Resume detects the proposal mismatch,
+invokes no protected capability, and resolves the run to FAILED through T035.
+The test checks that all Approval proposal, decision, action, actor, and
+timestamp fields remain unchanged, and that the Task's user-authored title and
+description remain unchanged. No production code change was needed.
+
+Validation: the new PostgreSQL test passed (1 test); the full
+`tests/runtime/test_task_runtime_postgres.py` suite passed (27 tests); focused
+runtime regression excluding the PostgreSQL module passed (126 tests). Ruff
+check and format passed for the changed test, Pyrefly reported 0 errors, and
+`git diff --check` passed. PostgreSQL 16 ran through a task-specific Compose
+project with a new project-scoped volume; each test database was isolated and
+dropped by the fixture. The Compose container/network were removed after the
+run; the dedicated volume was preserved.
+
+Scope: no production validation, approval API, migration, dependency, or T084
+action-claim/effect semantics changed.
+
+Suggested next task: focused Strong Re-review of the T083 proposal-mismatch
+blocker.
+
+### 2026-09-23 — T083 runtime approval boundary implementation
+
+Status: T083 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+Phase 6 Planning remains APPROVED, frozen, committed, and published. T080–T082
+are complete and approved; ADR-008 remains Accepted and frozen. T084 is NOT
+STARTED and remains gated on T083 approval.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`920349cbba99cfc6b8108f6a483036b8213419ab`; tracked working tree clean before
+T083 edits. The pre-existing ignored `.pytest-tmp-t032/` and
+`.pytest-tmp-t034/` directories were inaccessible and left untouched.
+
+Authority: `AGENTS.md`, `process/tasks/T083.md`, accepted/frozen
+`process/ADR-008.md` B1/B2, approved T081 Approval persistence and T082
+Approval service, plus existing runtime, checkpoint, principal, membership,
+tenant, and T035 lifecycle contracts.
+
+What changed: added the server-wired four-level classifier and prevented
+direct capability dispatch from bypassing L2/L3 routing. L0/L1 keep automatic
+execution; L3 fails closed. L2 creates/reuses the canonical durable Approval,
+commits it before an independent checkpoint write, and returns
+`WAITING_APPROVAL` only after verifying the exact bounded reference was stored.
+Resume rechecks active tenant membership, live Task/TaskRun state, canonical
+identity, and the immutable proposal against Approval persistence. Pending rows
+wait; approved rows return `APPROVED_ACTION_READY` without executing an effect;
+rejection resolves through T035. Cancellation/terminal state wins. Failed
+checkpoint persistence leaves the run recoverable, and retry reuses the same
+Approval row. Checkpoints carry no Approval status, proposal, or actor authority.
+
+Files changed: runtime implementation in `src/runtime/` and
+`src/service/task_runtime.py` / `src/service/approval_service.py`; tests in
+`tests/runtime/`; synchronized current-state docs in `ROADMAP.md`,
+`TASK_BACKLOG.md`, `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/tasks/INDEX.md`, `docs/ARCHITECTURE.md`, `docs/API_CONVENTIONS.md`,
+`docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`, `docs/SECURITY_HITL.md`,
+`docs/USER_GUIDE.md`, and this log.
+
+Validation: real disposable PostgreSQL 16 through repository Compose project
+`taskpilot-t083-live-20260923` (fresh project volume; test-created databases
+were isolated and dropped by fixtures). `uv run pytest -q
+tests/runtime/test_task_runtime_postgres.py` passed 26 tests, including
+L0/L1/L2/L3 routing, wait/checkpoint, approved and rejected resume, replay after
+checkpoint failure, malformed/stale reference and wrong action slot, tenant
+and membership checks,
+cancellation, and concurrent approved resume. The combined runtime, Approval
+API, and T035 PostgreSQL regression command
+`uv run pytest -q tests/runtime tests/service/test_approval_api_postgres.py
+tests/service/test_task_lifecycle_postgres.py` passed 164 tests. A second
+focused runtime unit command, `uv run pytest -q tests/runtime/test_risk.py
+tests/runtime/test_capability.py tests/runtime/test_task_runtime.py`, passed 38
+tests. `uv run ruff check`
+passed; Ruff format check passed for all 10 changed Python files;
+`uv run pyrefly check` reported 0 errors; `git diff --check` passed. A full-tree
+Ruff format scan returned exit 1 on access-denied warnings from the two
+pre-existing ignored pytest temp directories, while reporting all 164 Python
+files formatted. The task-owned Compose container/network were stopped and
+removed; its dedicated volume was preserved.
+
+Scope: no T084 action claim/effect logic, TaskRun enum change, migration,
+dependency, public runtime API, workflow/policy framework, distributed lock, or
+real external effect was added. T035 remains lifecycle owner.
+
+Learner notes: a checkpoint helps recover a run but cannot approve an action;
+the tenant-scoped Approval row remains the business truth. Read
+`src/runtime/risk.py`, `src/runtime/graph.py`, `src/service/task_runtime.py`,
+`src/service/approval_service.py`, and
+`tests/runtime/test_task_runtime_postgres.py`. Exercise: corrupt the pending
+reference in a local test and observe that runtime fails through T035 without
+dispatching the capability. Do not worry about exactly-once effects yet; T084
+owns the bounded mock action claim.
+
+Suggested next task: independent Strong Review of T083; start T084 only after
+T083 approval.
+
+### Historical record — 2026-09-23 — T082 final approval status recorded
+
+Status: T082 is COMPLETE; independent Strong Review APPROVED; committed and
+pushed to origin. Phase 6 Planning remains APPROVED, frozen, committed, and
+published. T080 and T081 are COMPLETE / APPROVED; ADR-008 is Accepted and
+frozen. T083 is NOT STARTED and is now UNBLOCKED by T082. T084 is NOT STARTED
+and remains gated on T083.
+
+Files changed: `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/tasks/INDEX.md`, `TASK_BACKLOG.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`, and this log.
+
+Validation: `git diff --check` passed. Only documentation status was changed;
+task contracts, DAG, implementation, tests, migrations, and dependencies are
+unchanged.
+
+Learner notes: Strong Review approval closes the T082 gate, so T083 becomes
+available without changing its contract or the Phase 6 DAG. Read the ADR,
+task index, and roadmap to compare the frozen dependency order with current
+status. Exercise: trace why T084 remains unavailable until T083 is complete.
+Do not worry about T083 runtime details until that task starts.
+
+Suggested next task: T083 (unblocked; not started).
+
+### Historical record — 2026-09-23 — T082 implementation before Strong Review
+
+Status: T082 implementation complete; READY FOR INDEPENDENT STRONG REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`2934a406d65fbcf5818aad8b48541e8806da1c05`; no tracked working-tree changes
+before T082 edits. Git reports the pre-existing inaccessible
+`.pytest-tmp-t032/` and `.pytest-tmp-t034/` directories.
+
+Authority: `AGENTS.md`, `process/tasks/T082.md`, accepted/frozen
+`process/ADR-008.md` B1/B2, approved T081 Approval persistence/repository, and
+existing principal, membership, authorization, lifecycle, API, and transaction
+patterns.
+
+What changed: added `ApprovalService` create/reuse, tenant-scoped reads, and
+approve/reject transitions. Mutations lock Task -> TaskRun -> Approval, then
+share-lock the active actor membership through commit. Create/reuse enforces
+bounded canonical slot identity and full sanitized proposal equality; a unique
+constraint collision rolls back to a conflict without retry. Decisions derive
+the current role and decider membership from SQL, accept only PENDING, preserve
+terminal evidence, and use first-commit-wins semantics. Protected nested GET
+and decision routes return sanitized response fields; actor, organization,
+role, risk, action identity, and proposal are not accepted in request bodies.
+Create/reuse remains service-only for trusted runtime wiring.
+
+Files changed: `src/persistence/repositories.py`,
+`src/service/approval_service.py`, `src/service/approval_api.py`,
+`src/service/service.py`, `src/schema/approval_api.py`,
+`tests/service/test_approval_api_postgres.py`,
+`docs/API_CONVENTIONS.md`, `docs/ARCHITECTURE.md`,
+`docs/DATABASE_DESIGN.md`, `docs/DEVELOPER_GUIDE.md`,
+`docs/SECURITY_HITL.md`, `docs/USER_GUIDE.md`, `process/ADR-008.md`,
+`process/DECISION_LOG.md`, `process/tasks/INDEX.md`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, and this log.
+
+Validation: T082's live PostgreSQL suite passed 6 tests. The affected Task,
+TaskRun, authorization, and persistence contract set passed 72 tests. The wider
+`tests/service` and `tests/persistence` regression passed 337 tests against
+PostgreSQL. Ruff check passed; all 148 Python files passed Ruff format check;
+Pyrefly reported 0 errors; `uv lock --check`, the single Alembic head check,
+route import smoke check, and `git diff --check` passed. Docker used the
+repository Compose PostgreSQL 16 service under the unique project
+`taskpilot-t082-live-20260923` and its fresh project-scoped volume. Each test
+created and dropped its own unique database; no pre-existing volume was used.
+The task-owned container/network were removed after testing, while the dedicated
+test volume was left intact (no volume pruning).
+
+Scope: no migration, production runtime pause/resume, checkpoint changes,
+action claim/effect behavior, generic policy/workflow infrastructure, T083, or
+T084 implementation was added. ADR-008 remains accepted and frozen. T081 is
+approved; T082 awaits independent review; T083/T084 remain gated on completed
+T082.
+
+Learner notes: this change makes approval evidence tenant-visible and gives
+decisions one durable winner under PostgreSQL locking. Read the Approval
+service, repositories, nested API, ADR-008 B2, and PostgreSQL tests. Main
+concept: acquire locks in the same parent-to-child order, then commit the
+decision once. Exercise: run two independent sessions that approve and reject
+one pending row and inspect the winning audit fields. Runtime resume and action
+effects belong to later tasks.
+
+Suggested next task: independent Strong Review of T082.
+
+### 2026-09-23 — T081 Approval persistence implementation
+
+Status: T081 implementation and live PostgreSQL acceptance evidence are
+complete; READY FOR INDEPENDENT STRONG REVIEW.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD
+`11767adb6e5215d1a671987fefc3fd7eb9e8ae01`; tracked working tree was clean
+before T081 edits (the repository reports pre-existing inaccessible
+`.pytest-tmp-t032/` and `.pytest-tmp-t034/` directories).
+
+Authority: `AGENTS.md`, `process/tasks/T081.md`, accepted/frozen
+`process/ADR-008.md` B1, existing Task/TaskRun/tenant repository/migration and
+transaction conventions, and the existing `ExecutionResult` contract.
+
+What changed: added one Approval ORM model and one `t033_approval` migration;
+Approval identity, L2-only risk, FKs, state checks, JSON object shapes, action
+outcome bounds, uniqueness, and run/status index are persisted. Added SQL
+tenant-scoped reads through Approval -> TaskRun -> Task and flush-only insert
+ownership. Added model/repository contracts and PostgreSQL integration cases
+for migration coexistence/downgrade, tenant isolation, integrity failures,
+FK RESTRICT, valid terminal result shapes, and rollback. Updated the database
+and security guides to reflect that persistence exists while T082+ behavior
+remains deferred. Live PostgreSQL exposed two test assertion issues: PostgreSQL
+reports the unique constraint's backing index alongside the explicit index,
+and a separately loaded ORM row must be compared by identity rather than
+Python object equality. The tests now assert both index entries and compare
+Approval IDs. No production code fix was needed.
+
+Files changed: `src/persistence/models.py`, `src/persistence/repositories.py`,
+`migrations/env.py`, `migrations/versions/20260923_01_approval.py`,
+`tests/persistence/test_foundation.py`,
+`tests/persistence/test_postgres_integration.py`, `docs/DATABASE_DESIGN.md`,
+`docs/SECURITY_HITL.md`, and this log.
+
+Validation run: `uv run pytest tests/persistence/test_foundation.py -q` — 32
+passed. Live PostgreSQL 16 used a separate Compose project on loopback port
+55432 with a new project-scoped volume; the pre-existing
+`agent-service-toolkit_postgres_data` volume was left untouched. The combined
+`scenario_a_langgraph_then_taskpilot_and_downgrade or
+approval_tenant_integrity_constraints_and_rollback` run passed 2 tests (21
+deselected); `scenario_b_taskpilot_then_langgraph` passed 1 test (22
+deselected). Together these verify T033 upgrade/downgrade/re-upgrade,
+coexistence in both setup orders, Approval constraints/FK restrictions,
+tenant-scoped reads, and transaction rollback. `uv run alembic history` — T033
+is the sole head; offline upgrade/downgrade SQL generation also passed.
+`uv run ruff check`, `uv run ruff format --check`, `uv run pyrefly check` (0
+errors), and `git diff --check` passed. The isolated Compose container,
+network, and task-owned volume were removed after testing.
+
+Scope: this evidence follow-up changed only the PostgreSQL integration test
+assertions and this progress entry. No T082 service/API, T083 runtime/resume
+boundary, T084 action claim, production behavior, or dependencies were added.
+
+Learner note: the database proves the durable identity, field shape, and
+ownership path; a repository proves tenant visibility inside SQL; a service
+will later own transitions and transaction commit/rollback. Read ADR-008 B1,
+the Approval model, migration, repository, and the PostgreSQL integration test.
+
+Suggested next task: independent Strong Review of T081.
+
+### Historical record — 2026-09-23 T080 final approval
+
+Status: T080 COMPLETE; Strong Review APPROVED.
+
+Phase 6 Planning is APPROVED, frozen, committed, and published. The focused
+T080 Strong Re-review accepted ADR-008, which is now Accepted and frozen.
+T081–T084 are not started and remain dependent on completed T080.
+
+Files changed for this final status update: `process/ADR-008.md`,
+`process/DECISION_LOG.md`, `process/PROGRESS_LOG.md`,
+`process/tasks/INDEX.md`, `TASK_BACKLOG.md`, `ROADMAP.md`, and
+`docs/SECURITY_HITL.md`. No production code, tests, migrations, or dependencies
+changed.
+
+Validation: `git diff --check` passed. No T081 implementation was started.
+
+Learner note: the accepted ADR is now the frozen contract for implementation;
+read it before beginning the dependent persistence task.
+
+Suggested next task: T081, after reviewing the accepted ADR.
+
+### Historical record — 2026-09-23 T080 Status Blocker Fix (before approval)
+
+At this point the stale planning-status blocker had been corrected and a
+focused T080 Strong Re-review was pending. The later approval entry above
+supersedes this status.
+
+Status: stale planning-status statements corrected; ready for focused T080
+Strong Re-review. ADR-008 remained Proposed; T081–T084 remained gated on T080.
+
+Authority: Phase 6 Planning is APPROVED, frozen, committed, and published.
+ADR-008 remains Proposed until T080 Strong Review approves it.
+
+What changed: corrected current canonical statements that described Phase 6
+Planning as awaiting review or not approved. Earlier failed/re-review entries
+remain in the log with explicit historical labels. T081–T084 dependencies and
+the ADR-008 approval gate are unchanged.
+
+Files changed: `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, and
+`process/PROGRESS_LOG.md`. No production code, tests, or migrations changed.
+
+Validation: searched Phase 6 canonical status references and ran
+`git diff --check` successfully.
+
+Known limitation at that time: the focused T080 Strong Re-review was still
+pending; no T081 work was started.
+
+Suggested next task: focused T080 Strong Re-review.
+
+### Historical record — 2026-09-23 T080 HITL/risk architecture gate (before re-review)
+
+Historical status before initial T080 Strong Review: ready for independent
+review. That review returned NOT APPROVED for a documentation-status blocker;
+the historical T080 Status Blocker Fix entry above records its correction.
+
+Baseline: branch `phase-6-hitl-safety`; HEAD `dc67a6b8ed5fda12e68cce2e7cad81e5631fac7b`; tracked working tree clean before this task, apart from pre-existing inaccessible `.pytest-tmp-*` directories. Phase 5/T064 and its Final Audit are recorded approved.
+
+Authority: `AGENTS.md`, `process/tasks/T080.md`, `process/ADR-008.md`,
+T081–T084, the T035 lifecycle implementation/contracts, existing Task/TaskRun
+schemas, and the Phase 5 AgentState/ExecutionResult contracts.
+
+What changed:
+
+- Froze the single pure server-side classification contract: L0/L1 auto-allow,
+  L2 approval required, L3 blocked; unknown/malformed inputs fail closed before
+  approval creation or action dispatch.
+- Defined the exact checkpoint approval reference and zero-based canonical
+  plan-slot identity, and clarified its one-based PlanStep/ExecutionResult
+  mapping. The reference carries no proposal or decision authority.
+- Bounded persisted outcomes to 8,192 canonical UTF-8 bytes and tied them to
+  the existing ExecutionResult field limits and plan slot.
+- Added a task-by-task PostgreSQL/security/checkpoint/race evidence matrix for
+  T081–T084 and synchronized the security guide and planning status references.
+
+Files changed: `process/ADR-008.md`, `process/DECISION_LOG.md`,
+`process/PROGRESS_LOG.md`, `docs/SECURITY_HITL.md`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, and `process/tasks/INDEX.md`. No production code, migrations,
+tests, dependencies, or runtime enums changed.
+
+Authority at the time of this record: Phase 6 Planning was APPROVED, frozen,
+committed, and published. ADR-008 remained Proposed pending T080 Strong Review;
+T081–T084 were gated on that approval. The final approval entry above
+supersedes this status.
+
+Validation: cross-checked ADR-008 against T035 locking/lifecycle ownership,
+the current Task/TaskRun enums, AgentState, and bounded ExecutionResult; checked
+T081–T084 for contract consistency; `git diff --check` passed. Runtime tests do
+not apply to this documentation-only task.
+
+Known limitation at the time: independent T080 Strong Review remained required;
+no T081 implementation was authorized by that task.
+
+Learner notes: read `process/ADR-008.md`, `process/tasks/T081.md`,
+`process/tasks/T083.md`, `src/service/task_lifecycle.py`, and
+`src/runtime/state.py`. Learn that checkpoint state is a locator while
+business persistence owns approval decisions and effect outcomes. Exercise:
+trace a duplicate request through the same run/replan/step key, then trace a
+replay after checkpoint-write failure. Do not worry about real-provider
+exactly-once guarantees or a generic policy engine yet.
+
+Suggested next task: independent read-only T080 Strong Review.
+
+### Historical record — 2026-09-22 Phase 6 Planning blocker fixes (B1–B3)
+
+Status at that time: READY FOR PHASE6 PLANNING FOCUSED STRONG RE-REVIEW; not
+approved. Superseded by the later Phase 6 Planning approval recorded above.
+
+- B1: froze Approval columns, normalized tenant SQL join, RESTRICT FKs,
+  uniqueness/checks, and repository/service transaction ownership in ADR-008.
+- B2: froze run/replan/step identity, immutable proposal reuse, concurrent
+  creation, first-decision-wins/duplicate 409, and stale-run handling.
+- B3: froze transaction-local claim, NOWAIT busy behavior, durable
+  AVAILABLE/COMPLETED/FAILED, atomic database mock outcome, rollback/replay,
+  and cancellation ordering. No real external effects or general idempotency.
+- Numbering: `git show HEAD:TASK_BACKLOG.md` and `git show HEAD:ROADMAP.md`
+  at `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020` already reserve T080–T088
+  for Phase 6. Keep the current T080–T085 DAG; no ID correction needed.
+- Files changed this pass: process/ADR-008.md, process/tasks/T080.md–T085.md,
+  TASK_BACKLOG.md, ROADMAP.md, process/tasks/INDEX.md, this progress log.
+  Existing planning changes were preserved; DECISION_LOG.md is unchanged in
+  this pass. No production code, tests, migration files, commits or pushes.
+- Validation: inspected current planning diff/cards and existing persistence/
+  lifecycle conventions; checked cross-document consistency and numbering;
+  `git diff --check` passed. No runtime tests apply to this documentation fix.
+- Known limitations: independent focused re-review is pending; the earlier
+  planning package was NOT APPROVED. No implementation is authorized yet.
+- Learner notes: read ADR-008, T081, T082 and T084. Learn why a transaction
+  lock needs no durable CLAIMED state when the mock effect is its own atomic
+  outcome write. Exercise: trace crash before commit versus after commit.
+  External-provider guarantees and worker architecture remain deferred.
+- Suggested next task: independent Phase6 Planning Focused Strong Re-review.
+
 ### 2026-09-22 — Phase 5 Final Approval
 
 Status: PHASE 5 APPROVED — PHASE 5 COMPLETE
@@ -3589,3 +4057,26 @@ Learner notes:
   idempotency, distributed locks, or automatic recovery.
 
 Suggested next task: focused Phase 3 Final Audit B1 re-audit only.
+
+## Historical Phase 6 Planning package creation — 2026-09-22
+
+Historical snapshot: the package below was then awaiting independent review.
+Phase 6 Planning has since been approved, frozen, committed, and published;
+ADR-008 remains Proposed pending T080 Strong Review.
+
+- Task: Phase 6 HITL/risk/approval/safety planning package.
+- Changed: proposed ADR-008 and task cards T080–T085; narrowed the former
+  T080–T088 sketch to a linear reviewable DAG.
+- Files: `process/ADR-008.md`, `process/tasks/T080.md`–`T085.md`,
+  `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`,
+  `process/DECISION_LOG.md`.
+- Validation: repository inspection, authority cross-check, and
+  `git diff --check`; no production code or tests changed.
+- Result: ready for independent Phase 6 Planning Strong Review.
+- Known limitation: ADR-008 is proposed, not accepted; implementation is
+  explicitly blocked until the planning gate passes.
+- Learner notes: risk classification is a server-side trust-boundary decision;
+  an approval checkpoint pauses before an effect, while business lifecycle and
+  LangGraph persistence remain separate. Read ADR-008 and T080–T084. Exercise:
+  trace why a stale approval cannot authorize a cancelled run. Do not worry yet
+  about real providers, workers, or UI.

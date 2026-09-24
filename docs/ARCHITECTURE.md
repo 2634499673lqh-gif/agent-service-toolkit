@@ -68,12 +68,12 @@ redaction are deferred to T014.
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
-| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs and T038 tenant-scoped TaskRun start/inspect APIs are implemented; approval records remain missing | 2 (done) / 3 |
+| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs, T038 TaskRun APIs, T081/T082 Approval persistence and protected decision APIs, and T083 internal approval boundary | 2 (done) / 3 / 6 |
 | Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, T038 start/inspect integration, and the T040–T050 internal runtime | TaskStep schema, public runtime API, idempotency | 3/4 |
 | Planner/executor/verifier/recovery | T040–T050 typed AgentState, Planner → Executor → Verifier runtime, bounded retry/replan, and verification | External tools/providers, broader context and recovery capabilities | 4/5 |
 | Checkpoint/resume | T050 LangGraph checkpoint/resume bound to a tenant-validated durable TaskRun | Worker/queue orchestration, HITL resume, and external-effect guarantees | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
-| Human approval | `interrupt()` demo | L0-L3 policy, approval records/APIs, audit/resume and exactly-once effects | 6 |
+| Human approval | T081 Approval persistence, T082 protected reads/decisions, T083 server-side classification and approval pause/resume; accepted ADR-008 | T084 action claim and bounded mock effect | 6 |
 | Observability/audit | Logging, run UUID, optional Langfuse/LangSmith | Correlated TaskPilot IDs, sanitized events, metrics and audit truth | 7 |
 | Evaluation | Unit/integration/smoke tests, fake model | Versioned deterministic task evals and safety/workflow metrics | 8 |
 | Product UI | Streamlit chat, threads, voice/feedback | Login, tasks/runs/steps/traces/approvals/files; retain Streamlit first | 9 |
@@ -102,11 +102,16 @@ Implemented and reviewed:
 
 Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABASE_URL`; the existing `DATABASE_TYPE` remains the upstream LangGraph backend selector. Run `alembic upgrade head` as a release step, never from application startup.
 
-Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, approval records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task create/list/get/update/cancel routes, and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. T040–T050 provide the committed internal bounded runtime described below. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, approval, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
+Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, permission or role tables, JWT/refresh tokens, organization-switch endpoints, and TaskPilot observability tables. T031/T032/T034 provide Task and TaskRun persistence, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence and protected nested read/decision routes. `ApprovalService.create_or_reuse` is internal to trusted runtime wiring. T040–T050 provide the committed internal bounded runtime described below. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
 
-## Current TaskPilot implementation status — Phase 5 complete
+## Current TaskPilot implementation status — Phase 6 complete
 
 The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed; Phase 5 implementation is complete and the Phase 5 Final Audit is approved. The initial audit returned NOT APPROVED solely because canonical status documentation was stale; the focused re-review subsequently approved Phase 5, which is complete.
+
+Phase 6 Planning is approved, frozen, committed, and published. T080 is
+complete and approved; T081 Approval persistence is complete with Strong Review
+approval, committed, and pushed. T082 Approval service and decision APIs are
+complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE, and Phase 7 has NOT STARTED.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
@@ -121,10 +126,10 @@ The implemented runtime is an internal, deterministic LangGraph topology:
   business persistence and LangGraph checkpoint ownership remain separate.
 
 The following boundaries remain deferred: persistent TaskStep, a public runtime
-HTTP API, worker/queue execution, real external tools or providers, HITL,
-exactly-once external effects, and any production deployment claim. Checkpoint
-or graph progress never grants authorization, and Phase 4 makes no exactly-once
-execution guarantee.
+HTTP API, worker/queue execution, action claim/effect handling, real external
+tools or providers, and any production
+deployment claim. Checkpoint or graph progress never grants authorization,
+and Phase 4 makes no exactly-once execution guarantee.
 
 
 ### Phase 5 implementation boundary

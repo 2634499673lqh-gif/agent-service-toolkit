@@ -194,3 +194,24 @@ async def test_repeated_dispatch_is_deterministic_and_uses_the_same_mapping_entr
 
     assert first == second
     assert capability.calls == [(STEP, context), (STEP, context)]
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_cannot_bypass_the_runtime_approval_boundary() -> None:
+    capability = FakeCapability(
+        CapabilityMetadata(
+            name="inspect",
+            risk_level="L2",
+            read_only=True,
+            deterministic=True,
+            side_effect_free=True,
+        ),
+        ExecutionResult(step_position=1, success=True, output="must not execute"),
+    )
+
+    result = await CapabilityDispatcher({"inspect": capability}).dispatch("inspect", STEP, object())
+
+    assert isinstance(result, RuntimeFailure)
+    assert result.classification == "TERMINAL"
+    assert result.code == "capability_requires_runtime_approval"
+    assert capability.calls == []

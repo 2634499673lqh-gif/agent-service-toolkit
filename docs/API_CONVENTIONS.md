@@ -1,6 +1,7 @@
 # API Conventions
 
-TaskPilot now exposes the T036–T038 Task and TaskRun surface under `/api/v1/tasks`.
+TaskPilot now exposes the T036–T038 Task and TaskRun surface and the T082
+Approval read/decision surface under `/api/v1/tasks`.
 The retained upstream routes (`/invoke`, `/stream`, `/history`, `/threads`,
 `/feedback`, `/info`, `/health`, `/agui/*`) are unchanged. Login remains a
 service/CLI concern; principal resolution and authorization use the existing
@@ -24,12 +25,22 @@ Planned prefix: `/api/v1`.
 - GET `/tasks/{task_id}/runs/{run_id}`
 - POST `/tasks/{task_id}/runs/{run_id}/cancel` *(planned later)*
 
-## Approvals (planned, not implemented)
+## Approvals (T082 implemented)
 
-- GET `/approvals`
-- GET `/approvals/{approval_id}`
-- POST `/approvals/{approval_id}/approve`
-- POST `/approvals/{approval_id}/reject`
+- GET `/tasks/{task_id}/runs/{run_id}/approvals`
+- GET `/tasks/{task_id}/runs/{run_id}/approvals/{approval_id}`
+- POST `/tasks/{task_id}/runs/{run_id}/approvals/{approval_id}/approve`
+- POST `/tasks/{task_id}/runs/{run_id}/approvals/{approval_id}/reject`
+
+`ApprovalService.create_or_reuse` is an internal service operation. Trusted
+runtime wiring selects the fixed action and validates its arguments before
+calling it; there is no public approval-create endpoint or caller-selected
+action, risk, actor, or tenant field. Creation reuses the canonical
+`(task_run_id, replan_count, step_position)` record only when the full sanitized
+proposal matches. Reads and decisions include the nested task/run identifiers
+in tenant-scoped SQL. Only active owner/admin members may decide; all repeated
+or competing decisions return 409. T083 implements the internal runtime wait
+and approval revalidation boundary; T084 owns approved action effects.
 
 ## Trace (planned, not implemented)
 
@@ -45,7 +56,8 @@ Exact endpoints should follow the existing codebase conventions after Phase 0.
 - consistent error envelope
 - explicit pagination
 - explicit authorization dependency
-- idempotency key for retryable create/action endpoints where needed
+- idempotency key for retryable create/action endpoints where needed; Approval
+  create/reuse uses ADR-008's canonical run/replan/step identity instead
 - no direct DB calls in route handlers
 - cross-tenant or nonexistent resources answer `404`, not `403`, to hide existence; this is now the frozen decision documented below
 

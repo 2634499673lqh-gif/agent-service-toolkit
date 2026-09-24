@@ -558,3 +558,32 @@ Skill/Tool/Context/Invocation tables, public APIs, HITL/approval, workers,
 memory or organization-knowledge infrastructure, generic idempotency, and any
 exactly-once claim. T061–T064 may implement only this contract; any broader
 capability or context system requires a new accepted decision.
+
+## ADR-008 — Phase 6 human approval and safety boundary (Accepted)
+
+Date: 2026-09-22; T080 contract refinement: 2026-09-23.
+
+T080 freezes one pure server-side classifier over trusted fixed action metadata
+and validated arguments: L0/L1 auto-allow, L2 requires approval, L3 blocks in
+V1; unknown or malformed inputs fail closed before dispatch. The only Phase 6
+effect is one deterministic L2 mock. Approval identity is the unique
+`(task_run_id, replan_count, step_position)` tuple, with the step slot defined
+as the existing zero-based runtime plan index. B1 defines the normalized
+tenant-scoped Approval schema and Task → TaskRun → Approval lock order. The
+checkpoint carries only a bounded approval reference and cannot supply a
+decision. The runtime reports WAITING_APPROVAL only after checkpoint success;
+T035 remains the only lifecycle owner. B3 stores an existing bounded
+ExecutionResult (maximum 8,192 canonical UTF-8 bytes) atomically with the
+COMPLETED/FAILED action state. The detailed T081–T084 test matrix is in
+`process/ADR-008.md`.
+
+Status: Accepted; the focused T080 Strong Re-review approved ADR-008 on
+2026-09-23, and its contract is frozen. T080 is complete; T081 is complete
+with Strong Review approved, committed, and pushed. T082 is complete, Strong
+Review approved, committed, and pushed to origin. T083 is complete with focused
+Strong Re-review approved, committed, and pushed. The initial
+Strong Review returned NOT APPROVED for the missing proposal-mismatch resume
+test, which was fixed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 has NOT STARTED.
+Generic policy/rule engines, credentials, workers, distributed locks, real
+external effects, and exactly-once claims remain deferred. See
+`process/ADR-008.md` and T080–T085.

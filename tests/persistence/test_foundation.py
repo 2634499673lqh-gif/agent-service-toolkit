@@ -1,5 +1,6 @@
 import ast
 import asyncio
+import json
 import sys
 import traceback
 from datetime import UTC
@@ -17,6 +18,11 @@ from persistence.engine import normalize_business_database_url
 from persistence.identity import canonicalize_email
 from persistence.migration_filters import include_name
 from persistence.models import (
+    APPROVAL_JSON_MAX_BYTES,
+    Approval,
+    ApprovalActionState,
+    ApprovalRiskLevel,
+    ApprovalStatus,
     AuthSession,
     Membership,
     Organization,
@@ -29,6 +35,7 @@ from persistence.models import (
     utc_now,
 )
 from persistence.repositories import (
+    ApprovalRepository,
     AuthSessionRepository,
     MembershipRepository,
     OrganizationRepository,
@@ -53,6 +60,7 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
         "taskpilot.auth_sessions",
         "taskpilot.tasks",
         "taskpilot.task_runs",
+        "taskpilot.approvals",
     }
     assert Organization.__table__.schema == "taskpilot"
     assert User.__table__.schema == "taskpilot"
@@ -60,6 +68,158 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
     assert AuthSession.__table__.schema == "taskpilot"
     assert Task.__table__.schema == "taskpilot"
     assert TaskRun.__table__.schema == "taskpilot"
+    assert Approval.__table__.schema == "taskpilot"
+
+
+def test_approval_metadata_declares_frozen_identity_and_integrity_contract() -> None:
+    table = Approval.__table__
+    assert set(table.c.keys()) == {
+        "id",
+        "task_run_id",
+        "replan_count",
+        "step_position",
+        "action_name",
+        "action_version",
+        "proposed_action",
+        "risk_level",
+        "requester_membership_id",
+        "status",
+        "decider_membership_id",
+        "decided_at",
+        "decision_reason",
+        "created_at",
+        "updated_at",
+        "action_state",
+        "outcome",
+        "action_finished_at",
+    }
+    assert table.c.id.type.python_type is UUID
+    assert table.c.task_run_id.type.python_type is UUID
+    assert table.c.replan_count.nullable is False
+    assert table.c.step_position.nullable is False
+    assert table.c.proposed_action.nullable is False
+    assert table.c.decider_membership_id.nullable is True
+    assert table.c.decided_at.type.timezone is True
+    assert table.c.created_at.type.timezone is True
+    assert table.c.updated_at.type.timezone is True
+    assert table.c.action_finished_at.type.timezone is True
+    assert table.c.status.server_default is not None
+    assert table.c.action_state.server_default is not None
+    assert {constraint.name for constraint in table.constraints if constraint.name} == {
+        "ck_approvals_approval_replan_count_range",
+        "ck_approvals_approval_step_position_nonnegative",
+        "ck_approvals_approval_action_name_not_blank",
+        "ck_approvals_approval_action_version_not_blank",
+        "ck_approvals_approval_action_identity_length",
+        "ck_approvals_approval_risk_level_valid",
+        "ck_approvals_approval_status_valid",
+        "ck_approvals_approval_action_state_valid",
+        "ck_approvals_approval_decision_reason_length",
+        "ck_approvals_approval_proposed_action_object",
+        "ck_approvals_approval_outcome_object",
+        "ck_approvals_approval_decision_fields_consistent",
+        "ck_approvals_approval_action_outcome_consistent",
+        "pk_approvals",
+        "uq_approvals_run_replan_step",
+        "fk_approvals_task_run_id_task_runs",
+        "fk_approvals_requester_membership_id_memberships",
+        "fk_approvals_decider_membership_id_memberships",
+    }
+    unique_constraints = {
+        (constraint.name, tuple(constraint.columns.keys()))
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert unique_constraints == {
+        ("uq_approvals_run_replan_step", ("task_run_id", "replan_count", "step_position"))
+    }
+    foreign_keys = {fk.parent.name: fk for fk in table.foreign_keys}
+    assert set(foreign_keys) == {
+        "task_run_id",
+        "requester_membership_id",
+        "decider_membership_id",
+    }
+    assert foreign_keys["task_run_id"].target_fullname == "taskpilot.task_runs.id"
+    assert foreign_keys["requester_membership_id"].target_fullname == "taskpilot.memberships.id"
+    assert foreign_keys["decider_membership_id"].target_fullname == "taskpilot.memberships.id"
+    assert all(foreign_key.ondelete == "RESTRICT" for foreign_key in foreign_keys.values())
+    assert {index.name for index in table.indexes} == {"ix_approvals_task_run_id_status"}
+    index = next(iter(table.indexes))
+    assert tuple(column.name for column in index.columns) == ("task_run_id", "status")
+
+
+def test_approval_model_defaults_and_canonical_json_bounds() -> None:
+    approval = Approval(
+        task_run_id=UUID("11111111-1111-4111-8111-111111111111"),
+        replan_count=0,
+        step_position=0,
+        action_name="send_report",
+        action_version="1",
+        proposed_action={"subject": "Résumé"},
+        requester_membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+    )
+    assert approval.risk_level is ApprovalRiskLevel.L2
+    assert approval.status is ApprovalStatus.PENDING
+    assert approval.action_state is ApprovalActionState.AVAILABLE
+    assert approval.id is None
+    assert repr(approval).find("Résumé") == -1
+
+    at_bound = {"value": "x" * (APPROVAL_JSON_MAX_BYTES - len('{"value":""}'))}
+    bounded = Approval(
+        task_run_id=UUID("11111111-1111-4111-8111-111111111111"),
+        replan_count=0,
+        step_position=0,
+        action_name="send_report",
+        action_version="1",
+        proposed_action=at_bound,
+        requester_membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+    )
+    assert (
+        len(
+            json.dumps(
+                bounded.proposed_action,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        == APPROVAL_JSON_MAX_BYTES
+    )
+
+    with pytest.raises(ValueError, match="UTF-8 bytes"):
+        Approval(
+            task_run_id=UUID("11111111-1111-4111-8111-111111111111"),
+            replan_count=0,
+            step_position=0,
+            action_name="send_report",
+            action_version="1",
+            proposed_action={"value": "é" * (APPROVAL_JSON_MAX_BYTES // 2)},
+            requester_membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+        )
+    with pytest.raises(ValueError, match="JSON object"):
+        Approval(
+            task_run_id=UUID("11111111-1111-4111-8111-111111111111"),
+            replan_count=0,
+            step_position=0,
+            action_name="send_report",
+            action_version="1",
+            proposed_action={"value": float("nan")},
+            requester_membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+        )
+    cyclic_value: list[object] = []
+    cyclic_value.append(cyclic_value)
+    with pytest.raises(ValueError, match="JSON object"):
+        Approval(
+            task_run_id=UUID("11111111-1111-4111-8111-111111111111"),
+            replan_count=0,
+            step_position=0,
+            action_name="send_report",
+            action_version="1",
+            proposed_action={"cycle": cyclic_value},
+            requester_membership_id=UUID("22222222-2222-4222-8222-222222222222"),
+        )
+    with pytest.raises(ValueError, match="UTF-8 bytes"):
+        approval.outcome = {"value": "é" * (APPROVAL_JSON_MAX_BYTES // 2)}
 
 
 def test_task_run_status_defaults_and_ordering_contract() -> None:
@@ -509,6 +669,26 @@ async def test_repository_flushes_without_commit() -> None:
     task_run_session.rollback.assert_not_called()
     task_run_session.close.assert_not_called()
 
+    approval_session = Mock()
+    approval_session.flush = AsyncMock()
+    approval_repository = ApprovalRepository(approval_session)
+    approval = Approval(
+        task_run_id=UUID("66666666-6666-4666-8666-666666666666"),
+        replan_count=0,
+        step_position=0,
+        action_name="send_report",
+        action_version="1",
+        proposed_action={"recipient": "person@example.com"},
+        requester_membership_id=UUID("77777777-7777-4777-8777-777777777777"),
+    )
+
+    assert await approval_repository.add(approval) is approval
+    approval_session.add.assert_called_once_with(approval)
+    approval_session.flush.assert_awaited_once_with()
+    approval_session.commit.assert_not_called()
+    approval_session.rollback.assert_not_called()
+    approval_session.close.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_auth_session_repository_looks_up_by_digest_only() -> None:
@@ -655,3 +835,64 @@ async def test_task_repositories_keep_tenant_scope_in_the_database() -> None:
     ).casefold()
     assert "join taskpilot.tasks" in task_run_list_sql
     assert "taskpilot.tasks.organization_id" in task_run_list_sql
+
+
+@pytest.mark.asyncio
+async def test_approval_repository_reads_join_the_normalized_tenant_path() -> None:
+    task_id = UUID("11111111-1111-4111-8111-111111111111")
+    task_run_id = UUID("22222222-2222-4222-8222-222222222222")
+    approval_id = UUID("33333333-3333-4333-8333-333333333333")
+    organization_id = UUID("44444444-4444-4444-8444-444444444444")
+
+    session = Mock()
+    session.scalar = AsyncMock(return_value=None)
+    session.scalars = AsyncMock(return_value=[])
+    repository = ApprovalRepository(session)
+
+    assert (
+        await repository.get_for_task_run_in_principal_tenant(
+            task_id, task_run_id, approval_id, organization_id
+        )
+        is None
+    )
+    by_id_sql = str(
+        session.scalar.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.task_runs" in by_id_sql
+    assert "join taskpilot.tasks" in by_id_sql
+    assert "taskpilot.task_runs.task_id" in by_id_sql
+    assert "taskpilot.tasks.organization_id" in by_id_sql
+    assert task_id.hex in by_id_sql
+    assert task_run_id.hex in by_id_sql
+    assert approval_id.hex in by_id_sql
+    assert organization_id.hex in by_id_sql
+
+    assert (
+        await repository.get_for_action_identity_in_principal_tenant(
+            task_id, task_run_id, 1, 4, organization_id
+        )
+        is None
+    )
+    by_identity_sql = str(
+        session.scalar.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.task_runs" in by_identity_sql
+    assert "join taskpilot.tasks" in by_identity_sql
+    assert "taskpilot.approvals.replan_count = 1" in by_identity_sql
+    assert "taskpilot.approvals.step_position = 4" in by_identity_sql
+    assert "taskpilot.tasks.organization_id" in by_identity_sql
+
+    assert (
+        await repository.list_for_task_run_in_principal_tenant(
+            task_id, task_run_id, organization_id
+        )
+        == []
+    )
+    list_sql = str(
+        session.scalars.await_args.args[0].compile(compile_kwargs={"literal_binds": True})
+    ).casefold()
+    assert "join taskpilot.task_runs" in list_sql
+    assert "join taskpilot.tasks" in list_sql
+    assert "taskpilot.tasks.organization_id" in list_sql
+    assert "taskpilot.task_runs.id" in list_sql
+    assert "taskpilot.task_runs.task_id" in list_sql

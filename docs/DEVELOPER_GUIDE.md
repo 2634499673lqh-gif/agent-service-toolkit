@@ -214,7 +214,10 @@ Tenant-owned lookups must carry the tenant predicate in the query itself
 `OrganizationRepository.get_in_principal_tenant`) so a foreign row is not found
 rather than fetched and compared in Python, and tenant existence must be
 resolved before any role check. `APPROVAL_DECISION_ROLES` freezes the documented
-owner/admin approval gate; no approval records exist yet.
+owner/admin approval gate. T081 adds Approval persistence and T082 applies this
+gate to the protected nested approve/reject routes after SQL visibility is
+established. T083 adds the internal runtime approval wait/resume boundary;
+T084 owns action claims and bounded effect behavior.
 
 ### Security matrix (T026)
 

@@ -2,9 +2,9 @@
 
 > Codex must keep this synchronized with implemented behavior.
 
-## Status (2026-09-18)
+## Status (2026-09-23)
 
-Everything below describes the target V1 workflow beyond the currently implemented surface. There is no login endpoint, step view, or approval UI; T036/T037 provide protected Task create/list/get/update/cancel routes and T038 provides tenant-scoped TaskRun start/inspect routes under `/api/v1/tasks`. Phase 2 delivered the identity and tenancy layers: the PostgreSQL `taskpilot` tables, opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the available commands.
+Everything below describes the target V1 workflow beyond the currently implemented surface. There is no login endpoint, step view, or approval UI; T036/T037 provide protected Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence with protected nested read/decision routes under `/api/v1/tasks`. T083 implements the internal runtime approval boundary; T084 bounded action handling is implemented; the public runtime workflow remains outside the current scope. Phase 2 delivered opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the available commands.
 
 ## What TaskPilot does
 

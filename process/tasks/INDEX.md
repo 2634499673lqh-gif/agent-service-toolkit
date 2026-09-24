@@ -88,3 +88,27 @@ are not live task assignments.
 | T064 | Runtime integration implementation | STRONG/STANDARD | Strong Review | T061–T063 | APPROVED / COMPLETE / COMMITTED / PUSHED |
 
 DAG: `T060 → T061`, then `T061 → T062` and `T061 → T063`, then `T062 + T063 → T064`. T060–T064 are complete and Strong Review approved. The initial Phase 5 Final Audit returned NOT APPROVED solely because canonical status documentation was stale; the focused Final Audit re-review subsequently approved Phase 5.
+
+## Phase 6 Task Cards — Human-in-the-loop & Safety
+
+Phase 6 Planning is APPROVED, frozen, committed, and published. T080 is
+COMPLETE with Strong Review APPROVED; ADR-008 is Accepted and frozen. T081 is
+COMPLETE with Strong Review APPROVED, committed, and pushed. T082 is COMPLETE
+with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE
+with focused Strong Review APPROVED; committed and pushed.
+T084 is COMPLETE; Strong Review APPROVED; committed and pushed.
+
+| Task | Purpose | Model | Review | Depends On | Status |
+|---|---|---|---|---|---|
+| T080 | HITL/risk architecture gate and ADR-008 | STRONG planning | Planning Strong Review | Phase 5 complete | COMPLETE / STRONG REVIEW APPROVED |
+| T081 | Approval persistence and migration | LOW_COST | Strong Review | T080 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
+| T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
+| T083 | Runtime approval boundary | STRONG | Strong Review | T082 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
+| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
+| T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | FOCUSED FINAL AUDIT RE-REVIEW APPROVED; PHASE 6 COMPLETE |
+
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 has NOT STARTED.
+
+Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
+already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.
+T081–T084 follow ADR-008 B1–B3 for schema, canonical identity and mock claim.

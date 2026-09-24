@@ -25,6 +25,7 @@ _SAFE_FAILURE_MESSAGES = {
     _CAPABILITY_METADATA_INVALID: "Capability metadata is invalid.",
     _CAPABILITY_OUTPUT_INVALID: "Capability output is invalid.",
     _CAPABILITY_EXECUTION_FAILED: "Capability execution failed.",
+    "capability_requires_runtime_approval": "Capability requires the runtime approval boundary.",
 }
 
 
@@ -34,6 +35,8 @@ class CapabilityMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: StrictStr = Field(min_length=1, max_length=_MAX_NAME_LENGTH)
+    action_version: Literal["1"] = "1"
+    risk_level: Literal["L0", "L1", "L2", "L3"] = "L0"
     description: StrictStr = Field(default="", max_length=_MAX_DESCRIPTION_LENGTH)
     read_only: Literal[True]
     deterministic: Literal[True]
@@ -91,15 +94,13 @@ class CapabilityDispatcher[CapabilityContextT]:
             return _terminal_failure(_CAPABILITY_UNKNOWN)
 
         capability = self._capabilities.get(name)
-        if capability is None:
+        metadata = self.metadata_for(name)
+        if isinstance(metadata, RuntimeFailure):
+            return metadata
+        if capability is None:  # metadata_for already rejects this
             return _terminal_failure(_CAPABILITY_UNKNOWN)
-
-        try:
-            metadata = CapabilityMetadata.model_validate(capability.metadata)
-        except Exception:
-            return _terminal_failure(_CAPABILITY_METADATA_INVALID)
-        if metadata.name != name:
-            return _terminal_failure(_CAPABILITY_METADATA_INVALID)
+        if metadata.risk_level in {"L2", "L3"}:
+            return _terminal_failure("capability_requires_runtime_approval")
 
         try:
             validated_step = PlanStep.model_validate(step)
@@ -112,6 +113,22 @@ class CapabilityDispatcher[CapabilityContextT]:
             return _terminal_failure(_CAPABILITY_EXECUTION_FAILED)
 
         return self._normalize_result(raw_result, validated_step)
+
+    def metadata_for(self, name: str) -> CapabilityMetadata | RuntimeFailure:
+        """Return validated, server-wired metadata without executing a capability."""
+
+        if not _is_safe_text(name, max_length=_MAX_NAME_LENGTH, require_non_blank=True):
+            return _terminal_failure(_CAPABILITY_UNKNOWN)
+        capability = self._capabilities.get(name)
+        if capability is None:
+            return _terminal_failure(_CAPABILITY_UNKNOWN)
+        try:
+            metadata = CapabilityMetadata.model_validate(capability.metadata)
+        except Exception:
+            return _terminal_failure(_CAPABILITY_METADATA_INVALID)
+        if metadata.name != name:
+            return _terminal_failure(_CAPABILITY_METADATA_INVALID)
+        return metadata
 
     def _normalize_result(
         self,
