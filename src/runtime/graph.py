@@ -138,6 +138,8 @@ def build_runtime_graph(
         state: AgentState,
         runtime: Runtime[RuntimeGraphContext],
     ) -> dict[str, object]:
+        if state.execution_result is not None and state.pending_approval is None:
+            return {"capability_context": None, "failure": None}
         if state.plan is None or state.plan_position >= len(state.plan.steps):
             return {"failure": _failure(failure_classifier, "runtime_plan_position_invalid")}
         step = state.plan.steps[state.plan_position]

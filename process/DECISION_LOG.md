@@ -583,7 +583,8 @@ with Strong Review approved, committed, and pushed. T082 is complete, Strong
 Review approved, committed, and pushed to origin. T083 is complete with focused
 Strong Re-review approved; its implementation remains uncommitted. The initial
 Strong Review returned NOT APPROVED for the missing proposal-mismatch resume
-test, which was fixed. T084 is not started and is unblocked by T083.
+test, which was fixed. T084 implementation is complete and awaits independent
+Strong Review.
 Generic policy/rule engines, credentials, workers, distributed locks, real
 external effects, and exactly-once claims remain deferred. See
 `process/ADR-008.md` and T080–T085.

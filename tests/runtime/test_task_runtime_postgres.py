@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from persistence.engine import create_async_engine
 from persistence.models import (
     Approval,
+    ApprovalActionState,
     ApprovalStatus,
     Membership,
     Organization,
@@ -43,7 +44,13 @@ from runtime import (
     build_runtime_graph,
 )
 from schema.planner import Plan
-from service.approval_service import ApprovalService
+from service.approval_service import (
+    ApprovalConflictError,
+    ApprovalProposal,
+    ApprovalRunNotActiveError,
+    ApprovalService,
+    ApprovedActionService,
+)
 from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService
 from service.task_runtime import (
@@ -192,17 +199,33 @@ class _RiskCapability:
         )
 
 
+class _ApprovedActionFailurePlanner:
+    async def __call__(self, request) -> object:  # noqa: ARG002
+        return {
+            "steps": [
+                {
+                    "position": 1,
+                    "instruction": "[t084-mock-failure]",
+                }
+            ]
+        }
+
+
 def _risk_dispatcher(risk_level: str) -> tuple[CapabilityDispatcher, _RiskCapability]:
     capability = _RiskCapability(risk_level)
     return CapabilityDispatcher({"deterministic_fixture": capability}), capability
 
 
-async def _wait_for_l2(seeded_task):
+async def _wait_for_l2(seeded_task, *, planner=None):
     session_factory, saver, organization_id, task_id, user_id = seeded_task
     run_id = await _start_run(session_factory, task_id, organization_id)
     principal = await _principal_for(session_factory, user_id, organization_id)
     dispatcher, capability = _risk_dispatcher("L2")
-    runtime_service = TaskRuntimeService(saver, capability_dispatcher=dispatcher)
+    runtime_service = TaskRuntimeService(
+        saver,
+        planner=planner,
+        capability_dispatcher=dispatcher,
+    )
     async with session_factory() as session:
         result = await runtime_service.execute_run(
             session,
@@ -485,7 +508,7 @@ async def test_postgres_l2_wait_checkpoint_and_approved_resume(seeded_task) -> N
             approval_id=waiting.approval_id,
         )
     async with session_factory() as session:
-        ready = await runtime_service.execute_run(
+        completed = await runtime_service.execute_run(
             session,
             organization_id=organization_id,
             task_id=task_id,
@@ -493,18 +516,38 @@ async def test_postgres_l2_wait_checkpoint_and_approved_resume(seeded_task) -> N
             principal=principal,
         )
 
-    assert isinstance(ready, RuntimeApprovalResult)
-    assert ready.status == "APPROVED_ACTION_READY"
-    assert ready.approval_id == waiting.approval_id
-    assert capability.calls == 0  # T084 owns the approved action effect.
-    assert await _read_run(session_factory, task_id, run_id) == (
-        TaskStatus.RUNNING,
-        TaskRunStatus.RUNNING,
+    assert isinstance(completed, RuntimeExecutionResult)
+    assert completed.terminal_outcome == "SUCCEEDED"
+    assert completed.state.execution_result == ExecutionResult(
+        step_position=1,
+        success=True,
+        output="approved-mock-action-completed:v1",
     )
+    assert capability.calls == 0
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.SUCCEEDED,
+        TaskRunStatus.SUCCEEDED,
+    )
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+    assert approval.action_state is ApprovalActionState.COMPLETED
+    assert approval.outcome == completed.state.execution_result.model_dump(mode="json")
+    assert approval.action_finished_at is not None
+    checkpoint = await saver.aget_tuple({"configurable": {"thread_id": f"taskpilot-run:{run_id}"}})
+    assert checkpoint is not None
+    checkpoint_state = runtime_service._state_from_checkpoint(
+        checkpoint,
+        f"taskpilot-run:{run_id}",
+        task_id=task_id,
+        task_run_id=run_id,
+    )
+    assert checkpoint_state.pending_approval is not None
+    assert checkpoint_state.pending_approval.approval_id == waiting.approval_id
+    assert checkpoint_state.execution_result == completed.state.execution_result
 
 
 @pytest.mark.asyncio
-async def test_postgres_concurrent_approved_runtime_resume_is_read_only(seeded_task) -> None:
+async def test_postgres_concurrent_approved_runtime_resume_has_one_winner(seeded_task) -> None:
     (
         session_factory,
         _saver,
@@ -524,7 +567,7 @@ async def test_postgres_concurrent_approved_runtime_resume_is_read_only(seeded_t
             approval_id=waiting.approval_id,
         )
 
-    async def resume() -> RuntimeApprovalResult:
+    async def resume() -> RuntimeExecutionResult:
         async with session_factory() as session:
             result = await runtime_service.execute_run(
                 session,
@@ -533,17 +576,344 @@ async def test_postgres_concurrent_approved_runtime_resume_is_read_only(seeded_t
                 task_run_id=run_id,
                 principal=principal,
             )
-        assert isinstance(result, RuntimeApprovalResult)
+        assert isinstance(result, RuntimeExecutionResult)
         return result
 
-    first, second = await asyncio.gather(resume(), resume())
+    results = await asyncio.gather(resume(), resume(), return_exceptions=True)
+    completed = [
+        result
+        for result in results
+        if isinstance(result, RuntimeExecutionResult) and result.terminal_outcome == "SUCCEEDED"
+    ]
+    conflicts = [result for result in results if isinstance(result, TaskRuntimeConflictError)]
+    assert len(completed) == 1
+    assert len(conflicts) == 1
+    assert capability.calls == 0
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.SUCCEEDED,
+        TaskRunStatus.SUCCEEDED,
+    )
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+    assert approval.action_state is ApprovalActionState.COMPLETED
+    assert approval.outcome == completed[0].state.execution_result.model_dump(mode="json")
 
-    assert first.status == second.status == "APPROVED_ACTION_READY"
-    assert first.approval_id == second.approval_id == waiting.approval_id
-    assert capability.calls == 0  # T084 owns the approved action effect.
+
+@pytest.mark.asyncio
+async def test_postgres_approved_action_replay_returns_one_committed_outcome(seeded_task) -> None:
+    (
+        session_factory,
+        _saver,
+        organization_id,
+        task_id,
+        run_id,
+        principal,
+        _capability,
+        runtime_service,
+        waiting,
+    ) = await _wait_for_l2(seeded_task)
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+        approval = await session.get_one(Approval, waiting.approval_id)
+        proposal = ApprovalProposal(
+            action_name=approval.action_name,
+            action_version=approval.action_version,
+            proposed_action=approval.proposed_action,
+        )
+
+    async with session_factory() as session:
+        first = await ApprovedActionService(session).execute(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+            replan_count=0,
+            step_position=0,
+            proposal=proposal,
+        )
+    async with session_factory() as session:
+        replay = await ApprovedActionService(session).execute(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+            replan_count=0,
+            step_position=0,
+            proposal=proposal,
+        )
+
+    assert first == replay
     assert await _read_run(session_factory, task_id, run_id) == (
         TaskStatus.RUNNING,
         TaskRunStatus.RUNNING,
+    )
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+    assert approval.action_state is ApprovalActionState.COMPLETED
+    assert approval.outcome == replay.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_postgres_approved_action_transaction_failure_rolls_back_and_replays(
+    seeded_task,
+    monkeypatch,
+) -> None:
+    (
+        session_factory,
+        _saver,
+        organization_id,
+        task_id,
+        run_id,
+        principal,
+        _capability,
+        _runtime_service,
+        waiting,
+    ) = await _wait_for_l2(seeded_task)
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        proposal = ApprovalProposal(
+            action_name=approval.action_name,
+            action_version=approval.action_version,
+            proposed_action=approval.proposed_action,
+        )
+        original_commit = session.commit
+
+        async def fail_before_commit() -> None:
+            raise OSError("simulated approved-action transaction failure")
+
+        monkeypatch.setattr(session, "commit", fail_before_commit)
+        with pytest.raises(OSError, match="transaction failure"):
+            await ApprovedActionService(session).execute(
+                principal,
+                task_id=task_id,
+                task_run_id=run_id,
+                approval_id=waiting.approval_id,
+                replan_count=0,
+                step_position=0,
+                proposal=proposal,
+            )
+        monkeypatch.setattr(session, "commit", original_commit)
+
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        assert approval.action_state is ApprovalActionState.AVAILABLE
+        assert approval.outcome is None
+        assert approval.action_finished_at is None
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.RUNNING,
+        TaskRunStatus.RUNNING,
+    )
+
+    async with session_factory() as session:
+        replay = await ApprovedActionService(session).execute(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+            replan_count=0,
+            step_position=0,
+            proposal=proposal,
+        )
+    assert replay.success is True
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        assert approval.action_state is ApprovalActionState.COMPLETED
+        assert approval.outcome == replay.model_dump(mode="json")
+        assert await session.scalar(select(func.count()).select_from(Approval)) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgres_failed_approved_action_replay_returns_persisted_failure(
+    seeded_task,
+    monkeypatch,
+) -> None:
+    (
+        session_factory,
+        _saver,
+        _organization_id,
+        task_id,
+        run_id,
+        principal,
+        capability,
+        _runtime_service,
+        waiting,
+    ) = await _wait_for_l2(seeded_task, planner=PlannerNode(_ApprovedActionFailurePlanner()))
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        proposal = ApprovalProposal(
+            action_name=approval.action_name,
+            action_version=approval.action_version,
+            proposed_action=approval.proposed_action,
+        )
+        first = await ApprovedActionService(session).execute(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+            replan_count=0,
+            step_position=0,
+            proposal=proposal,
+        )
+    assert first.success is False
+    assert capability.calls == 0
+
+    def should_not_recalculate(cls, proposal, step_position):  # noqa: ARG001
+        raise AssertionError("FAILED action was recalculated")
+
+    monkeypatch.setattr(ApprovedActionService, "_mock_outcome", classmethod(should_not_recalculate))
+    async with session_factory() as session:
+        replay = await ApprovedActionService(session).execute(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+            replan_count=0,
+            step_position=0,
+            proposal=proposal,
+        )
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        assert approval.action_state is ApprovalActionState.FAILED
+        assert approval.outcome == first.model_dump(mode="json")
+        assert await session.scalar(select(func.count()).select_from(Approval)) == 1
+    assert replay == first
+
+
+@pytest.mark.asyncio
+async def test_postgres_approved_action_failure_is_durable_and_terminal(seeded_task) -> None:
+    (
+        session_factory,
+        _saver,
+        organization_id,
+        task_id,
+        run_id,
+        principal,
+        capability,
+        runtime_service,
+        waiting,
+    ) = await _wait_for_l2(
+        seeded_task,
+        planner=PlannerNode(_ApprovedActionFailurePlanner()),
+    )
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+    async with session_factory() as session:
+        result = await runtime_service.execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+            principal=principal,
+        )
+
+    assert isinstance(result, RuntimeExecutionResult)
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.execution_result is not None
+    assert result.state.execution_result.success is False
+    assert result.state.execution_result.error_code == "approved_mock_failure"
+    assert capability.calls == 0
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.FAILED,
+        TaskRunStatus.FAILED,
+    )
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+    assert approval.action_state is ApprovalActionState.FAILED
+    assert approval.outcome == result.state.execution_result.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_postgres_approved_action_rejects_mismatch_and_cancelled_run(seeded_task) -> None:
+    (
+        session_factory,
+        _saver,
+        organization_id,
+        task_id,
+        run_id,
+        principal,
+        _capability,
+        _runtime_service,
+        waiting,
+    ) = await _wait_for_l2(seeded_task)
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+        approval = await session.get_one(Approval, waiting.approval_id)
+        proposal = ApprovalProposal(
+            action_name=approval.action_name,
+            action_version=approval.action_version,
+            proposed_action=approval.proposed_action | {"tampered": True},
+        )
+
+    with pytest.raises(ApprovalConflictError):
+        async with session_factory() as session:
+            await ApprovedActionService(session).execute(
+                principal,
+                task_id=task_id,
+                task_run_id=run_id,
+                approval_id=waiting.approval_id,
+                replan_count=0,
+                step_position=0,
+                proposal=proposal,
+            )
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+    assert approval.action_state is ApprovalActionState.AVAILABLE
+    assert approval.outcome is None
+
+    async with session_factory() as session:
+        await TaskLifecycleService(session).cancel_task(task_id, organization_id)
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+        original = ApprovalProposal(
+            action_name=approval.action_name,
+            action_version=approval.action_version,
+            proposed_action=approval.proposed_action,
+        )
+    with pytest.raises(ApprovalRunNotActiveError):
+        async with session_factory() as session:
+            await ApprovedActionService(session).execute(
+                principal,
+                task_id=task_id,
+                task_run_id=run_id,
+                approval_id=waiting.approval_id,
+                replan_count=0,
+                step_position=0,
+                proposal=original,
+            )
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.CANCELLED,
+        TaskRunStatus.CANCELLED,
     )
 
 
@@ -1034,6 +1404,87 @@ async def test_postgres_checkpoint_write_failure_replays_same_approval(
             task_run_id=run_id,
         )
     assert len(approvals) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgres_committed_action_survives_checkpoint_failure_and_recovers(
+    seeded_task,
+    monkeypatch,
+) -> None:
+    (
+        session_factory,
+        saver,
+        organization_id,
+        task_id,
+        run_id,
+        principal,
+        capability,
+        runtime_service,
+        waiting,
+    ) = await _wait_for_l2(seeded_task)
+    async with session_factory() as session:
+        await ApprovalService(session).approve(
+            principal,
+            task_id=task_id,
+            task_run_id=run_id,
+            approval_id=waiting.approval_id,
+        )
+
+    original_aput = saver.aput
+    failed = {"value": False}
+
+    async def fail_after_action_commit(config, checkpoint, metadata, new_versions):
+        channel_values = checkpoint.get("channel_values", {})
+        if not failed["value"] and channel_values.get("execution_result") is not None:
+            failed["value"] = True
+            raise OSError("simulated post-commit checkpoint failure")
+        return await original_aput(config, checkpoint, metadata, new_versions)
+
+    monkeypatch.setattr(saver, "aput", fail_after_action_commit)
+    with pytest.raises(TaskRuntimeCheckpointError, match="replayed"):
+        async with session_factory() as session:
+            await runtime_service.execute_run(
+                session,
+                organization_id=organization_id,
+                task_id=task_id,
+                task_run_id=run_id,
+                principal=principal,
+            )
+    assert failed["value"]
+    assert capability.calls == 0
+
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        assert approval.action_state is ApprovalActionState.COMPLETED
+        committed_outcome = ExecutionResult.model_validate(approval.outcome)
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.RUNNING,
+        TaskRunStatus.RUNNING,
+    )
+
+    async with session_factory() as session:
+        recovered = await runtime_service.execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+            principal=principal,
+        )
+    assert isinstance(recovered, RuntimeExecutionResult)
+    assert recovered.terminal_outcome == "SUCCEEDED"
+    assert recovered.state.execution_result == committed_outcome
+    assert recovered.state.verification is not None
+    assert capability.calls == 0
+    async with session_factory() as session:
+        approval = await session.get_one(Approval, waiting.approval_id)
+        assert approval is not None
+        assert approval.action_state is ApprovalActionState.COMPLETED
+        assert approval.outcome == committed_outcome.model_dump(mode="json")
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.SUCCEEDED,
+        TaskRunStatus.SUCCEEDED,
+    )
 
 
 @pytest.mark.asyncio

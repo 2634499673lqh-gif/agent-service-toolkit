@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import (
     APPROVAL_JSON_MAX_BYTES,
     Approval,
+    ApprovalActionState,
     ApprovalRiskLevel,
     ApprovalStatus,
     Membership,
@@ -27,6 +28,7 @@ from persistence.repositories import (
     TaskRepository,
     TaskRunRepository,
 )
+from runtime.executor import ExecutionResult
 from service.authorization import APPROVAL_DECISION_ROLES, require_role
 from service.logging import redact_text, redact_value
 from service.session import CurrentPrincipal
@@ -55,6 +57,10 @@ class ApprovalConflictError(ApprovalError):
 
 class ApprovalRunNotActiveError(ApprovalConflictError):
     """A runtime checkpoint references a cancelled or terminal business run."""
+
+
+class ApprovedActionBusyError(ApprovalConflictError):
+    """The approved-action transaction could not acquire a NOWAIT lock."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,14 +359,16 @@ class ApprovalService:
         principal: CurrentPrincipal,
         task_id: UUID,
         task_run_id: UUID,
+        *,
+        nowait: bool = False,
     ) -> tuple[Task, TaskRun]:
         task = await self.tasks.get_for_update_in_principal_tenant(
-            task_id, principal.organization_id
+            task_id, principal.organization_id, nowait=nowait
         )
         if task is None:
             raise ApprovalNotFoundError("Task is not visible")
         run = await self.runs.get_for_update_for_task_in_principal_tenant(
-            task.id, task_run_id, principal.organization_id
+            task.id, task_run_id, principal.organization_id, nowait=nowait
         )
         if run is None:
             raise ApprovalNotFoundError("TaskRun is not visible")
@@ -370,8 +378,10 @@ class ApprovalService:
         if not await self._is_active_run(task, run):
             raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
 
-    async def _is_active_run(self, task: Task, run: TaskRun) -> bool:
-        active = await self.runs.get_active_for_update(task.id, TaskRunStatus.RUNNING)
+    async def _is_active_run(self, task: Task, run: TaskRun, *, nowait: bool = False) -> bool:
+        active = await self.runs.get_active_for_update(
+            task.id, TaskRunStatus.RUNNING, nowait=nowait
+        )
         return not (
             task.status is not TaskStatus.RUNNING
             or run.status is not TaskRunStatus.RUNNING
@@ -465,6 +475,134 @@ class ApprovalService:
         return getattr(diagnostic, "constraint_name", None)
 
 
+class ApprovedActionService(ApprovalService):
+    """Record one bounded deterministic mock outcome for an approved action."""
+
+    _SUCCESS_OUTPUT = "approved-mock-action-completed:v1"
+    _FAILURE_INSTRUCTION = "[t084-mock-failure]"
+    _FAILURE_CODE = "approved_mock_failure"
+    _FAILURE_MESSAGE = "The approved mock action failed deterministically."
+
+    async def execute(
+        self,
+        principal: CurrentPrincipal,
+        *,
+        task_id: UUID,
+        task_run_id: UUID,
+        approval_id: UUID,
+        replan_count: int,
+        step_position: int,
+        proposal: ApprovalProposal,
+    ) -> ExecutionResult:
+        """Claim the canonical action and atomically store its only effect."""
+
+        try:
+            if (
+                not isinstance(replan_count, int)
+                or isinstance(replan_count, bool)
+                or replan_count not in (0, 1)
+                or not isinstance(step_position, int)
+                or isinstance(step_position, bool)
+                or step_position < 0
+            ):
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+
+            task, run = await self._lock_task_and_run(principal, task_id, task_run_id, nowait=True)
+            if (
+                task.status is not TaskStatus.RUNNING
+                or run.status is not TaskRunStatus.RUNNING
+                or not await self._is_active_run(task, run, nowait=True)
+            ):
+                raise ApprovalRunNotActiveError(APPROVAL_CONFLICT_DETAIL)
+
+            approval = await self.approvals.get_for_update_by_action_identity_in_principal_tenant(
+                task.id,
+                run.id,
+                replan_count,
+                step_position,
+                principal.organization_id,
+                nowait=True,
+            )
+            if approval is None or approval.id != approval_id:
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+
+            await self._active_membership(principal, for_update=True)
+            canonical_proposal = self._canonical_proposal(proposal)
+            current_step = canonical_proposal.get("current_step")
+            if (
+                not isinstance(current_step, dict)
+                or current_step.get("position") != step_position + 1
+            ):
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+            if approval.status is not ApprovalStatus.APPROVED or not self._same_proposal(
+                approval,
+                proposal.action_name,
+                proposal.action_version,
+                canonical_proposal,
+            ):
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+
+            if approval.action_state in {
+                ApprovalActionState.COMPLETED,
+                ApprovalActionState.FAILED,
+            }:
+                if approval.outcome is None:
+                    raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+                try:
+                    result = ExecutionResult.model_validate(approval.outcome)
+                except Exception:
+                    raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL) from None
+                if result.step_position != step_position + 1 or result.success != (
+                    approval.action_state is ApprovalActionState.COMPLETED
+                ):
+                    raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+                await self.session.commit()
+                return result
+
+            if approval.action_state is not ApprovalActionState.AVAILABLE:
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+
+            result = self._mock_outcome(canonical_proposal, step_position)
+            canonical_outcome = self._canonical_object(result.model_dump(mode="json"))
+            if canonical_outcome is None:
+                raise ApprovalConflictError(APPROVAL_CONFLICT_DETAIL)
+            approval.outcome = json.loads(canonical_outcome)
+            approval.action_state = (
+                ApprovalActionState.COMPLETED if result.success else ApprovalActionState.FAILED
+            )
+            approval.action_finished_at = utc_now()
+            await self.session.flush()
+            await self.session.commit()
+            return result
+        except DBAPIError as error:
+            await self.session.rollback()
+            if getattr(error.orig, "sqlstate", None) == "55P03":
+                raise ApprovedActionBusyError("Approved action is busy") from None
+            raise
+        except BaseException:
+            await self.session.rollback()
+            raise
+
+    @classmethod
+    def _mock_outcome(cls, proposal: dict[str, Any], step_position: int) -> ExecutionResult:
+        """Calculate a fixed result without external or independent writes."""
+
+        step = proposal.get("current_step")
+        instruction = step.get("instruction") if isinstance(step, dict) else None
+        if instruction == cls._FAILURE_INSTRUCTION:
+            return ExecutionResult(
+                step_position=step_position + 1,
+                success=False,
+                error_code=cls._FAILURE_CODE,
+                error_message=cls._FAILURE_MESSAGE,
+            )
+        return ExecutionResult(
+            step_position=step_position + 1,
+            success=True,
+            output=cls._SUCCESS_OUTPUT,
+        )
+
+
 def _principal_with_role(principal: CurrentPrincipal, membership: Membership) -> CurrentPrincipal:
     """Return the same server-verified identity with its current persisted role."""
 
@@ -489,5 +627,7 @@ __all__ = [
     "ApprovalConflictError",
     "ApprovalNotFoundError",
     "ApprovalProposal",
+    "ApprovedActionBusyError",
+    "ApprovedActionService",
     "ApprovalService",
 ]

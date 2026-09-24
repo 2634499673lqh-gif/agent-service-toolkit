@@ -1,4 +1,46 @@
-### 2026-09-23 — T083 focused Strong Re-review approval recorded
+### 2026-09-24 — T084 bounded approved-action implementation
+
+Status: T084 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+T080–T083 are COMPLETE / APPROVED; ADR-008 remains Accepted and frozen. T085
+has not started.
+
+What changed: added the tenant-scoped approved-action transaction with the
+canonical `(task_run_id, replan_count, step_position)` identity, Task → TaskRun
+→ Approval NOWAIT locking, durable AVAILABLE/COMPLETED/FAILED transitions, and
+atomic bounded `ExecutionResult` outcome storage. Approved runtime resume now
+executes the deterministic in-process mock, stores/replays its outcome, and
+continues checkpoint recovery through the existing verifier and T035 lifecycle.
+Failure, proposal mismatch, cancellation, terminal state, tenant mismatch, and
+checkpoint replay remain fail-closed. The checkpoint retains only the bounded
+lookup reference and cached outcome, so business Approval state is re-read on
+recovery. No external effect or durable CLAIMED state was added.
+
+Files changed for T084: `src/persistence/repositories.py`,
+`src/service/approval_service.py`, `src/service/task_runtime.py`, and
+`tests/runtime/test_task_runtime_postgres.py`. The status records in the
+roadmap, backlog, task index, ADR-008, Decision Log, architecture document,
+and this log were synchronized to implementation complete / awaiting review.
+
+Validation: focused runtime unit regression passed (15 tests); runtime suite
+excluding PostgreSQL passed (126 tests); persistence foundation tests passed
+(32 tests). Live PostgreSQL evidence used the repository Compose PostgreSQL 16
+service in isolated project `taskpilot-t084-blockers-20260924`, with 33 T084
+runtime tests passing and 12 Approval API/T035 lifecycle tests passing. The
+live tests covered approved execution, NOWAIT concurrency, replay of completed
+and failed outcomes, transaction rollback before commit, atomic outcome/state
+writes, post-commit checkpoint failure recovery, cancellation and terminal
+precedence, stale identity, tenant isolation, checkpoint recovery, and T035
+lifecycle ownership. Ruff check/format, Pyrefly (0 errors), and `git diff --check`
+passed.
+
+Scope: T085 was not started. No migrations, dependencies, workers, external
+effects, generic exactly-once framework, distributed locks, or workflow/policy
+engine were added.
+
+Suggested next task: independent Strong Review of T084 using the completed
+live PostgreSQL evidence.
+
+### Historical record — 2026-09-23 — T083 focused Strong Re-review approval recorded
 
 Status: T083 COMPLETE; focused Strong Re-review APPROVED. The implementation
 remains uncommitted. T080–T082 are COMPLETE / APPROVED; ADR-008 remains

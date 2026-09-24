@@ -96,7 +96,7 @@ COMPLETE with Strong Review APPROVED; ADR-008 is Accepted and frozen. T081 is
 COMPLETE with Strong Review APPROVED, committed, and pushed. T082 is COMPLETE
 with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE
 with focused Strong Review APPROVED; its implementation remains uncommitted.
-T084 has not started and is UNBLOCKED by T083.
+T084 implementation is complete and awaiting independent Strong Review.
 
 | Task | Purpose | Model | Review | Depends On | Status |
 |---|---|---|---|---|---|
@@ -104,10 +104,10 @@ T084 has not started and is UNBLOCKED by T083.
 | T081 | Approval persistence and migration | LOW_COST | Strong Review | T080 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
 | T082 | Approval service and decision APIs | STANDARD | Strong Review | T081 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
 | T083 | Runtime approval boundary | STRONG | Strong Review | T082 | COMPLETE / STRONG REVIEW APPROVED / UNCOMMITTED |
-| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | NOT STARTED / UNBLOCKED |
+| T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | IMPLEMENTATION COMPLETE / AWAITING STRONG REVIEW |
 | T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | Not started |
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T083 are complete and approved. T084 is not started and unblocked by T083.
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T083 are complete and approved. T084 implementation is complete and awaits independent Strong Review.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.

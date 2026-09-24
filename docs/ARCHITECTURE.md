@@ -114,7 +114,7 @@ approval, committed, and pushed. T082 Approval service and decision APIs are
 complete, Strong Review approved, committed, and pushed to origin. T083 runtime
 approval boundary is complete with focused Strong Re-review approved; its
 implementation remains uncommitted. T084 action claim/effect work has not
-started and is unblocked by T083.
+started and awaits independent Strong Review.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 

@@ -51,7 +51,11 @@ class TaskRepository:
         return await self.session.scalar(statement)
 
     async def get_for_update_in_principal_tenant(
-        self, task_id: UUID, principal_organization_id: UUID
+        self,
+        task_id: UUID,
+        principal_organization_id: UUID,
+        *,
+        nowait: bool = False,
     ) -> Task | None:
         """Load and lock one visible Task for a lifecycle transaction."""
 
@@ -61,7 +65,7 @@ class TaskRepository:
                 Task.id == task_id,
                 Task.organization_id == principal_organization_id,
             )
-            .with_for_update()
+            .with_for_update(nowait=nowait)
             .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
@@ -184,6 +188,8 @@ class TaskRunRepository:
         task_id: UUID,
         task_run_id: UUID,
         principal_organization_id: UUID,
+        *,
+        nowait: bool = False,
     ) -> TaskRun | None:
         """Load and lock one nested run after its tenant-scoped Task lock."""
 
@@ -195,7 +201,7 @@ class TaskRunRepository:
                 TaskRun.task_id == task_id,
                 Task.organization_id == principal_organization_id,
             )
-            .with_for_update(of=TaskRun)
+            .with_for_update(of=TaskRun, nowait=nowait)
             .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
@@ -204,6 +210,8 @@ class TaskRunRepository:
         self,
         task_id: UUID,
         status: TaskRunStatus,
+        *,
+        nowait: bool = False,
     ) -> TaskRun | None:
         """Load and lock the sole active run expected by a Task state."""
 
@@ -213,7 +221,7 @@ class TaskRunRepository:
                 TaskRun.task_id == task_id,
                 TaskRun.status == status,
             )
-            .with_for_update()
+            .with_for_update(nowait=nowait)
             .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
@@ -283,6 +291,8 @@ class ApprovalRepository:
         task_run_id: UUID,
         approval_id: UUID,
         principal_organization_id: UUID,
+        *,
+        nowait: bool = False,
     ) -> Approval | None:
         """Load and lock one Approval through its nested tenant ownership path."""
 
@@ -297,7 +307,7 @@ class ApprovalRepository:
                 Task.id == task_id,
                 Task.organization_id == principal_organization_id,
             )
-            .with_for_update(of=Approval)
+            .with_for_update(of=Approval, nowait=nowait)
             .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)
@@ -334,6 +344,8 @@ class ApprovalRepository:
         replan_count: int,
         step_position: int,
         principal_organization_id: UUID,
+        *,
+        nowait: bool = False,
     ) -> Approval | None:
         """Load and lock one canonical action identity inside the tenant."""
 
@@ -349,7 +361,7 @@ class ApprovalRepository:
                 Approval.replan_count == replan_count,
                 Approval.step_position == step_position,
             )
-            .with_for_update(of=Approval)
+            .with_for_update(of=Approval, nowait=nowait)
             .execution_options(populate_existing=True)
         )
         return await self.session.scalar(statement)

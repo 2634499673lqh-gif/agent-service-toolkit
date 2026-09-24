@@ -13,7 +13,7 @@ from persistence.repositories import TaskRunRepository
 from runtime.capabilities import DeterministicFixtureCapability
 from runtime.capability import CapabilityDispatcher, CapabilityMetadata
 from runtime.context import ContextBuilder, ContextEnvelope
-from runtime.executor import Executor
+from runtime.executor import ExecutionResult, Executor
 from runtime.failure import FailureClassifier
 from runtime.graph import RuntimeGraphContext, build_runtime_graph
 from runtime.planner import PlannerNode
@@ -25,6 +25,8 @@ from service.approval_service import (
     ApprovalProposal,
     ApprovalRunNotActiveError,
     ApprovalService,
+    ApprovedActionBusyError,
+    ApprovedActionService,
 )
 from service.session import CurrentPrincipal
 from service.task_lifecycle import (
@@ -294,6 +296,7 @@ class TaskRuntimeService:
                     task_snapshot=task_snapshot,
                     state=checkpoint_state,
                     principal=principal,
+                    config=config,
                 )
             if (
                 isinstance(self.action_metadata, CapabilityMetadata)
@@ -555,6 +558,7 @@ class TaskRuntimeService:
         task_snapshot: tuple[str, str | None],
         state: AgentState,
         principal: CurrentPrincipal | None,
+        config: dict[str, dict[str, str]],
     ) -> RuntimeResult:
         """Resolve a checkpoint hint against locked tenant-scoped business state."""
 
@@ -628,18 +632,154 @@ class TaskRuntimeService:
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_rejected"),
             )
-        status: RuntimeApprovalStatus = (
-            "WAITING_APPROVAL"
-            if approval.status is ApprovalStatus.PENDING
-            else "APPROVED_ACTION_READY"
+        if approval.status is ApprovalStatus.PENDING:
+            return RuntimeApprovalResult(
+                task_id=task_id,
+                task_run_id=task_run_id,
+                checkpoint_thread_id=thread_id,
+                status="WAITING_APPROVAL",
+                approval_id=approval.id,
+            )
+
+        try:
+            outcome = await ApprovedActionService(session).execute(
+                principal,
+                task_id=task_id,
+                task_run_id=task_run_id,
+                approval_id=approval.id,
+                replan_count=reference.replan_count,
+                step_position=reference.step_position,
+                proposal=proposal,
+            )
+        except ApprovedActionBusyError as error:
+            raise TaskRuntimeConflictError("approved action is busy") from error
+        except ApprovalError as error:
+            raise TaskRuntimeConflictError("approved action is not available") from error
+
+        action_state = state.model_copy(
+            update={
+                "execution_result": outcome,
+                "pending_approval": reference,
+                "capability_context": None,
+                "verification": None,
+                "failure": None,
+                "terminal_outcome": None,
+            }
         )
-        return RuntimeApprovalResult(
+        await self._persist_approved_action_checkpoint(
+            session,
+            config=config,
+            thread_id=thread_id,
             task_id=task_id,
             task_run_id=task_run_id,
-            checkpoint_thread_id=thread_id,
-            status=status,
-            approval_id=approval.id,
+            reference=reference,
+            outcome=outcome,
         )
+        if not outcome.success:
+            failed = action_state.model_copy(
+                update={
+                    "failure": self.failure_classifier.classify(
+                        outcome.error_code or "approved_mock_failure", outcome.error_message
+                    ),
+                    "terminal_outcome": "FAILED",
+                }
+            )
+            return await self._finish(
+                session,
+                TaskRunRepository(session),
+                organization_id=organization_id,
+                task_id=task_id,
+                task_run_id=task_run_id,
+                thread_id=thread_id,
+                state=failed,
+            )
+
+        try:
+            raw_state = await self.graph.ainvoke(
+                action_state.model_copy(update={"pending_approval": None}).model_dump(mode="json"),
+                config=config,
+                context=self._runtime_context(
+                    session,
+                    principal=principal,
+                    organization_id=organization_id,
+                    task_id=task_id,
+                    task_run_id=task_run_id,
+                    task_snapshot=task_snapshot,
+                    approval_tracker={},
+                ),
+            )
+            resumed_state = AgentState.model_validate(raw_state)
+        except Exception:
+            await session.rollback()
+            raise TaskRuntimeCheckpointError(
+                "approved action committed but the checkpoint must be replayed"
+            ) from None
+        if resumed_state.task_id != str(task_id) or resumed_state.task_run_id != str(task_run_id):
+            raise TaskRuntimeConflictError("approved action checkpoint identity is invalid")
+        await self._persist_approved_action_checkpoint(
+            session,
+            config=config,
+            thread_id=thread_id,
+            task_id=task_id,
+            task_run_id=task_run_id,
+            reference=reference,
+            outcome=outcome,
+        )
+        return await self._finish(
+            session,
+            TaskRunRepository(session),
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=task_run_id,
+            thread_id=thread_id,
+            state=resumed_state,
+        )
+
+    async def _persist_approved_action_checkpoint(
+        self,
+        session: AsyncSession,
+        *,
+        config: dict[str, dict[str, str]],
+        thread_id: str,
+        task_id: UUID,
+        task_run_id: UUID,
+        reference: PendingApprovalReference,
+        outcome: ExecutionResult,
+    ) -> None:
+        """Cache a business outcome while retaining the lookup reference."""
+
+        updater = getattr(self.graph, "aupdate_state", None)
+        if updater is None:
+            raise TaskRuntimeCheckpointError(
+                "approved action committed but the checkpoint must be replayed"
+            )
+        try:
+            await updater(
+                config,
+                {
+                    "execution_result": outcome.model_dump(mode="json"),
+                    "pending_approval": reference.model_dump(mode="json"),
+                    "capability_context": None,
+                    "verification": None,
+                    "failure": None,
+                    "terminal_outcome": None,
+                },
+                as_node="executor",
+            )
+            latest = await self._latest_checkpoint(config)
+            saved_state = self._state_from_checkpoint(
+                latest,
+                thread_id,
+                task_id=task_id,
+                task_run_id=task_run_id,
+            )
+            if saved_state.pending_approval != reference or saved_state.execution_result != outcome:
+                raise ValueError("approved action outcome checkpoint did not persist")
+        except Exception:
+            await session.rollback()
+            raise TaskRuntimeCheckpointError(
+                "approved action committed but the checkpoint must be replayed"
+            ) from None
 
     async def _verify_written_approval_checkpoint(
         self,
@@ -732,6 +872,7 @@ class TaskRuntimeService:
             task_snapshot=task_snapshot,
             state=saved_state,
             principal=principal,
+            config=config,
         )
 
     def _state_from_checkpoint(
