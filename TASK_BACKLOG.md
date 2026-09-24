@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 has NOT STARTED.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; implementation is ready to begin with T091/T092.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -228,12 +228,12 @@ Status: COMPLETE; Strong Review APPROVED; committed and pushed to origin.
 ### T083 — Runtime approval boundary [A after T082]
 Classify before an effect, persist the checkpoint before waiting, and expose the
 minimal WAITING_APPROVAL result without changing unrelated lifecycle states.
-Status: COMPLETE; FOCUSED STRONG REVIEW APPROVED; implementation uncommitted.
+Status: COMPLETE; FOCUSED STRONG REVIEW APPROVED; committed and pushed.
 
 ### T084 — Resume and idempotent approved action [A/B after T083]
 Resume the exact run/step after approval, fail closed on rejection/cancellation,
 and prove one approved mock effect under duplicate HTTP/worker delivery.
-Status: IMPLEMENTATION COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+Status: COMPLETE; Strong Review APPROVED; committed and pushed.
 
 ### T085 — Phase 6 final audit [A, read-only after T084]
 Collect migration, authorization, race, replay, redaction, lifecycle, and
@@ -248,6 +248,8 @@ remain deferred.
 
 ## Phase 7 — Observability
 
+Phase 7 planning is defined by ADR-009 and task cards T090–T098. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T098 is exclusively the fresh-eyes, read-only Phase 7 Final Audit; it audits redaction evidence owned by T092/T097 and does not add tests or fixes. No additional audit ID is introduced.
+
 ### T090 — Trace data model decision [A]
 Goal: decide DB events vs external trace backend responsibilities.
 
@@ -255,7 +257,7 @@ Goal: decide DB events vs external trace backend responsibilities.
 Approved schema only.
 
 ### T092 — ToolCall persistence [C/B]
-Approved schema only.
+Approved schema only, including persisted-payload redaction tests.
 
 ### T093 — Correlation propagation [B]
 Goal: request→task→run→step→agent→tool IDs connected.
@@ -271,10 +273,13 @@ Goal: configurable price table/calculation, not hardcoded business truth.
 Tests deterministic.
 
 ### T097 — Trace query API [C/B]
-Goal: retrieve ordered sanitized execution timeline.
+Goal: retrieve ordered sanitized execution timeline, including response-redaction
+tests.
 
-### T098 — Redaction tests [C]
-Tests-only hardening.
+### T098 — Phase 7 Final Audit [A, read-only after T097]
+Fresh-eyes, independent, non-mutating audit of ADR-009, T091–T097 evidence,
+tenant SQL, ordering, recovery reconstruction, and redaction evidence owned by
+T092/T097. No code/test fixes, commit, push, or T099.
 
 ## Phase 8 — Evaluation
 

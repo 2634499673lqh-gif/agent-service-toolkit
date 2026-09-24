@@ -46,6 +46,16 @@ and approval revalidation boundary; T084 owns approved action effects.
 
 - GET `/tasks/{task_id}/runs/{run_id}/trace`
 
+The planned trace read is tenant-scoped through the same TaskRun -> Task SQL
+join as existing run inspection. Invalid credentials are `401` with the
+standard Bearer challenge; nonexistent or cross-tenant resources are `404`;
+an active in-tenant member may read a visible run, so this read adds no role
+gate or new `403`. The response is a bounded sanitized projection ordered by
+event timestamp, event kind, parent AgentRun, call index, and event ID.
+Failure, retry, and replan rows remain visible. T092 owns persisted-payload
+redaction tests and T097 owns response-redaction tests; T098 only audits their
+evidence.
+
 ## Knowledge/files
 
 Exact endpoints should follow the existing codebase conventions after Phase 0.

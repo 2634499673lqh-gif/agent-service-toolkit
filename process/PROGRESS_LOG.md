@@ -1,3 +1,28 @@
+### 2026-09-24 — Phase 7 Planning focused blocker fix
+
+Task: complete the focused planning/docs-only blocker window after the Phase 7
+Planning Strong Review.
+
+Changed: expanded ADR-009 and T091–T097 with executable persistence,
+correlation, timing/error/retry, usage, cost, redaction, SQL tenant-scoping,
+ordering, response bounds, and authentication visibility contracts.
+Reassigned redaction-test ownership to T092/T097 and made T098 exclusively the
+fresh-eyes, independent, read-only Phase 7 Final Audit. Synchronized
+ROADMAP.md, TASK_BACKLOG.md, process/tasks/INDEX.md, docs/DATABASE_DESIGN.md,
+docs/API_CONVENTIONS.md, and docs/OBSERVABILITY_EVAL.md.
+
+Result: no DAG changes; no T099; no runtime/application implementation.
+Validation: focused consistency searches, status/title/DAG review, and
+git diff --check; no PostgreSQL or full runtime regression was run.
+
+Result: Phase 7 Planning Strong Re-review APPROVED; ADR-009 is accepted/frozen. T090 is complete and implementation is ready to begin with T091/T092.
+
+Learner notes: trace rows are evidence joined through existing Task/TaskRun
+ownership; they do not become a second lifecycle or tenant authority. Read
+ADR-009, T091, T092, T093, T097, and T098. Exercise: write the SQL join path
+that hides a foreign TaskRun before any Python code sees it. Do not worry yet
+about external tracing, workers, billing, or UI.
+
 ### 2026-09-24 — T085 focused Final Audit re-review approved
 
 Status: T080–T084 are COMPLETE / APPROVED, committed, and pushed. The initial
@@ -4080,3 +4105,12 @@ ADR-008 remains Proposed pending T080 Strong Review.
   LangGraph persistence remain separate. Read ADR-008 and T080–T084. Exercise:
   trace why a stale approval cannot authorize a cancelled run. Do not worry yet
   about real providers, workers, or UI.
+
+## Phase 7 Planning blocker resolution — 2026-09-24
+
+- Task: resolve stale Phase 6 status and establish Phase 7 planning authority.
+- Changed: corrected T083/T084 current status in TASK_BACKLOG.md; added process/ADR-009.md and task cards T090–T098; synchronized ROADMAP.md and process/tasks/INDEX.md.
+- Result: Phase 7 DAG, contracts, security boundary, T090 architecture gate, and T098 Final Audit are defined.
+- Validation: git diff --check and repository consistency inspection; no runtime tests or PostgreSQL started.
+- Known limitation: ADR-009 and the planning package await independent Planning Strong Review.
+- Learner notes: observability records evidence while business tables remain authoritative. Read ADR-009, T090, T091, T097, and T098. Exercise: trace how a tenant-scoped query reconstructs one retry. Do not worry yet about external tracing or billing.
