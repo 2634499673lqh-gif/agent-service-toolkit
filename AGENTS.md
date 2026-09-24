@@ -237,3 +237,35 @@ A task is not done until:
 - Never execute destructive operations against real external systems during development.
 - Never hide failed tests.
 - Never claim production-readiness solely because a demo works.
+
+## 15. Cross-phase workflow rules
+
+### Git ownership
+
+Codex must not create or switch branches, commit, push, merge, or otherwise
+perform state-changing Git operations unless the user explicitly authorizes
+that exact operation. Normal implementation and review completion reports
+should state readiness and leave commit/push to the user.
+
+### Implementation and review separation
+
+Implementation sessions may edit files and run validation. Strong Review is
+independent and read-only. A Phase Final Audit is fresh-eyes and read-only.
+Review and audit sessions inspect evidence and report findings; they do not fix
+code, tests, or documentation while reviewing.
+
+### Verdict and blocker-fix flow
+
+Every Strong Review and Phase Final Audit ends with exactly one verdict:
+`APPROVED` or `NOT APPROVED`. When the verdict is `NOT APPROVED`, return to
+the relevant Implementation or Planning session, make only the minimum
+blocker fix, avoid opportunistic refactors or scope expansion, and return to
+the same reviewer for focused re-review.
+
+### Conditional status synchronization
+
+After an `APPROVED` review, inspect the canonical current-state
+documentation. If it is already correct, make no status change. Only explicit
+stale current-state evidence justifies a minimum status-only synchronization;
+clearly historical records remain historical. Do not add an automatic
+status-sync step after every review.
