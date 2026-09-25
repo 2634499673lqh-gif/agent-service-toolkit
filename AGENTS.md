@@ -249,10 +249,13 @@ should state readiness and leave commit/push to the user.
 
 ### Implementation and review separation
 
-Implementation sessions may edit files and run validation. Strong Review is
-independent and read-only. A Phase Final Audit is fresh-eyes and read-only.
-Review and audit sessions inspect evidence and report findings; they do not fix
-code, tests, or documentation while reviewing.
+Implementation sessions may edit files and run validation. Prefer a coherent
+batch of roughly 2–4 adjacent tasks when dependency and risk boundaries allow;
+do not force a batch size. Strong Review normally occurs at that batch boundary
+unless repository authority requires an earlier gate. Substantive Strong Review
+and a Phase Final Audit are independent and read-only. The reviewer/auditor
+must determine the substantive verdict before modifying anything; review and
+audit sessions do not fix code, tests, or documentation while evaluating.
 
 ### Verdict and blocker-fix flow
 
@@ -264,8 +267,11 @@ the same reviewer for focused re-review.
 
 ### Conditional status synchronization
 
-After an `APPROVED` review, inspect the canonical current-state
-documentation. If it is already correct, make no status change. Only explicit
-stale current-state evidence justifies a minimum status-only synchronization;
-clearly historical records remain historical. Do not add an automatic
-status-sync step after every review.
+Every review ends with `APPROVED` or `NOT APPROVED`. `NOT APPROVED` permits no
+reviewer-side fix; return the work to implementation/planning for the minimum
+blocker correction. After substantive `APPROVED`, the same reviewer/auditor may
+perform only minimal mechanical status-only synchronization for explicit,
+unambiguous stale current-state evidence. That exception cannot modify code,
+tests, migrations, Task Card contracts, ADR decisions, DAG topology, schema,
+security, authorization, transaction, concurrency, or runtime behavior.
+Ambiguous authority or substantive defects remain `NOT APPROVED` blockers.

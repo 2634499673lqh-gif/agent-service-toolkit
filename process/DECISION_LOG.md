@@ -587,3 +587,21 @@ test, which was fixed. T084 is COMPLETE; Strong Review APPROVED; committed and p
 Generic policy/rule engines, credentials, workers, distributed locks, real
 external effects, and exactly-once claims remain deferred. See
 `process/ADR-008.md` and T080–T085.
+
+## Phase 8 planning decision — ADR-010 (2026-09-25)
+
+Phase 8 planning proposes Evaluation as bounded observational/regression infrastructure pending Planning Strong Review approval. T100–T107 define a versioned deterministic suite, five provider-free fixtures, an in-memory runner, four pure metrics, canonical JSON and derived human report, cheap CI smoke, and an independent Final Audit. Evaluation cannot become tenant, authorization, lifecycle, approval, checkpoint, runtime, business, or telemetry authority. No database, live provider, dashboard, SaaS, worker, billing, subjective gate, or generic benchmark framework is included. T107 is the conflict-free Final Audit ID after completed T098.
+
+## Phase 8 planning blocker fix — ADR-010 / T100 remains pending (2026-09-25)
+
+The Phase 8 planning artifacts were corrected after independent Planning Strong Review returned NOT APPROVED. The exact five-case V1 suite now uses the repository-backed `deterministic.fixture_baseline` (`DeterministicFixtureCapability` output `deterministic-read-only-fixture:v1`); no tabular/sum capability is planned. ADR-010 freezes the four shared-shape metrics, the exact `taskpilot.eval.report/v1` contract, deterministic Decimal serialization, bounded comparison reasons, and the distinction between per-run metrics and cross-run comparability.
+
+T100 remains the architecture/planning gate and is awaiting Planning Strong Review approval. It is not marked APPROVED or COMPLETE in this planning session. On approval, ADR-010 becomes Accepted/frozen, T100 becomes COMPLETE / APPROVED, and implementation begins at T101. Corrected batches are Planning gate T100, Implementation Batch 1 T101–T103, Implementation Batch 2 T104–T106, and Phase Final Audit T107. No runtime, test, CI, persistence, or dependency changes are part of this blocker fix.
+
+## Phase 8 Planning Strong Review status synchronization — 2026-09-25
+
+The focused Planning Strong Re-review approved the blocker fixes. ADR-010 is
+Accepted/frozen, T100 is COMPLETE / APPROVED, Phase 8 Planning is APPROVED /
+frozen, and implementation begins at T101. The corrected batches remain
+T101–T103, T104–T106, and independent Final Audit T107. No runtime, test,
+schema, migration, dependency, security, or DAG changes were made.

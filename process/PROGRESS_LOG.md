@@ -1,3 +1,29 @@
+### 2026-09-25 — T107 Phase 8 Final Audit
+
+Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+
+Independent validation: Evaluation tests (34 passed), full repository suite (632 passed, 125 skipped), provider-free three-case smoke (exit 0), Ruff, Pyrefly, report serialization bounds, CI workflow inspection, and documentation consistency checks all passed. No implementation, test, migration, contract, architecture, or runtime changes were made.
+
+Historical blocker and re-review records remain preserved.
+
+### 2026-09-25 — Phase 8 Batch 2 focused Strong Re-review current-state synchronization
+
+Current status: T104–T106 are COMPLETE / APPROVED; Batch 2 is COMPLETE /
+STRONG REVIEW APPROVED; T107 Phase 8 Final Audit is next executable work.
+
+Changed only explicit current-state wording after independent focused Strong
+Re-review approval; historical implementation and blocker-fix entries remain
+unchanged.
+
+### 2026-09-25 — Phase 8 Batch 1 blocker-fix current-state synchronization
+
+Current status: T101–T103 are COMPLETE / APPROVED after focused Batch Strong
+Re-review. Batch 1 is COMPLETE / STRONG REVIEW APPROVED; Batch 2 is complete;
+T107 Phase 8 Final Audit is next.
+
+Changed only the stale current-state wording in docs/ARCHITECTURE.md and
+process/ADR-009.md; historical progress entries remain unchanged.
+
 ### 2026-09-25 — Phase 7 final status synchronization
 
 Status: T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is
@@ -4529,3 +4555,162 @@ Learner notes:
 - Do not worry yet about tenant-safe timeline queries or billing systems.
 
 Suggested next task: independent T096 Strong Review.
+
+### 2026-09-25 — Phase 8 Evaluation planning
+
+Status: Planning artifacts complete; READY FOR PLANNING STRONG REVIEW.
+
+What changed:
+- Re-verified phase-8-evaluation at merged Phase 7 HEAD 00b0b41.
+- Synchronized AGENTS.md §15 with coherent batch and independent review rules.
+- Added proposed ADR-010 and implementation-ready T100–T107 cards.
+- Defined the non-authoritative versioned Evaluation contract, five deterministic fixtures, pure metrics, bounded reports, CI smoke, DAG, batches, and Final Audit.
+
+Files changed:
+- AGENTS.md
+- process/ADR-010.md
+- process/tasks/T100.md through T107.md
+- TASK_BACKLOG.md
+- ROADMAP.md
+- process/tasks/INDEX.md
+- docs/OBSERVABILITY_EVAL.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+
+Validation:
+- Baseline branch, ancestry, merged Phase 7 status, and working tree checked.
+- No production code, schema, migration, test, or CI implementation changed.
+- git diff --check passed.
+
+Learner notes:
+- Problem solved: Evaluation can be implemented later without making measurement an authority.
+- Read ADR-010, docs/OBSERVABILITY_EVAL.md, process/tasks/T100.md, process/tasks/T102.md, and process/tasks/T104.md.
+- Main concept: versioned deterministic evidence and explicit comparison boundaries.
+- Exercise: trace why a suite version mismatch is incomparable instead of a failure.
+- Do not worry yet about live model judging or a metrics platform.
+
+### 2026-09-25 — Phase 8 planning blocker fix
+
+Status: Blockers corrected; READY FOR FOCUSED PLANNING RE-REVIEW.
+
+What changed:
+- Froze exact deterministic contracts for pass rate, recovery success, approval compliance, and evidence completeness using one Decimal-rounded rate shape.
+- Replaced the unsupported tabular/sum fixture with the repository-backed `deterministic.fixture_baseline` and exact `DeterministicFixtureCapability` output.
+- Froze the bounded `taskpilot.eval.report/v1` schema, status enums, comparison reasons, canonical serialization, and artifact-size failure behavior.
+- Clarified T100 as the Phase 8 planning gate awaiting Strong Review approval, with corrected implementation batches and DAG.
+
+Files changed:
+- process/ADR-010.md
+- process/tasks/T100.md through T107.md
+- ROADMAP.md
+- TASK_BACKLOG.md
+- process/tasks/INDEX.md
+- docs/OBSERVABILITY_EVAL.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+
+Validation:
+- Searched canonical planning docs for stale `tabular.deterministic_sum`, tabular/sum fixture assumptions, old T100–T101 implementation-batch wording, metric names, report schema/version wording, and T100 status.
+- Confirmed no production implementation, migration, test, dependency, or CI files changed.
+- `git diff --check` passed.
+
+Learner notes:
+- Problem solved: the future Evaluation implementation now has deterministic metric, fixture, report, and gate contracts that can be reviewed independently.
+- Read ADR-010, T100, T101, T103, and T104 first.
+- Main concept: freeze data contracts and comparison boundaries before writing runtime code.
+- Exercise: explain why an incomparable report still has valid per-run metrics.
+- Do not worry yet about Evaluation persistence, dashboards, live models, or CI implementation.
+
+Suggested next task: focused Planning Strong Review of ADR-010 and T100–T107.
+
+### 2026-09-25 — Phase 8 Planning Strong Re-review approved
+
+Status: ADR-010 Accepted / frozen; T100 COMPLETE / APPROVED; Phase 8 Planning
+APPROVED / frozen. T101 is next as Implementation Batch 1.
+
+What changed:
+- Independently verified the three blocker fixes: exact metric contracts,
+  repository-backed deterministic baseline fixture, and exact bounded report
+  schema.
+- Synchronized only explicit canonical current-state status lines after the
+  substantive approval. Historical blocker and planning entries remain intact.
+
+Validation:
+- Focused stale-reference, metric, report-schema, T100/batch/DAG, and
+  prohibited-implementation-file searches passed.
+- `git diff --check` passed.
+- No runtime or full-suite execution was required for this planning review.
+
+Suggested next task: T101 deterministic fixture implementation.
+### 2026-09-25 — Phase 8 Batch 1 implementation (T101–T103)
+
+Status: T101–T103 implementation is complete and ready for Batch Strong
+Review. T104 remains the next implementation batch; no T104 work has started.
+
+Changed: added the bounded five-case fixture suite, the provider-free in-memory
+runner, typed case/run results, and pure Decimal metrics in `src/evaluation/`.
+Added focused fixture, runner, failure-isolation, ordering, rounding, and
+zero-applicability tests in `tests/evaluation/`.
+
+Validation: focused Phase 8 tests passed (5); Ruff check and format checks
+passed; deterministic runner smoke produced five PASS cases and all four
+`1.0000` metrics. No database, migration, provider, network, or report
+serialization work was added.
+
+Known limitation: the L2 fixture observes the existing graph approval boundary
+and applies the already validated deterministic mock action in memory; durable
+approval persistence and HTTP resume remain owned by the Phase 6 runtime and
+are not recreated by Evaluation.
+
+Learner notes: read `src/evaluation/fixtures.py`, `src/evaluation/runner.py`,
+`src/evaluation/metrics.py`, and `tests/evaluation/test_phase8_evaluation.py`.
+The key concept is observational evaluation over existing runtime contracts.
+Exercise: change one expected evidence code and observe the case become FAIL
+while the runner remains bounded. Do not worry about T104 report bytes yet.
+
+
+### 2026-09-25 — Phase 8 Batch 2 implementation (T104–T106)
+
+Status: T104–T106 implementation is complete; READY FOR Batch Strong Review.
+
+What changed:
+- Added the frozen `taskpilot.eval.report/v1` machine report with canonical
+  sorted compact UTF-8 serialization, four metrics, comparison identity checks,
+  and the 32 KiB `report_size_exceeded` bound.
+- Added deterministic Markdown rendering derived only from the machine report.
+- Added the provider/network/database-free three-case CI smoke command and
+  artifact upload to the existing Python CI job.
+
+Files changed: `src/evaluation/report.py`, `src/evaluation/human.py`,
+`src/evaluation/smoke.py`, `src/evaluation/runner.py`,
+`src/evaluation/__init__.py`, `tests/evaluation/test_phase8_batch2.py`,
+`scripts/evaluation_smoke.py`, `.github/workflows/test.yml`,
+`docs/OBSERVABILITY_EVAL.md`.
+
+Known limitations: T107 Phase Final Audit, persistence, dashboards, remote
+Evaluation, and live model judging remain deferred.
+
+Learner notes: The machine report is the canonical boundary; human output and
+CI smoke consume it rather than creating separate evaluation semantics. Read
+`src/evaluation/report.py`, `src/evaluation/human.py`, and
+`src/evaluation/smoke.py`. Exercise: change one case result to `error` and
+observe the smoke exit code and runner status. Do not worry about persistence
+or remote benchmarking yet.
+
+
+### 2026-09-25 — Phase 8 Batch 2 blocker fix
+
+Status: T104–T106 blocker fix complete; READY FOR FOCUSED BATCH RE-REVIEW.
+
+What changed:
+- Added model-level validation enforcing the frozen ComparisonResult
+  status/reason combinations.
+- Added negative and positive evidence for all four comparison mismatch
+  reasons and smoke non-zero failure paths.
+- Kept the existing smoke command, report serialization, human projection,
+  and three-case subset unchanged.
+
+Validation: 34 Evaluation tests passed; deterministic executor regression
+passed (5); Ruff, format, Pyrefly, and git diff checks passed.
+
+\r\n

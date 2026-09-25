@@ -161,3 +161,45 @@ credentials, authorization objects, and raw provider responses are excluded.
 T092 owns persisted-payload redaction tests; T097 owns timeline-response,
 tenant, ordering, limit, and reconstruction tests; T098 is exclusively the
 independent read-only Phase 7 Final Audit.
+
+## Phase 8 Evaluation planning (ADR-010; T100–T107)
+
+Evaluation is measurement and regression evidence, never business or runtime authority. Task/TaskRun and approval state remain authoritative in the business DB; checkpoints remain recovery state; telemetry remains observation.
+
+The V1 suite is `taskpilot.phase8.v1` / version `1` and contains exactly five bounded, provider-free cases: `deterministic.fixture_baseline`, `recovery.retry_then_pass`, `recovery.replan_then_pass`, `approval.l2_requires_approval`, and `approval.l3_blocked`. The baseline reuses the existing server-wired `DeterministicFixtureCapability` (`deterministic_fixture`) and exact output `deterministic-read-only-fixture:v1`; the earlier tabular/sum wording was pre-planning intent, not an existing capability. Each case has stable ID/version, exact bounded JSON input, expected evidence, and a 32 KiB canonical input bound. Results are in-memory and canonically ordered. Recovery evidence is `retry_observed`/`recovery_pass` or `replan_observed`/`recovery_pass`; approval evidence is `approval_required`/`approval_satisfied`/`execution_succeeded` for L2 and `blocked_before_execution` for L3.
+
+T103 freezes four metrics—`pass_rate`, `recovery_success`, `approval_compliance`, and `evidence_completeness`—with the shared `{status, numerator, denominator, rate}` shape, four fixed decimal places, `Decimal` `ROUND_HALF_UP`, and explicit `not_applicable` for denominator zero. Each run owns its metrics. Comparison is separate: `not_requested`, `comparable`, or `incomparable` with bounded machine-readable reasons; incomparable reports emit no cross-run metric deltas and are not metric failures.
+
+T104 emits the always-present `taskpilot.eval.report/v1` object with required `schema`, `suite_id`, `suite_version`, `runner_status`, `cases`, `metrics`, and `comparison`. Case statuses are `pass`, `fail`, `error`; runner statuses are `completed`, `partial`, `error`. Case/evidence bounds, failure-code invariants, five-case maximum, sorted compact UTF-8 serialization, one trailing newline, no timestamps/UUIDs, and a 32 KiB artifact limit are frozen in ADR-010. T105 derives human output only from this report. Reports exclude secrets, credentials, authorization objects, raw provider/context payloads, checkpoints, ORM/session objects, and cross-tenant data.
+
+T102 reruns the suite through existing runtime primitives with mocked providers and no network, paid model, SaaS, or database. T106 runs the cheap baseline/retry/L2 subset in default CI and fails on runner errors, failed cases, or incomparable results. No implementation occurs until T100 passes Planning Strong Review.
+
+Deferred: live LLM-as-judge, remote Evaluation SaaS, generic benchmark or experiment tracking, Evaluation database, dashboard/UI, workers, analytics platform, billing, subjective production gating, and generic provider benchmarking. See `process/ADR-010.md` and `process/tasks/T100.md`–`T107.md`.
+
+T100 is the Phase 8 Evaluation architecture/planning gate. Planning Strong Review is APPROVED; ADR-010 is Accepted/frozen, T100 is COMPLETE / APPROVED, and implementation starts at T101.
+
+Implementation batches:
+
+- Planning gate: **T100**.
+- Implementation Batch 1: **T101–T103** (deterministic fixtures, workflow runner, deterministic metrics).
+- Implementation Batch 2: **T104–T106** (machine report, human report, CI smoke).
+- Phase Final Audit: **T107** (independent, fresh-eyes, read-only).
+
+DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`.
+
+
+## Phase 8 Evaluation reports (T104–T106)
+
+The local Evaluation boundary emits the canonical `taskpilot.eval.report/v1`
+UTF-8 JSON artifact through `evaluation.build_machine_report` and
+`evaluation.serialize_report`. Object keys and case/evidence arrays are
+ordered deterministically, metrics use four Decimal-rounded places, and the
+artifact is capped at 32 KiB. `evaluation.render_human_report` is a display
+projection of that machine report and does not recalculate semantics.
+
+The default CI job runs the provider-free smoke subset
+`deterministic.fixture_baseline`, `recovery.retry_then_pass`, and
+`approval.l2_requires_approval` with `uv run python scripts/evaluation_smoke.py`; it
+requires no provider, network, or Evaluation database and uploads the bounded
+JSON artifact. The command exits non-zero for runner `error`/`partial`, failed
+cases, incomparable comparison, or an oversized report.

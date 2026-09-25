@@ -32,6 +32,14 @@ jobs:
         uv sync --frozen
       env:
         UV_SYSTEM_PYTHON: 1
+    - name: Run Phase 8 cheap Evaluation smoke
+      run: uv run python scripts/evaluation_smoke.py > evaluation-smoke.json
+    - name: Upload Phase 8 Evaluation smoke report
+      uses: actions/upload-artifact@v7
+      with:
+        name: evaluation-smoke-${{ matrix.python-version }}
+        path: evaluation-smoke.json
+
     - name: Lint and format with ruff
       run: |
         uv run ruff format --check
