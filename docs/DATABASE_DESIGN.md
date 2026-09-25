@@ -1,6 +1,6 @@
 # Database Design Guide
 
-This document records the Phase 2 identity architecture and the T021–T023 schema, the Phase 3 T031/T032/T034 Task domain, and T081/T082 Approval persistence and decision services. ADR-004, ADR-005, and accepted ADR-008 are authoritative for their respective domains.
+This document records the Phase 2 identity architecture and the T021–T023 schema, the Phase 3 T031/T032/T034 Task domain, T081/T082 Approval persistence and decision services, and the Phase 7 ADR-009 persistence implementation. ADR-004, ADR-005, accepted ADR-008, and accepted/frozen ADR-009 are authoritative for their respective domains.
 
 ## Ownership and bootstrap
 
@@ -81,6 +81,29 @@ Its protected nested read/decision routes return sanitized proposal and
 decision fields. Create/reuse is service-only: trusted runtime wiring supplies
 the already selected action and validated arguments. T083 implements runtime
 pause/resume; T084 implements the bounded action claim and deterministic mock outcome; generic effect infrastructure remains deferred.
+
+## Phase 7 observability persistence (ADR-009; T091/T092 implementation)
+
+T091 and T092 add only the normalized AgentRun and ToolCall evidence described
+by ADR-009 and implemented in the T034 migration. AgentRun owns a required
+`task_run_id`; ToolCall owns a required `agent_run_id`. Tenant ownership is always resolved through
+`ToolCall -> AgentRun -> TaskRun -> Task -> organization_id`; trace tables do
+not duplicate `organization_id` or `task_id`. Both foreign-key paths use
+`ON DELETE RESTRICT`, repositories flush without committing, and the service
+transaction owns commit/rollback.
+
+AgentRun uniqueness is
+`(task_run_id, replan_count, step_position, retry_count, agent_name)`; its
+repository validates the TaskRun parent in the trusted tenant scope before
+flushing. ToolCall uniqueness is `(agent_run_id, call_index)`; its repository
+validates the AgentRun -> TaskRun -> Task parent before flushing. Step position
+is zero-based because TaskStep persistence remains deferred. All timing is UTC;
+duration is a nullable bounded integer in milliseconds; errors, provider
+metadata, arguments, and results are bounded and sanitized at the model
+boundary. T092 owns
+persisted-payload redaction tests. T097 owns the SQL-tenant-scoped ordered
+timeline and response-redaction tests. T098 is a separate read-only Final
+Audit and does not add tests or fixes.
 
 ## Tenant-scoped repository boundary (T034)
 

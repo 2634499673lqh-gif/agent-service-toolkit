@@ -1,3 +1,291 @@
+### 2026-09-25 — Phase 7 final status synchronization
+
+Status: T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is
+APPROVED; ADR-009 remains Accepted / frozen; Phase 7 is COMPLETE. Phase 8 is
+NOT STARTED.
+
+Changed: synchronized stale current-state summaries in `process/ADR-009.md`,
+`ROADMAP.md`, `TASK_BACKLOG.md`, `docs/ARCHITECTURE.md`, and
+`process/tasks/INDEX.md`. Earlier implementation, blocker, and review entries
+remain historical records.
+
+Validation: targeted Phase 7/T098 and Phase 8 status searches, `git diff
+--check`, and final diff inspection. No implementation, test, migration,
+contract, DAG, or Phase 8 planning changes were made.
+
+### 2026-09-25 — T097 post-review status synchronization
+
+Status: T097 implementation, required PostgreSQL evidence, and Strong Review
+are APPROVED. T098 is next as the Phase 7 Final Audit; Phase 7 remains open.
+
+Changed: synchronized stale current-state summaries in `ROADMAP.md`,
+`TASK_BACKLOG.md`, `docs/ARCHITECTURE.md`, and `process/tasks/INDEX.md`. The
+implementation, PostgreSQL blocker, and focused re-review entries below remain
+historical records.
+
+Validation: targeted T097/T098 status search, `git diff --check`, and final
+diff inspection. No implementation, test, migration, contract, DAG, or Phase 7
+architecture changes were made.
+
+### 2026-09-25 — T097 PostgreSQL cap evidence blocker fix
+
+Status: focused Strong Review blocker fix is complete and ready for focused
+re-review. T098 remains the read-only Phase 7 Final Audit.
+
+Changed: expanded the live PostgreSQL T097 fixture with 501 deterministic
+additional AgentRun observations, so the authorized run contains 505 visible
+observations. The test requests `limit=501` and proves the response is exactly
+500 events, canonically ordered, and tenant-scoped. No production code,
+schema, or migration changed.
+
+Validation: the live PostgreSQL API test passed (1); focused repository/API
+tests, Ruff, Pyrefly, and `git diff --check` were run after the fixture change.
+
+Suggested next task: T097 focused Strong Re-review.
+
+### 2026-09-25 — T097 tenant-safe trace query implementation
+
+Status: T097 implementation is complete and ready for independent Strong
+Review. T096 remains approved; T098 remains the read-only Phase 7 Final Audit.
+
+Changed: added the protected `GET /api/v1/tasks/{task_id}/runs/{run_id}/trace`
+route, SQL-scoped ordered AgentRun/ToolCall projection, bounded limit handling,
+response redaction, informational cost estimates, approval correlation, and
+focused repository/service/API tests. The query keeps failure, retry, and
+replan observations visible without changing TaskRun, checkpoint, approval, or
+tenant authority.
+
+Files changed: `src/persistence/repositories.py`, `src/service/trace_service.py`,
+`src/service/task_api.py`, `src/schema/trace_api.py`,
+`tests/persistence/test_trace_repository.py`,
+`tests/service/test_trace_api_postgres.py`, `docs/API_CONVENTIONS.md`,
+`docs/OBSERVABILITY_EVAL.md`, `docs/ARCHITECTURE.md`, and this log.
+
+Validation: focused repository/response tests passed (4); existing
+observability, cost, and TaskRun API regression passed (22 passed, 2 skipped);
+the affected authorization/auth regression passed (59 passed, 2 skipped); the
+full suite passed after the final redaction and limit changes (598 passed, 125
+skipped, 18 warnings); Ruff, Pyrefly,
+compilation, and SQL compilation checks passed. The focused PostgreSQL API
+test passed (1) after Docker Desktop was restarted; it exercises real tenant
+visibility, ordering, bounds, redaction, and retry/replan reconstruction.
+
+Known limitation: the trace route uses the approved empty in-process pricing
+table unless a service caller supplies a T096 `PricingTable`, so provider usage
+without configured pricing returns an explicit informational unknown estimate.
+
+Learner notes: the important boundary is that a timeline is a projection over
+existing evidence, not a new event authority. Read `src/persistence/repositories.py`,
+`src/service/trace_service.py`, `src/schema/trace_api.py`, `process/ADR-009.md`,
+and `tests/persistence/test_trace_repository.py`. Exercise: inspect the
+compiled UNION query and identify where a foreign Task is filtered before the
+limit. Do not worry yet about external tracing, billing, or evaluation.
+
+Suggested next task: T097 independent Strong Review.
+
+### 2026-09-24 — T096 post-review status synchronization
+
+Status: T096 implementation and required validation are complete; Strong Review
+APPROVED. T097 is the next DAG task.
+
+Changed: synchronized current-state summaries in `TASK_BACKLOG.md`, `ROADMAP.md`,
+`docs/ARCHITECTURE.md`, `process/tasks/INDEX.md`, and this log. The dated T096
+implementation entry below remains historical and is not rewritten.
+
+Validation: targeted T096 status consistency search, `git diff --check`, and
+final diff inspection. No implementation, test, migration, contract, or DAG
+changes were made.
+
+### 2026-09-24 — T093 post-review status synchronization
+
+Status: T093 correlation propagation implementation and required validation are
+complete; Strong Review APPROVED. T094 and T095 are the next DAG tasks.
+
+Changed: synchronized current-state summaries in `TASK_BACKLOG.md`,
+`ROADMAP.md`, and `process/tasks/INDEX.md`. The implementation entry below is
+preserved as its dated historical record; its ready-for-review status is not
+rewritten.
+
+Validation: targeted T093 status consistency searches, `git diff --check`, and
+final diff inspection. No implementation, test, migration, contract, DAG, or
+Phase 7 architecture changes were made.
+
+Learner notes: status summaries advance after a review, while dated progress
+entries keep the state they recorded at that time. Read the Phase 7 sections in
+`TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, and this log.
+
+### 2026-09-24 — T093 observability correlation wiring
+
+Status: T093 implementation COMPLETE; READY FOR INDEPENDENT STRONG REVIEW.
+T091/T092 are approved, committed, and pushed. T094 and later remain not
+started.
+
+Changed: added the smallest explicit runtime observation handoff. The existing
+middleware request UUID is carried through invocation-only graph context; the
+tenant-validated TaskRun supplies the durable parent; and each capability
+boundary records zero-based `(replan_count, step_position, retry_count)`
+coordinates, a server-selected `executor` AgentRun, and its server-selected
+capability ToolCall child. Background work keeps `request_id = NULL`. Rows are
+flushed through the existing tenant-scoped repositories in the service-owned
+transaction, with no TaskStep row, task/tenant duplicate, checkpoint authority,
+lifecycle change, approval change, or external tracing framework.
+
+Files changed: `src/runtime/graph.py`, `src/runtime/__init__.py`,
+`src/service/task_runtime.py`, `tests/runtime/test_t093_correlation.py`,
+`tests/runtime/test_task_runtime_postgres.py`,
+`docs/ARCHITECTURE.md`, `docs/API_CONVENTIONS.md`,
+`docs/OBSERVABILITY_EVAL.md`, and this log.
+
+Validation: T093 correlation tests passed (2); affected runtime suite passed
+(128 passed, 34 skipped); the runtime PostgreSQL regression passed (34 tests,
+including a real persisted request -> TaskRun -> AgentRun -> ToolCall chain);
+observability foundation/logging/service tests passed (23 passed, 5 warnings);
+Ruff, formatting, Pyrefly, compilation, and `git diff --check` passed. T093's
+ADR gate is deterministic unit/static, with the additional PostgreSQL runtime
+evidence recorded as an affected regression.
+
+Known limitation: public trace timeline projection, timing/error normalization,
+usage, cost, and provider adapters remain deferred to T094–T097.
+
+Learner notes: the graph emits immutable observation data, while the runtime
+service owns tenant validation and persistence. Read `src/runtime/graph.py`,
+`src/service/task_runtime.py`, `src/persistence/models.py`,
+`src/persistence/repositories.py`, and ADR-009. Exercise: trace one retry and
+verify that only `retry_count` changes while `task_run_id` stays fixed. Do not
+worry yet about the public timeline API or cost calculation.
+
+Suggested next task: independent T093 Strong Review.
+
+### 2026-09-24 — T091/T092 focused Strong Review blocker fix
+
+Status: T091/T092 implementation and live PostgreSQL evidence are complete;
+focused Strong Re-review is APPROVED. T093 is next; later Phase 7 work remains
+not started.
+
+Changed: strengthened `tests/persistence/test_postgres_integration.py` with a
+minimal live PostgreSQL matrix for foreign-parent rejection, AgentRun and
+ToolCall range/name/version checks, invalid timing and duration, normalized
+usage, provider metadata size, payload object/size checks, and status/error
+consistency. The test also reads stored PostgreSQL JSONB values and AgentRun
+error text to prove ORM redaction of ToolCall arguments/results and AgentRun
+provider metadata/error messages, while checking persisted usage shapes and
+nullable boundaries. Direct SQL is used only to exercise database constraints;
+redaction is verified on supported ORM construction.
+
+Environment: ran PostgreSQL 16 in isolated Compose project
+`taskpilot-t091-t092-blocker-verified-20260924`; its container, network, and
+volume were removed after validation. No production code or schema changed
+during this blocker fix. The test accepts PostgreSQL `DataError` as well as
+`IntegrityError` for a `varchar(64)` overflow rejection.
+
+Validation: the focused live test passed; the existing observability unit tests
+and full PostgreSQL persistence integration passed together as 28 tests. Ruff,
+format, Pyrefly, compilation, `uv lock --check`, and `git diff --check` passed.
+
+Suggested next task: focused T091/T092 Strong Re-review.
+
+### 2026-09-24 — T091/T092 focused PostgreSQL evidence unblock
+
+Status: live PostgreSQL evidence complete; T091/T092 implementation is ready
+for independent Strong Review. T093 and later Phase 7 work remain not started.
+
+Environment: started the existing per-user Docker Desktop installation, created
+an isolated repository Compose project named
+`taskpilot-t091-t092-pg-20260924`, and ran PostgreSQL 16 without touching the
+existing Compose project or volumes. The project container, network, and volume
+were removed after validation.
+
+Finding and fix: the first live insert showed that nullable JSONB fields bound
+Python `None` as JSON `null`, which violated the SQL NULL-aware bounds checks.
+Mapped T091/T092 nullable JSONB fields with `none_as_null=True` in
+`src/persistence/models.py`. No migration or public contract change was needed.
+
+Validation: `tests/persistence/test_postgres_integration.py` passed 24 tests,
+including T034 upgrade, T034 -> T033 downgrade, re-upgrade, database
+constraints, tenant isolation, FK RESTRICT, uniqueness, and rollback evidence.
+Focused persistence tests passed 35 tests. Ruff check/format, Pyrefly,
+`uv lock --check`, offline Alembic upgrade/downgrade generation, compilation,
+and `git diff --check` passed.
+
+Known warnings are dependency/Alembic deprecations only. No T093+ code,
+commit, or push was added.
+
+Suggested next task: independent T091/T092 Strong Review.
+
+### 2026-09-24 — T091 + T092 AgentRun and ToolCall persistence implementation
+
+Status: T091 and T092 implementation complete; live PostgreSQL evidence is
+pending before independent Strong Review. T093 and later Phase 7 work remain
+not started.
+
+Baseline: branch `phase-7-observability`, HEAD `8791bb758affdf3e5ba7c1981eced4a57c432129`,
+clean tracked working tree before implementation. Authority: accepted/frozen
+ADR-009 plus `process/tasks/T091.md` and `process/tasks/T092.md`.
+
+Changed: added `AgentRun` and `ToolCall` PostgreSQL ORM models, bounded status,
+error, timing, usage, provider metadata, and sanitized payload validation;
+added tenant-scoped flush-only repositories; registered both models in Alembic;
+and added linear revision `t034_observability` with RESTRICT foreign keys,
+canonical uniqueness keys, JSON/timing/bounds checks, and downgrade support.
+ToolCall arguments/results redact secret-bearing fields before JSONB persistence.
+No tenant/task duplicate columns, runtime correlation wiring, lifecycle changes,
+approval authority, checkpoint changes, external tracing, or public trace API
+were added.
+
+Files changed: `src/persistence/models.py`, `src/persistence/repositories.py`,
+`src/persistence/__init__.py`, `migrations/env.py`,
+`migrations/versions/20260924_01_observability.py`, focused persistence tests,
+and the database/observability status documentation.
+
+Validation: focused model/repository tests passed (35 tests); the affected
+persistence module passed with 35 tests and 24 PostgreSQL tests skipped because
+`TASKPILOT_TEST_DATABASE_URL` and Docker PostgreSQL were unavailable in this
+environment. Full suite passed (551 passed, 122 skipped); affected service/runtime regression passed (382 passed, 50 skipped).
+Alembic offline SQL generation through `t034_observability`, Ruff
+check/format, Python compilation, and `git diff --check` passed. Live
+PostgreSQL evidence remains required for the Strong Review environment.
+
+Known limitation: live PostgreSQL upgrade/downgrade, uniqueness, FK RESTRICT,
+tenant visibility, and rollback evidence could not run without the repository's
+disposable PostgreSQL service; no fallback shared database was used.
+
+Learner notes: observation rows are evidence joined through TaskRun ownership;
+they do not become a second tenant or lifecycle authority. Read
+`src/persistence/models.py`, `src/persistence/repositories.py`,
+`migrations/versions/20260924_01_observability.py`,
+`tests/persistence/test_observability_foundation.py`, and ADR-009. Exercise:
+trace the SQL joins used to hide a foreign-tenant ToolCall, then inspect the
+sanitized JSON stored by the model. Do not worry yet about correlation wiring,
+usage adapters, timeline APIs, or external tracing.
+
+Suggested next task: independent T091/T092 Strong Review with live PostgreSQL
+evidence.
+
+### 2026-09-24 — Phase 7 Planning focused blocker fix
+
+Task: complete the focused planning/docs-only blocker window after the Phase 7
+Planning Strong Review.
+
+Changed: expanded ADR-009 and T091–T097 with executable persistence,
+correlation, timing/error/retry, usage, cost, redaction, SQL tenant-scoping,
+ordering, response bounds, and authentication visibility contracts.
+Reassigned redaction-test ownership to T092/T097 and made T098 exclusively the
+fresh-eyes, independent, read-only Phase 7 Final Audit. Synchronized
+ROADMAP.md, TASK_BACKLOG.md, process/tasks/INDEX.md, docs/DATABASE_DESIGN.md,
+docs/API_CONVENTIONS.md, and docs/OBSERVABILITY_EVAL.md.
+
+Result: no DAG changes; no T099; no runtime/application implementation.
+Validation: focused consistency searches, status/title/DAG review, and
+git diff --check; no PostgreSQL or full runtime regression was run.
+
+Result: Phase 7 Planning Strong Re-review APPROVED; ADR-009 is accepted/frozen. T090 is complete and implementation is ready to begin with T091/T092.
+
+Learner notes: trace rows are evidence joined through existing Task/TaskRun
+ownership; they do not become a second lifecycle or tenant authority. Read
+ADR-009, T091, T092, T093, T097, and T098. Exercise: write the SQL join path
+that hides a foreign TaskRun before any Python code sees it. Do not worry yet
+about external tracing, workers, billing, or UI.
+
 ### 2026-09-24 — T085 focused Final Audit re-review approved
 
 Status: T080–T084 are COMPLETE / APPROVED, committed, and pushed. The initial
@@ -4080,3 +4368,164 @@ ADR-008 remains Proposed pending T080 Strong Review.
   LangGraph persistence remain separate. Read ADR-008 and T080–T084. Exercise:
   trace why a stale approval cannot authorize a cancelled run. Do not worry yet
   about real providers, workers, or UI.
+
+## Phase 7 Planning blocker resolution — 2026-09-24
+
+- Task: resolve stale Phase 6 status and establish Phase 7 planning authority.
+- Changed: corrected T083/T084 current status in TASK_BACKLOG.md; added process/ADR-009.md and task cards T090–T098; synchronized ROADMAP.md and process/tasks/INDEX.md.
+- Result: Phase 7 DAG, contracts, security boundary, T090 architecture gate, and T098 Final Audit are defined.
+- Validation: git diff --check and repository consistency inspection; no runtime tests or PostgreSQL started.
+- Known limitation: ADR-009 and the planning package await independent Planning Strong Review.
+- Learner notes: observability records evidence while business tables remain authoritative. Read ADR-009, T090, T091, T097, and T098. Exercise: trace how a tenant-scoped query reconstructs one retry. Do not worry yet about external tracing or billing.
+### 2026-09-24 — T094 + T095 observability normalization
+
+Status: T094/T095 implementation COMPLETE; READY FOR T094/T095 STRONG REVIEW.
+T096 and later remain not started.
+
+What changed:
+- Added pure runtime observability normalizers for aware UTC timestamps,
+  bounded duration derivation, sanitized error text, and normalized provider
+  usage with explicit unavailable reasons.
+- Extended the existing RuntimeObservation/ExecutionResult handoff with
+  normalized usage and allowlisted provider metadata. The service persists
+  those values through the existing AgentRun/ToolCall rows.
+- Preserved the existing observational status vocabulary and retry/replan
+  coordinates; TaskRun lifecycle and tenant/security ownership remain
+  unchanged.
+- Added deterministic positive/negative tests for T094 timing, error, retry,
+  replan, lifecycle non-authority, and T095 known/derived/unavailable,
+  malformed, negative, and numeric-bound cases.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/executor.py`
+- `src/runtime/graph.py`
+- `src/runtime/__init__.py`
+- `src/service/task_runtime.py`
+- `tests/runtime/test_observability_normalization.py`
+- `tests/runtime/test_t093_correlation.py`
+- `docs/OBSERVABILITY_EVAL.md`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused T094/T095 tests: 17 passed.
+- T093 correlation plus T094/T095 tests: 20 passed.
+- Runtime regression: 146 passed, 34 skipped.
+- Observability/foundation persistence regression: 35 passed.
+- Full suite: 571 passed, 124 skipped.
+- PostgreSQL persistence/runtime command attempted; 59 tests skipped because
+  `TASKPILOT_TEST_DATABASE_URL` is not configured in this environment.
+- `uv run alembic check` could not start because `TASKPILOT_DATABASE_URL` is
+  not configured; no migration files changed.
+- Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed.
+
+Known limitations:
+- No migration was needed: the approved T091/T092 schema already enforces the
+  frozen timing, usage, metadata, status, and tenant ownership constraints.
+- Live PostgreSQL evidence must be rerun in an environment with the required
+  disposable test database before Strong Review.
+
+Learner notes:
+- Problem solved: runtime evidence now records bounded timing and honest token
+  availability without confusing observation status with business lifecycle.
+- Read `src/runtime/observability.py`, `src/runtime/graph.py`,
+  `src/service/task_runtime.py`, `src/persistence/models.py`, and
+  `tests/runtime/test_observability_normalization.py`.
+- Key concept: `unavailable` is a known fact about missing provider data, while
+  `NULL` means no usage observation applied; neither is numeric zero.
+- Exercise: pass a provider payload with valid input/output counts but no total,
+  then inspect the derived total and persisted AgentRun usage shape.
+- Do not worry yet about pricing, cost, timeline queries, or external tracing.
+
+Suggested next task: T094/T095 independent Strong Review with live PostgreSQL
+evidence available.
+### 2026-09-24 — T094/T095 focused blocker fix
+
+Status: blocker fix COMPLETE; READY FOR FOCUSED T094/T095 STRONG RE-REVIEW.
+
+What changed:
+- Provider-backed `ExecutionResult` values identified by provider metadata now
+  convert missing usage to `{"status":"unavailable","reason":"not_returned"}`
+  before graph state and observation persistence. Non-provider results retain
+  `usage = NULL`.
+- Provider metadata now reuses the existing observability redaction matcher at
+  the runtime boundary and rejects credential-bearing values, including
+  Authorization/Bearer text, before checkpoint/state propagation.
+- Added focused tests for provider/non-provider usage distinction, consistent
+  AgentRun/ToolCall usage, unsafe metadata rejection, safe metadata preservation,
+  and checkpoint/runtime observation protection.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/executor.py`
+- `tests/runtime/test_observability_normalization.py`
+- `tests/runtime/test_t093_correlation.py`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused blocker plus existing T094/T095 tests: 25 passed.
+- T093–T095/runtime regression: 151 passed, 34 skipped.
+- Affected service tests: 30 passed.
+- Ruff format/check, Pyrefly, and `git diff --check` passed.
+- No PostgreSQL or migration work was required for this runtime-boundary fix.
+
+Scope remains limited to the two Strong Review blockers. No T096+ work,
+schema/migration redesign, generic provider/security framework, commit, or push
+was performed.
+
+### 2026-09-24 — T096 deterministic cost estimator
+
+Status: T096 implementation COMPLETE; READY FOR T096 STRONG REVIEW.
+T097 and later remain not started.
+
+What changed:
+- Added bounded `PricingEntry` and deterministic in-process `PricingTable`
+  keyed by `(provider, model, version)`.
+- Added a pure `estimate_cost` function using Decimal arithmetic, explicit
+  ROUND_HALF_UP six-place rounding, fixed-scale amount strings, and the
+  `10^18` overflow boundary.
+- Distinguished `missing_price`, `unsupported_model`,
+  `usage_unavailable`, and `overflow`; unavailable usage never becomes numeric
+  zero and no billing or remote pricing behavior was introduced.
+- Added deterministic table-driven arithmetic, rounding, bounds, lookup,
+  unavailable/partial usage, and overflow tests.
+
+Files changed:
+- `src/runtime/observability.py`
+- `src/runtime/__init__.py`
+- `tests/runtime/test_t096_cost_estimator.py`
+- `docs/OBSERVABILITY_EVAL.md`
+- `docs/ARCHITECTURE.md`
+- `TASK_BACKLOG.md`
+- `ROADMAP.md`
+- `process/tasks/INDEX.md`
+- `process/PROGRESS_LOG.md`
+
+Validation:
+- Focused T096 tests: 19 passed.
+- Runtime regression: 170 passed, 34 skipped.
+- Observability/persistence and runtime-service regression: 8 passed, 40
+  skipped because live PostgreSQL is not configured.
+- Full suite: 595 passed, 124 skipped.
+- Ruff, formatting, targeted runtime Pyrefly, compilation, `uv lock --check`,
+  and `git diff --check` passed. Full-repository Pyrefly still reports its
+  pre-existing `src/streamlit_app.py` issues; no T096 file is involved.
+
+Known limitations:
+- Cost remains an informational estimate. No estimate is persisted as billing
+  authority, and no public trace query is added before T097.
+
+Learner notes:
+- Problem solved: known bounded token usage can be converted into a stable
+  cost estimate without inventing values when usage or pricing is unavailable.
+- Read `src/runtime/observability.py`, `src/runtime/__init__.py`,
+  `tests/runtime/test_t096_cost_estimator.py`, `docs/OBSERVABILITY_EVAL.md`,
+  and ADR-009.
+- Key concept: Decimal arithmetic and explicit unknown reasons keep an
+  observability estimate deterministic without turning it into billing truth.
+- Exercise: add a second version for the same model and verify that an absent
+  version returns `missing_price` while an absent model returns
+  `unsupported_model`.
+- Do not worry yet about tenant-safe timeline queries or billing systems.
+
+Suggested next task: independent T096 Strong Review.

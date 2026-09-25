@@ -42,9 +42,36 @@ in tenant-scoped SQL. Only active owner/admin members may decide; all repeated
 or competing decisions return 409. T083 implements the internal runtime wait
 and approval revalidation boundary; T084 owns approved action effects.
 
-## Trace (planned, not implemented)
+## Trace (T097 implemented)
 
-- GET `/tasks/{task_id}/runs/{run_id}/trace`
+- GET `/tasks/{task_id}/runs/{run_id}/trace?limit=100`
+
+The trace read is tenant-scoped through the same TaskRun -> Task SQL join as
+existing run inspection. The SQL projection joins AgentRun and ToolCall through
+their foreign keys, applies the principal organization predicate before the
+shared `LIMIT`, and caps `limit` at 500. Invalid credentials are `401` with
+the standard Bearer challenge; nonexistent or cross-tenant resources are `404`;
+an active in-tenant member may read a visible run, so this read adds no role
+gate or new `403`. A visible run with no observation rows returns `200 []`.
+
+Each event contains only correlation IDs, server-selected names, observational
+status, UTC timing, duration, normalized errors, usage, an informational cost
+estimate, and bounded redacted provider metadata. Tool arguments/results,
+checkpoints, prompts, context, credentials, authorization objects, and raw
+provider responses are excluded. Events are ordered by `started_at`, AgentRun
+before ToolCall, `agent_run_id`, nullable `call_index`, and event ID. Earlier
+failed attempts remain visible, so retry and replan coordinates reconstruct the
+recovery path. T092 owns persisted-payload redaction tests and T097 owns
+response-redaction tests; T098 only audits their evidence.
+
+T093 supplies the internal correlation labels projected by the trace response:
+the request middleware UUID when present, the tenant-validated
+`task_run_id`, zero-based `(replan_count, step_position, retry_count)`
+coordinates, server-generated `agent_run_id`, and server-generated
+`tool_call_id`. `task_id` is reconstructed through the TaskRun -> Task join;
+`task_step_id` is intentionally absent until TaskStep persistence is approved.
+These labels are observational only and never select a tenant, authorize a
+read, resume a checkpoint, or approve an action.
 
 ## Knowledge/files
 

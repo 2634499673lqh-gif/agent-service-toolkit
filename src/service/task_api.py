@@ -4,11 +4,12 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
 from schema.task_run_api import TaskRunResponse
+from schema.trace_api import TraceEventResponse
 from service.auth_dependency import PrincipalDependency, get_session_factory
 from service.authorization import RESOURCE_NOT_FOUND_DETAIL, AuthorizationError
 from service.task_lifecycle import (
@@ -18,6 +19,7 @@ from service.task_lifecycle import (
 )
 from service.task_run_service import TaskRunService
 from service.task_service import TaskService
+from service.trace_service import TraceService
 
 TASK_LIFECYCLE_CONFLICT_DETAIL = "Task lifecycle conflict"
 
@@ -162,6 +164,31 @@ async def get_task_run(
             detail=RESOURCE_NOT_FOUND_DETAIL,
         )
     return TaskRunResponse.model_validate(task_run)
+
+
+@task_router.get(
+    "/{task_id}/runs/{run_id}/trace",
+    response_model=list[TraceEventResponse],
+)
+async def get_task_trace(
+    task_id: UUID,
+    run_id: UUID,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+    limit: int = Query(default=100, ge=1),
+) -> list[TraceEventResponse]:
+    trace = await TraceService(session).get_trace(
+        principal,
+        task_id,
+        run_id,
+        limit=limit,
+    )
+    if trace is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=RESOURCE_NOT_FOUND_DETAIL,
+        )
+    return trace
 
 
 __all__ = ["TASK_LIFECYCLE_CONFLICT_DETAIL", "get_task_session", "task_router"]

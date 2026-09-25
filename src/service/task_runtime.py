@@ -2,20 +2,29 @@
 
 import inspect
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from persistence.models import ApprovalStatus, TaskRunStatus
-from persistence.repositories import TaskRunRepository
+from persistence.models import (
+    AgentRun,
+    AgentRunStatus,
+    ApprovalStatus,
+    ObservabilityErrorClass,
+    TaskRunStatus,
+    ToolCall,
+    ToolCallStatus,
+)
+from persistence.repositories import AgentRunRepository, TaskRunRepository, ToolCallRepository
 from runtime.capabilities import DeterministicFixtureCapability
 from runtime.capability import CapabilityDispatcher, CapabilityMetadata
 from runtime.context import ContextBuilder, ContextEnvelope
 from runtime.executor import ExecutionResult, Executor
 from runtime.failure import FailureClassifier
-from runtime.graph import RuntimeGraphContext, build_runtime_graph
+from runtime.graph import RuntimeGraphContext, RuntimeObservation, build_runtime_graph
 from runtime.planner import PlannerNode
 from runtime.risk import RiskRoute, classify_action
 from runtime.state import AgentState, PendingApprovalReference
@@ -28,6 +37,7 @@ from service.approval_service import (
     ApprovedActionBusyError,
     ApprovedActionService,
 )
+from service.logging import current_request_id
 from service.session import CurrentPrincipal
 from service.task_lifecycle import (
     TaskLifecycleError,
@@ -96,6 +106,44 @@ class RuntimeApprovalResult(BaseModel):
 RuntimeResult = RuntimeExecutionResult | RuntimeApprovalResult
 
 
+def _middleware_request_uuid() -> UUID | None:
+    """Read only the server-bound request context, never a caller header."""
+
+    value = current_request_id()
+    if value is None:
+        return None
+    try:
+        return UUID(value)
+    except (TypeError, ValueError):
+        # A malformed context value cannot become an observation identity.
+        return None
+
+
+@dataclass(slots=True)
+class _RuntimeObservationCollector:
+    """Collect graph observations until the owning service commits them."""
+
+    task_run_id: UUID
+    request_id: UUID | None
+    observations: list[RuntimeObservation] = field(default_factory=list)
+
+    async def record(self, observation: RuntimeObservation) -> None:
+        """Reject stale graph identity before any row can be persisted."""
+
+        if observation.task_run_id != str(self.task_run_id):
+            raise TaskRuntimeConflictError("runtime observation identity is stale")
+        if observation.request_id != self.request_id:
+            raise TaskRuntimeConflictError("runtime observation request identity is stale")
+        self.observations.append(observation)
+
+    def take(self) -> list[RuntimeObservation]:
+        """Return and clear the current invocation's immutable observations."""
+
+        observations = self.observations
+        self.observations = []
+        return observations
+
+
 def checkpoint_thread_id(task_run_id: UUID | str) -> str:
     """Derive the canonical correlation/resume identity from a validated run."""
 
@@ -104,6 +152,19 @@ def checkpoint_thread_id(task_run_id: UUID | str) -> str:
     except (TypeError, ValueError):
         raise ValueError("task_run_id must be a valid UUID") from None
     return f"{CHECKPOINT_THREAD_PREFIX}{canonical_id}"
+
+
+def _graph_accepts_context(graph: Any) -> bool:
+    """Keep compatibility with narrow test/runtime graph wrappers."""
+
+    try:
+        parameters = inspect.signature(graph.ainvoke).parameters.values()
+    except (TypeError, ValueError):
+        return True
+    return any(
+        parameter.name == "context" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
 
 
 class TaskRuntimeService:
@@ -196,6 +257,10 @@ class TaskRuntimeService:
         config = {"configurable": {"thread_id": thread_id}}
         checkpoint = await self._latest_checkpoint(config)
         approval_tracker: dict[str, UUID] = {}
+        observations = _RuntimeObservationCollector(
+            task_run_id=task_run_id,
+            request_id=_middleware_request_uuid(),
+        )
         graph_context = self._runtime_context(
             session,
             principal=principal,
@@ -204,11 +269,12 @@ class TaskRuntimeService:
             task_run_id=task_run_id,
             task_snapshot=task_snapshot,
             approval_tracker=approval_tracker,
+            observation_sink=observations,
         )
 
         async def invoke_graph(input_data: object) -> Any:
             invoke_kwargs: dict[str, Any] = {"config": config}
-            if graph_context is not None:
+            if graph_context is not None and _graph_accepts_context(self.graph):
                 invoke_kwargs["context"] = graph_context
             return await self.graph.ainvoke(input_data, **invoke_kwargs)
 
@@ -242,6 +308,7 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     thread_id=thread_id,
                     state=failed_state,
+                    observations=observations,
                 )
         elif run_status is TaskRunStatus.RUNNING:
             if checkpoint is None:
@@ -262,6 +329,7 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     thread_id=thread_id,
                     state=failed_state,
+                    observations=observations,
                 )
             try:
                 checkpoint_state = self._state_from_checkpoint(
@@ -285,6 +353,7 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     thread_id=thread_id,
                     state=failed_state,
+                    observations=observations,
                 )
             if checkpoint_state.pending_approval is not None:
                 return await self._resolve_pending_approval(
@@ -297,6 +366,7 @@ class TaskRuntimeService:
                     state=checkpoint_state,
                     principal=principal,
                     config=config,
+                    observations=observations,
                 )
             if (
                 isinstance(self.action_metadata, CapabilityMetadata)
@@ -313,6 +383,7 @@ class TaskRuntimeService:
                     state=checkpoint_state,
                     principal=principal,
                     config=config,
+                    observations=observations,
                 )
             try:
                 # A non-None input would intentionally restart the graph from
@@ -333,6 +404,7 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     thread_id=thread_id,
                     state=failed_state,
+                    observations=observations,
                 )
         else:  # pragma: no cover - the enum is exhaustive, this is fail-closed
             raise TaskRuntimeConflictError("unsupported task run state")
@@ -364,6 +436,7 @@ class TaskRuntimeService:
                 principal=principal,
                 config=config,
                 approval_tracker=approval_tracker,
+                observations=observations,
             )
         elif state.terminal_outcome is None:
             state = self._failed_state(state, "runtime_incomplete")
@@ -375,6 +448,7 @@ class TaskRuntimeService:
             task_run_id=task_run_id,
             thread_id=thread_id,
             state=state,
+            observations=observations,
         )
 
     async def _latest_checkpoint(self, config: dict[str, dict[str, str]]) -> Any | None:
@@ -398,10 +472,11 @@ class TaskRuntimeService:
         task_run_id: UUID,
         task_snapshot: tuple[str, str | None],
         approval_tracker: dict[str, UUID],
+        observation_sink: _RuntimeObservationCollector | None = None,
     ) -> RuntimeGraphContext | None:
         """Build invocation-only callbacks; no service object enters AgentState."""
 
-        if principal is None:
+        if principal is None and observation_sink is None:
             return None
 
         async def create_approval(
@@ -409,6 +484,8 @@ class TaskRuntimeService:
             context: ContextEnvelope,
             state: AgentState,
         ) -> PendingApprovalReference:
+            if principal is None:
+                raise ValueError("runtime approval requires a current principal")
             if (
                 principal.organization_id != organization_id
                 or metadata != self.action_metadata
@@ -434,7 +511,11 @@ class TaskRuntimeService:
                 step_position=state.plan_position,
             )
 
-        return RuntimeGraphContext(approval_gate=create_approval)
+        return RuntimeGraphContext(
+            approval_gate=create_approval if principal is not None else None,
+            observation_sink=observation_sink,
+            request_id=None if observation_sink is None else observation_sink.request_id,
+        )
 
     def _proposal_for_state(
         self,
@@ -488,6 +569,7 @@ class TaskRuntimeService:
         state: AgentState,
         principal: CurrentPrincipal | None,
         config: dict[str, dict[str, str]],
+        observations: _RuntimeObservationCollector | None = None,
     ) -> RuntimeResult:
         """Recover a durable approval when its first checkpoint write was lost."""
 
@@ -504,6 +586,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_checkpoint_invalid"),
+                observations=observations,
             )
         try:
             approval = await ApprovalService(session).create_or_reuse(
@@ -545,6 +628,7 @@ class TaskRuntimeService:
             principal=principal,
             config=config,
             approval_tracker={"approval_id": approval.id},
+            observations=observations,
         )
 
     async def _resolve_pending_approval(
@@ -559,6 +643,7 @@ class TaskRuntimeService:
         state: AgentState,
         principal: CurrentPrincipal | None,
         config: dict[str, dict[str, str]],
+        observations: _RuntimeObservationCollector | None = None,
     ) -> RuntimeResult:
         """Resolve a checkpoint hint against locked tenant-scoped business state."""
 
@@ -578,6 +663,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_checkpoint_invalid"),
+                observations=observations,
             )
         if (
             reference.replan_count != state.replan_count
@@ -591,6 +677,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_checkpoint_invalid"),
+                observations=observations,
             )
         try:
             approval = await ApprovalService(session).validate_runtime_resume(
@@ -621,6 +708,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_checkpoint_invalid"),
+                observations=observations,
             )
         if approval.status is ApprovalStatus.REJECTED:
             return await self._finish(
@@ -631,8 +719,18 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=self._failed_state(state, "approval_rejected"),
+                observations=observations,
             )
         if approval.status is ApprovalStatus.PENDING:
+            had_observations = observations is not None and bool(observations.observations)
+            await self._persist_observations(
+                session,
+                organization_id=organization_id,
+                task_run_id=task_run_id,
+                observations=observations,
+            )
+            if had_observations:
+                await session.commit()
             return RuntimeApprovalResult(
                 task_id=task_id,
                 task_run_id=task_run_id,
@@ -692,13 +790,13 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=failed,
+                observations=observations,
             )
 
         try:
-            raw_state = await self.graph.ainvoke(
-                action_state.model_copy(update={"pending_approval": None}).model_dump(mode="json"),
-                config=config,
-                context=self._runtime_context(
+            invoke_kwargs: dict[str, Any] = {"config": config}
+            if _graph_accepts_context(self.graph):
+                invoke_kwargs["context"] = self._runtime_context(
                     session,
                     principal=principal,
                     organization_id=organization_id,
@@ -706,7 +804,11 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     task_snapshot=task_snapshot,
                     approval_tracker={},
-                ),
+                    observation_sink=observations,
+                )
+            raw_state = await self.graph.ainvoke(
+                action_state.model_copy(update={"pending_approval": None}).model_dump(mode="json"),
+                **invoke_kwargs,
             )
             resumed_state = AgentState.model_validate(raw_state)
         except Exception:
@@ -733,6 +835,7 @@ class TaskRuntimeService:
             task_run_id=task_run_id,
             thread_id=thread_id,
             state=resumed_state,
+            observations=observations,
         )
 
     async def _persist_approved_action_checkpoint(
@@ -794,6 +897,7 @@ class TaskRuntimeService:
         principal: CurrentPrincipal | None,
         config: dict[str, dict[str, str]],
         approval_tracker: dict[str, UUID],
+        observations: _RuntimeObservationCollector | None = None,
     ) -> RuntimeResult:
         """Return wait only after the checkpointer stored the exact reference."""
 
@@ -816,6 +920,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=failed,
+                observations=observations,
             )
         try:
             saved_state = self._state_from_checkpoint(
@@ -834,6 +939,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=failed,
+                observations=observations,
             )
         if saved_state.pending_approval is None and approval_tracker:
             await session.rollback()
@@ -850,6 +956,7 @@ class TaskRuntimeService:
                 task_run_id=task_run_id,
                 thread_id=thread_id,
                 state=failed,
+                observations=observations,
             )
         if approval_tracker and state.pending_approval is not None:
             if approval_tracker.get("approval_id") != state.pending_approval.approval_id:
@@ -862,6 +969,7 @@ class TaskRuntimeService:
                     task_run_id=task_run_id,
                     thread_id=thread_id,
                     state=failed,
+                    observations=observations,
                 )
         return await self._resolve_pending_approval(
             session,
@@ -873,6 +981,7 @@ class TaskRuntimeService:
             state=saved_state,
             principal=principal,
             config=config,
+            observations=observations,
         )
 
     def _state_from_checkpoint(
@@ -928,6 +1037,78 @@ class TaskRuntimeService:
         failure = self.failure_classifier.classify(code)
         return state.model_copy(update={"failure": failure, "terminal_outcome": "FAILED"})
 
+    async def _persist_observations(
+        self,
+        session: AsyncSession,
+        *,
+        organization_id: UUID,
+        task_run_id: UUID,
+        observations: _RuntimeObservationCollector | None,
+    ) -> None:
+        """Flush collected evidence inside the service-owned transaction."""
+
+        if observations is None or not observations.observations:
+            return
+        pending = list(observations.observations)
+        agent_repository = AgentRunRepository(session)
+        tool_repository = ToolCallRepository(session)
+        try:
+            for observation in pending:
+                agent_run = AgentRun(
+                    task_run_id=task_run_id,
+                    request_id=observation.request_id,
+                    replan_count=observation.replan_count,
+                    step_position=observation.step_position,
+                    retry_count=observation.retry_count,
+                    agent_name=observation.agent_name,
+                    status=AgentRunStatus(observation.agent_status),
+                    error_class=(
+                        None
+                        if observation.error_class is None
+                        else ObservabilityErrorClass(observation.error_class)
+                    ),
+                    error_code=observation.error_code,
+                    error_message=observation.error_message,
+                    started_at=observation.started_at,
+                    finished_at=observation.finished_at,
+                    usage=observation.usage,
+                    provider_metadata=observation.provider_metadata,
+                )
+                # The repository flushes and normally assigns the model default;
+                # this fallback keeps the parent ID available for a test double
+                # while remaining a server-generated UUID.
+                if agent_run.id is None:
+                    setattr(agent_run, "id", uuid4())
+                await agent_repository.add(agent_run, organization_id)
+
+                if observation.tool_name is None:
+                    continue
+                tool_call = ToolCall(
+                    agent_run_id=agent_run.id,
+                    call_index=observation.call_index or 0,
+                    tool_name=observation.tool_name,
+                    status=ToolCallStatus(observation.tool_status or "unknown"),
+                    started_at=observation.started_at,
+                    finished_at=observation.finished_at,
+                    arguments=observation.arguments,
+                    result=observation.result,
+                    error_class=(
+                        None
+                        if observation.error_class is None
+                        else ObservabilityErrorClass(observation.error_class)
+                    ),
+                    error_code=observation.error_code,
+                    error_message=observation.error_message,
+                    usage=observation.usage,
+                )
+                if tool_call.id is None:
+                    setattr(tool_call, "id", uuid4())
+                await tool_repository.add(tool_call, organization_id)
+        except BaseException:
+            await session.rollback()
+            raise
+        observations.take()
+
     async def _finish(
         self,
         session: AsyncSession,
@@ -938,12 +1119,19 @@ class TaskRuntimeService:
         task_run_id: UUID,
         thread_id: str,
         state: AgentState,
+        observations: _RuntimeObservationCollector | None = None,
     ) -> RuntimeExecutionResult:
         outcome = state.terminal_outcome
         if outcome not in {"SUCCEEDED", "FAILED"}:
             state = self._failed_state(state, "runtime_incomplete")
             outcome = "FAILED"
         try:
+            await self._persist_observations(
+                session,
+                organization_id=organization_id,
+                task_run_id=task_run_id,
+                observations=observations,
+            )
             lifecycle = TaskLifecycleService(session)
             if outcome == "SUCCEEDED":
                 await lifecycle.succeed_run(task_id, organization_id)

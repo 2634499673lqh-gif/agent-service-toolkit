@@ -1,11 +1,19 @@
 """Typed executor boundary and result contract for Phase 4 T043."""
 
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from schema.planner import PlanStep
 
+from .observability import normalize_provider_metadata, normalize_provider_usage
 from .planner import PlannerTaskInput
 
 
@@ -19,6 +27,8 @@ class ExecutionResult(BaseModel):
     output: str | None = Field(default=None, max_length=2000)
     error_code: str | None = Field(default=None, max_length=64)
     error_message: str | None = Field(default=None, max_length=500)
+    usage: dict[str, Any] | None = None
+    provider_metadata: dict[str, str] | None = None
 
     @field_validator("error_code")
     @classmethod
@@ -27,8 +37,34 @@ class ExecutionResult(BaseModel):
             raise ValueError("error_code must not be blank")
         return value
 
+    @field_validator("usage")
+    @classmethod
+    def normalize_usage(cls, value: object) -> dict[str, Any] | None:
+        return None if value is None else normalize_provider_usage(value)
+
+    @field_validator("provider_metadata")
+    @classmethod
+    def normalize_metadata(cls, value: object) -> dict[str, str] | None:
+        return normalize_provider_metadata(value)
+
+    @model_serializer(mode="wrap")
+    def serialize_observation_fields(self, handler):
+        """Keep legacy JSON shape compact while exposing known usage metadata."""
+
+        data = handler(self)
+        if self.usage is None:
+            data.pop("usage", None)
+        if self.provider_metadata is None:
+            data.pop("provider_metadata", None)
+        return data
+
     @model_validator(mode="after")
     def enforce_success_and_failure_shape(self) -> "ExecutionResult":
+        if self.provider_metadata is not None and self.usage is None:
+            # Provider metadata marks this as a provider-backed result. A
+            # provider that returned no usage must remain explicitly
+            # unavailable; a non-provider result keeps usage as NULL.
+            self.usage = normalize_provider_usage(None)
         if self.success:
             if self.output is None:
                 raise ValueError("successful execution requires output")
