@@ -4529,3 +4529,90 @@ Learner notes:
 - Do not worry yet about tenant-safe timeline queries or billing systems.
 
 Suggested next task: independent T096 Strong Review.
+
+### 2026-09-25 — Phase 8 Evaluation planning
+
+Status: Planning artifacts complete; READY FOR PLANNING STRONG REVIEW.
+
+What changed:
+- Re-verified phase-8-evaluation at merged Phase 7 HEAD 00b0b41.
+- Synchronized AGENTS.md §15 with coherent batch and independent review rules.
+- Added proposed ADR-010 and implementation-ready T100–T107 cards.
+- Defined the non-authoritative versioned Evaluation contract, five deterministic fixtures, pure metrics, bounded reports, CI smoke, DAG, batches, and Final Audit.
+
+Files changed:
+- AGENTS.md
+- process/ADR-010.md
+- process/tasks/T100.md through T107.md
+- TASK_BACKLOG.md
+- ROADMAP.md
+- process/tasks/INDEX.md
+- docs/OBSERVABILITY_EVAL.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+
+Validation:
+- Baseline branch, ancestry, merged Phase 7 status, and working tree checked.
+- No production code, schema, migration, test, or CI implementation changed.
+- git diff --check passed.
+
+Learner notes:
+- Problem solved: Evaluation can be implemented later without making measurement an authority.
+- Read ADR-010, docs/OBSERVABILITY_EVAL.md, process/tasks/T100.md, process/tasks/T102.md, and process/tasks/T104.md.
+- Main concept: versioned deterministic evidence and explicit comparison boundaries.
+- Exercise: trace why a suite version mismatch is incomparable instead of a failure.
+- Do not worry yet about live model judging or a metrics platform.
+
+### 2026-09-25 — Phase 8 planning blocker fix
+
+Status: Blockers corrected; READY FOR FOCUSED PLANNING RE-REVIEW.
+
+What changed:
+- Froze exact deterministic contracts for pass rate, recovery success, approval compliance, and evidence completeness using one Decimal-rounded rate shape.
+- Replaced the unsupported tabular/sum fixture with the repository-backed `deterministic.fixture_baseline` and exact `DeterministicFixtureCapability` output.
+- Froze the bounded `taskpilot.eval.report/v1` schema, status enums, comparison reasons, canonical serialization, and artifact-size failure behavior.
+- Clarified T100 as the Phase 8 planning gate awaiting Strong Review approval, with corrected implementation batches and DAG.
+
+Files changed:
+- process/ADR-010.md
+- process/tasks/T100.md through T107.md
+- ROADMAP.md
+- TASK_BACKLOG.md
+- process/tasks/INDEX.md
+- docs/OBSERVABILITY_EVAL.md
+- process/DECISION_LOG.md
+- process/PROGRESS_LOG.md
+
+Validation:
+- Searched canonical planning docs for stale `tabular.deterministic_sum`, tabular/sum fixture assumptions, old T100–T101 implementation-batch wording, metric names, report schema/version wording, and T100 status.
+- Confirmed no production implementation, migration, test, dependency, or CI files changed.
+- `git diff --check` passed.
+
+Learner notes:
+- Problem solved: the future Evaluation implementation now has deterministic metric, fixture, report, and gate contracts that can be reviewed independently.
+- Read ADR-010, T100, T101, T103, and T104 first.
+- Main concept: freeze data contracts and comparison boundaries before writing runtime code.
+- Exercise: explain why an incomparable report still has valid per-run metrics.
+- Do not worry yet about Evaluation persistence, dashboards, live models, or CI implementation.
+
+Suggested next task: focused Planning Strong Review of ADR-010 and T100–T107.
+
+### 2026-09-25 — Phase 8 Planning Strong Re-review approved
+
+Status: ADR-010 Accepted / frozen; T100 COMPLETE / APPROVED; Phase 8 Planning
+APPROVED / frozen. T101 is next as Implementation Batch 1.
+
+What changed:
+- Independently verified the three blocker fixes: exact metric contracts,
+  repository-backed deterministic baseline fixture, and exact bounded report
+  schema.
+- Synchronized only explicit canonical current-state status lines after the
+  substantive approval. Historical blocker and planning entries remain intact.
+
+Validation:
+- Focused stale-reference, metric, report-schema, T100/batch/DAG, and
+  prohibited-implementation-file searches passed.
+- `git diff --check` passed.
+- No runtime or full-suite execution was required for this planning review.
+
+Suggested next task: T101 deterministic fixture implementation.

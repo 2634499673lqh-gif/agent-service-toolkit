@@ -111,7 +111,7 @@ The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is 
 Phase 6 Planning is approved, frozen, committed, and published. T080 is
 complete and approved; T081 Approval persistence is complete with Strong Review
 approval, committed, and pushed. T082 Approval service and decision APIs are
-complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE. ADR-009 remains Accepted and frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 is NOT STARTED.
+complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE. ADR-009 remains Accepted and frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 

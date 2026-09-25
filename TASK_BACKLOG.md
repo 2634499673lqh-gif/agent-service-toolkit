@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 is NOT STARTED.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED; T101 is next.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -286,28 +286,37 @@ Fresh-eyes, independent, non-mutating audit of ADR-009, T091–T097 evidence,
 tenant SQL, ordering, recovery reconstruction, and redaction evidence owned by
 T092/T097. No code/test fixes, commit, push, or T099.
 
-## Phase 8 — Evaluation [NOT STARTED]
+## Phase 8 — Evaluation [PLANNING GATE AWAITING STRONG REVIEW; IMPLEMENTATION NOT STARTED]
 
-### T100 — Eval schema decision [A]
-Define case/run/result versioning and metrics.
+T100 is the Phase 8 Evaluation architecture/planning gate. Planning Strong Review is APPROVED; ADR-010 is Accepted/frozen, T100 is COMPLETE / APPROVED, and implementation begins at T101.
+
+### T100 — Evaluation architecture/planning gate [A]
+Freeze ADR-010, exact metric and report contracts, five-case suite, comparison semantics, bounds, redaction, deferred scope, and DAG. Planning-only; see `process/tasks/T100.md`.
 
 ### T101 — Deterministic fixture set [C]
-Create fixed tabular/recovery/approval fixtures.
+Implement the repository-backed `deterministic.fixture_baseline` plus retry, replan, L2 approval, and L3 blocked cases. The prior tabular/sum wording was pre-planning intent; reuse existing capability behavior; see `process/tasks/T101.md`.
 
-### T102 — Workflow eval runner [B]
-Goal: repeatable CLI/test runner.
+### T102 — Workflow Evaluation runner [B]
+Repeatable local runner with stable ordering, bounded typed results, and explicit completed/partial/error semantics; see `process/tasks/T102.md`.
 
-### T103 — Metrics calculation [C]
-Goal: pure deterministic metric functions + tests.
+### T103 — Deterministic metrics [C]
+Implement the four fixed metric contracts with Decimal rounding and explicit not-applicable zero denominators; see `process/tasks/T103.md`.
 
 ### T104 — Machine-readable report [C]
-JSON artifact schema + tests.
+Emit the exact bounded `taskpilot.eval.report/v1` canonical JSON contract; see `process/tasks/T104.md`.
 
 ### T105 — Human-readable report [C]
-Markdown/console summary from machine results.
+Derive deterministic Markdown/console output from T104 only; see `process/tasks/T105.md`.
 
-### T106 — CI cheap smoke eval [B]
-No expensive live model dependency in default CI.
+### T106 — CI cheap smoke [B]
+Run the baseline/retry/L2 subset with bounded non-zero failure semantics; see `process/tasks/T106.md`.
+
+### T107 — Phase 8 Final Audit [A, read-only]
+Independent fresh-eyes audit of T100–T106; see `process/tasks/T107.md`.
+
+Batches: Planning gate **T100**; Implementation Batch 1 **T101–T103**; Implementation Batch 2 **T104–T106**; Phase Final Audit **T107**.
+
+DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`.
 
 ## Phase 9 — UI
 
