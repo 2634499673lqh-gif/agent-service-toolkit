@@ -212,8 +212,11 @@ class _RiskFixtureCapability:
 class EvaluationRunner:
     """Execute the fixed suite without a provider, database, or network."""
 
-    def __init__(self, suite: FixtureSuite | None = None) -> None:
+    def __init__(
+        self, suite: FixtureSuite | None = None, *, case_ids: tuple[str, ...] | None = None
+    ) -> None:
         self.suite = suite or DEFAULT_FIXTURES
+        self.case_ids = case_ids
 
     async def run(self) -> EvaluationRun:
         try:
@@ -223,8 +226,15 @@ class EvaluationRunner:
         except Exception:
             return self._error_run()
         self.suite = suite
+        selected = (
+            tuple(fixture for fixture in suite.cases if fixture.case_id in self.case_ids)
+            if self.case_ids is not None
+            else suite.cases
+        )
+        if self.case_ids is not None and len(selected) != len(self.case_ids):
+            return self._error_run()
         results: list[CaseResult] = []
-        for fixture in self.suite.cases:
+        for fixture in selected:
             try:
                 results.append(await self._run_case(fixture))
             except ValueError:
@@ -405,10 +415,12 @@ class EvaluationRunner:
         return FixtureApprovalSignal(case_id=fixture.case_id)
 
 
-async def run_evaluation(suite: FixtureSuite | None = None) -> EvaluationRun:
-    """Convenience entry point for the deterministic V1 suite."""
+async def run_evaluation(
+    suite: FixtureSuite | None = None, *, case_ids: tuple[str, ...] | None = None
+) -> EvaluationRun:
+    """Convenience entry point for the deterministic V1 suite or a bounded subset."""
 
-    return await EvaluationRunner(suite).run()
+    return await EvaluationRunner(suite, case_ids=case_ids).run()
 
 
 def _assert_result(fixture: EvaluationFixture, evidence: list[str], passed: bool) -> CaseResult:

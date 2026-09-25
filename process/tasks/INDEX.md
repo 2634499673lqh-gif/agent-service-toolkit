@@ -129,7 +129,7 @@ T081–T084 follow ADR-008 B1–B3 for schema, canonical identity and mock claim
 
 DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T092 owns persisted-payload redaction tests, T097 owns timeline-response redaction tests, and T098 audits their evidence; no T099 is created. Phase 7 is COMPLETE; Phase 8 Planning is APPROVED / frozen; Batch 1 (T101–T103) is COMPLETE / STRONG REVIEW APPROVED; Batch 2 starts at T104.
 
-## Phase 8 Task Cards — Evaluation [BATCH 1 COMPLETE / STRONG REVIEW APPROVED]
+## Phase 8 Task Cards — Evaluation [BATCH 2 COMPLETE / STRONG REVIEW APPROVED]
 
 T100 remains the architecture/planning gate. Planning Strong Review is APPROVED; ADR-010 is Accepted/frozen, T100 is COMPLETE / APPROVED, and implementation begins at T101.
 
@@ -139,9 +139,9 @@ T100 remains the architecture/planning gate. Planning Strong Review is APPROVED;
 | T101 | Deterministic existing-capability baseline and fixture set | LOW_COST/STANDARD | Strong Review | T100 | COMPLETE / APPROVED |
 | T102 | Workflow Evaluation runner | STANDARD | Strong Review | T100, T101 | COMPLETE / APPROVED |
 | T103 | Deterministic metrics | LOW_COST | Strong Review | T102 | COMPLETE / APPROVED |
-| T104 | Machine-readable report | LOW_COST | Strong Review | T102, T103 | NOT STARTED |
-| T105 | Human-readable report | LOW_COST | Strong Review | T104 | NOT STARTED |
-| T106 | CI cheap smoke Evaluation | STANDARD | Strong Review | T101–T104 | NOT STARTED |
+| T104 | Machine-readable report | LOW_COST | Strong Review | T102, T103 | COMPLETE / APPROVED |
+| T105 | Human-readable report | LOW_COST | Strong Review | T104 | COMPLETE / APPROVED |
+| T106 | CI cheap smoke Evaluation | STANDARD | Strong Review | T101–T104 | COMPLETE / APPROVED |
 | T107 | Phase 8 Final Audit | STRONG read-only | Phase Final Audit | T100–T106 | NOT STARTED |
 
 Implementation batches: Planning gate **T100**; Batch 1 **T101–T103**; Batch 2 **T104–T106**; Phase Final Audit **T107**.

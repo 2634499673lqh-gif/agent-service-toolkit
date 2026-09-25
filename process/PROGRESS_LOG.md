@@ -1,7 +1,17 @@
+### 2026-09-25 — Phase 8 Batch 2 focused Strong Re-review current-state synchronization
+
+Current status: T104–T106 are COMPLETE / APPROVED; Batch 2 is COMPLETE /
+STRONG REVIEW APPROVED; T107 Phase 8 Final Audit is next executable work.
+
+Changed only explicit current-state wording after independent focused Strong
+Re-review approval; historical implementation and blocker-fix entries remain
+unchanged.
+
 ### 2026-09-25 — Phase 8 Batch 1 blocker-fix current-state synchronization
 
 Current status: T101–T103 are COMPLETE / APPROVED after focused Batch Strong
-Re-review. Batch 1 is COMPLETE / STRONG REVIEW APPROVED; T104 is next.
+Re-review. Batch 1 is COMPLETE / STRONG REVIEW APPROVED; Batch 2 is complete;
+T107 Phase 8 Final Audit is next.
 
 Changed only the stale current-state wording in docs/ARCHITECTURE.md and
 process/ADR-009.md; historical progress entries remain unchanged.
@@ -4649,3 +4659,48 @@ Learner notes: read `src/evaluation/fixtures.py`, `src/evaluation/runner.py`,
 The key concept is observational evaluation over existing runtime contracts.
 Exercise: change one expected evidence code and observe the case become FAIL
 while the runner remains bounded. Do not worry about T104 report bytes yet.
+
+
+### 2026-09-25 — Phase 8 Batch 2 implementation (T104–T106)
+
+Status: T104–T106 implementation is complete; READY FOR Batch Strong Review.
+
+What changed:
+- Added the frozen `taskpilot.eval.report/v1` machine report with canonical
+  sorted compact UTF-8 serialization, four metrics, comparison identity checks,
+  and the 32 KiB `report_size_exceeded` bound.
+- Added deterministic Markdown rendering derived only from the machine report.
+- Added the provider/network/database-free three-case CI smoke command and
+  artifact upload to the existing Python CI job.
+
+Files changed: `src/evaluation/report.py`, `src/evaluation/human.py`,
+`src/evaluation/smoke.py`, `src/evaluation/runner.py`,
+`src/evaluation/__init__.py`, `tests/evaluation/test_phase8_batch2.py`,
+`scripts/evaluation_smoke.py`, `.github/workflows/test.yml`,
+`docs/OBSERVABILITY_EVAL.md`.
+
+Known limitations: T107 Phase Final Audit, persistence, dashboards, remote
+Evaluation, and live model judging remain deferred.
+
+Learner notes: The machine report is the canonical boundary; human output and
+CI smoke consume it rather than creating separate evaluation semantics. Read
+`src/evaluation/report.py`, `src/evaluation/human.py`, and
+`src/evaluation/smoke.py`. Exercise: change one case result to `error` and
+observe the smoke exit code and runner status. Do not worry about persistence
+or remote benchmarking yet.
+
+
+### 2026-09-25 — Phase 8 Batch 2 blocker fix
+
+Status: T104–T106 blocker fix complete; READY FOR FOCUSED BATCH RE-REVIEW.
+
+What changed:
+- Added model-level validation enforcing the frozen ComparisonResult
+  status/reason combinations.
+- Added negative and positive evidence for all four comparison mismatch
+  reasons and smoke non-zero failure paths.
+- Kept the existing smoke command, report serialization, human projection,
+  and three-case subset unchanged.
+
+Validation: 34 Evaluation tests passed; deterministic executor regression
+passed (5); Ruff, format, Pyrefly, and git diff checks passed.

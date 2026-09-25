@@ -186,3 +186,20 @@ Implementation batches:
 - Phase Final Audit: **T107** (independent, fresh-eyes, read-only).
 
 DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`.
+
+
+## Phase 8 Evaluation reports (T104–T106)
+
+The local Evaluation boundary emits the canonical `taskpilot.eval.report/v1`
+UTF-8 JSON artifact through `evaluation.build_machine_report` and
+`evaluation.serialize_report`. Object keys and case/evidence arrays are
+ordered deterministically, metrics use four Decimal-rounded places, and the
+artifact is capped at 32 KiB. `evaluation.render_human_report` is a display
+projection of that machine report and does not recalculate semantics.
+
+The default CI job runs the provider-free smoke subset
+`deterministic.fixture_baseline`, `recovery.retry_then_pass`, and
+`approval.l2_requires_approval` with `uv run python scripts/evaluation_smoke.py`; it
+requires no provider, network, or Evaluation database and uploads the bounded
+JSON artifact. The command exits non-zero for runner `error`/`partial`, failed
+cases, incomparable comparison, or an oversized report.
