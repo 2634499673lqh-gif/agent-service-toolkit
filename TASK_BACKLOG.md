@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 implementation and required PostgreSQL evidence are complete with Strong Review APPROVED; T098 is next: Phase 7 Final Audit.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 is NOT STARTED.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -246,9 +246,9 @@ by T083/T084 and the audit. Generic policy engines, workflow engines, worker
 queues, distributed locks, credentials, real external effects, and L3 execution
 remain deferred.
 
-## Phase 7 — Observability
+## Phase 7 — Observability [COMPLETE; FINAL AUDIT APPROVED]
 
-Phase 7 planning is defined by ADR-009 and task cards T090–T098. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T098 is exclusively the fresh-eyes, read-only Phase 7 Final Audit; it audits redaction evidence owned by T092/T097 and does not add tests or fixes. No additional audit ID is introduced.
+Phase 7 planning is defined by ADR-009 and task cards T090–T098. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. The audit covered redaction evidence owned by T092/T097 and did not add tests or fixes. No additional audit ID is introduced.
 
 ### T090 — Trace data model decision [A]
 Goal: decide DB events vs external trace backend responsibilities.
@@ -286,7 +286,7 @@ Fresh-eyes, independent, non-mutating audit of ADR-009, T091–T097 evidence,
 tenant SQL, ordering, recovery reconstruction, and redaction evidence owned by
 T092/T097. No code/test fixes, commit, push, or T099.
 
-## Phase 8 — Evaluation
+## Phase 8 — Evaluation [NOT STARTED]
 
 ### T100 — Eval schema decision [A]
 Define case/run/result versioning and metrics.
