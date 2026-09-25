@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 is the next DAG task.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T091/T092 implementation and live PostgreSQL evidence are complete with Strong Review APPROVED; T093 correlation propagation implementation and required validation are complete with Strong Review APPROVED; T094/T095 are Strong Review APPROVED; T096 implementation and required validation are Strong Review APPROVED; T097 implementation and required PostgreSQL evidence are complete with Strong Review APPROVED; T098 is next: Phase 7 Final Audit.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -278,7 +278,8 @@ Tests deterministic. Implementation and Strong Review are approved.
 
 ### T097 — Trace query API [C/B]
 Goal: retrieve ordered sanitized execution timeline, including response-redaction
-tests. T097 is the next DAG task.
+tests. T097 implementation and required PostgreSQL evidence are complete;
+Strong Review APPROVED.
 
 ### T098 — Phase 7 Final Audit [A, read-only after T097]
 Fresh-eyes, independent, non-mutating audit of ADR-009, T091–T097 evidence,

@@ -152,6 +152,12 @@ remote pricing lookup, refresh loop, ledger, or billing behavior.
 
 The trace query applies the principal organization predicate in SQL, returns a
 bounded sanitized timeline in stable order, and preserves failure/retry/replan
-rows. T092 owns persisted-payload redaction tests; T097 owns timeline-response
-redaction tests; T098 is exclusively the independent read-only Phase 7 Final
-Audit.
+rows. The public route is `GET /api/v1/tasks/{task_id}/runs/{run_id}/trace`
+with a default limit of 100 and a maximum of 500. Its projection contains
+correlation IDs, server-selected names, observational status, UTC timing,
+normalized errors, usage, an informational estimate, and bounded redacted
+provider metadata; arguments, results, checkpoints, prompts, context,
+credentials, authorization objects, and raw provider responses are excluded.
+T092 owns persisted-payload redaction tests; T097 owns timeline-response,
+tenant, ordering, limit, and reconstruction tests; T098 is exclusively the
+independent read-only Phase 7 Final Audit.

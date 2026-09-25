@@ -1,3 +1,73 @@
+### 2026-09-25 — T097 post-review status synchronization
+
+Status: T097 implementation, required PostgreSQL evidence, and Strong Review
+are APPROVED. T098 is next as the Phase 7 Final Audit; Phase 7 remains open.
+
+Changed: synchronized stale current-state summaries in `ROADMAP.md`,
+`TASK_BACKLOG.md`, `docs/ARCHITECTURE.md`, and `process/tasks/INDEX.md`. The
+implementation, PostgreSQL blocker, and focused re-review entries below remain
+historical records.
+
+Validation: targeted T097/T098 status search, `git diff --check`, and final
+diff inspection. No implementation, test, migration, contract, DAG, or Phase 7
+architecture changes were made.
+
+### 2026-09-25 — T097 PostgreSQL cap evidence blocker fix
+
+Status: focused Strong Review blocker fix is complete and ready for focused
+re-review. T098 remains the read-only Phase 7 Final Audit.
+
+Changed: expanded the live PostgreSQL T097 fixture with 501 deterministic
+additional AgentRun observations, so the authorized run contains 505 visible
+observations. The test requests `limit=501` and proves the response is exactly
+500 events, canonically ordered, and tenant-scoped. No production code,
+schema, or migration changed.
+
+Validation: the live PostgreSQL API test passed (1); focused repository/API
+tests, Ruff, Pyrefly, and `git diff --check` were run after the fixture change.
+
+Suggested next task: T097 focused Strong Re-review.
+
+### 2026-09-25 — T097 tenant-safe trace query implementation
+
+Status: T097 implementation is complete and ready for independent Strong
+Review. T096 remains approved; T098 remains the read-only Phase 7 Final Audit.
+
+Changed: added the protected `GET /api/v1/tasks/{task_id}/runs/{run_id}/trace`
+route, SQL-scoped ordered AgentRun/ToolCall projection, bounded limit handling,
+response redaction, informational cost estimates, approval correlation, and
+focused repository/service/API tests. The query keeps failure, retry, and
+replan observations visible without changing TaskRun, checkpoint, approval, or
+tenant authority.
+
+Files changed: `src/persistence/repositories.py`, `src/service/trace_service.py`,
+`src/service/task_api.py`, `src/schema/trace_api.py`,
+`tests/persistence/test_trace_repository.py`,
+`tests/service/test_trace_api_postgres.py`, `docs/API_CONVENTIONS.md`,
+`docs/OBSERVABILITY_EVAL.md`, `docs/ARCHITECTURE.md`, and this log.
+
+Validation: focused repository/response tests passed (4); existing
+observability, cost, and TaskRun API regression passed (22 passed, 2 skipped);
+the affected authorization/auth regression passed (59 passed, 2 skipped); the
+full suite passed after the final redaction and limit changes (598 passed, 125
+skipped, 18 warnings); Ruff, Pyrefly,
+compilation, and SQL compilation checks passed. The focused PostgreSQL API
+test passed (1) after Docker Desktop was restarted; it exercises real tenant
+visibility, ordering, bounds, redaction, and retry/replan reconstruction.
+
+Known limitation: the trace route uses the approved empty in-process pricing
+table unless a service caller supplies a T096 `PricingTable`, so provider usage
+without configured pricing returns an explicit informational unknown estimate.
+
+Learner notes: the important boundary is that a timeline is a projection over
+existing evidence, not a new event authority. Read `src/persistence/repositories.py`,
+`src/service/trace_service.py`, `src/schema/trace_api.py`, `process/ADR-009.md`,
+and `tests/persistence/test_trace_repository.py`. Exercise: inspect the
+compiled UNION query and identify where a foreign Task is filtered before the
+limit. Do not worry yet about external tracing, billing, or evaluation.
+
+Suggested next task: T097 independent Strong Review.
+
 ### 2026-09-24 — T096 post-review status synchronization
 
 Status: T096 implementation and required validation are complete; Strong Review
