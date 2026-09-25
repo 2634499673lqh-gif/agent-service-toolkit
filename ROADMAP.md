@@ -121,7 +121,7 @@ Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
 Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
 
 T081 is COMPLETE and Strong Review approved, committed, and pushed. T082 is
-COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED; T101 is next.
+COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; Batch 1 (T101–T103) is COMPLETE / STRONG REVIEW APPROVED; Batch 2 starts at T104.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the
@@ -140,7 +140,7 @@ Exit:
 Planning authority: ADR-009. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`; T098 is the read-only Phase 7 Final Audit.
 
 T090–T097 implementation and review work is COMPLETE / APPROVED. T098 Phase 7
-Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED; T101 is next.
+Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; Batch 1 (T101–T103) is COMPLETE / STRONG REVIEW APPROVED; Batch 2 starts at T104.
 
 Tasks:
 - T090 trace data model decision
@@ -158,7 +158,7 @@ Exit:
 - failure point, retry, and replan are visible; T092 owns persisted-payload
   redaction tests and T097 owns timeline-response redaction tests
 
-## Phase 8 — Evaluation [PLANNING GATE AWAITING STRONG REVIEW; IMPLEMENTATION NOT STARTED]
+## Phase 8 — Evaluation [BATCH 1 COMPLETE / STRONG REVIEW APPROVED]
 
 T100 is the Phase 8 Evaluation architecture/planning gate. Planning Strong Review is APPROVED; ADR-010 is Accepted/frozen, T100 is COMPLETE / APPROVED, and implementation begins at T101.
 

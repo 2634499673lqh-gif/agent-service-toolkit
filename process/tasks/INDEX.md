@@ -107,7 +107,7 @@ T084 is COMPLETE; Strong Review APPROVED; committed and pushed.
 | T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
 | T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | FOCUSED FINAL AUDIT RE-REVIEW APPROVED; PHASE 6 COMPLETE |
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED; T101 is next.
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; Batch 1 (T101–T103) is COMPLETE / STRONG REVIEW APPROVED; Batch 2 starts at T104.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.
@@ -127,18 +127,18 @@ T081–T084 follow ADR-008 B1–B3 for schema, canonical identity and mock claim
 | T097 | Tenant-safe trace query API | LOW_COST/STANDARD | Strong Review APPROVED | T091–T096 |
 | T098 | Phase 7 Final Audit | STRONG read-only | Phase Final Audit APPROVED | T097 |
 
-DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T092 owns persisted-payload redaction tests, T097 owns timeline-response redaction tests, and T098 audits their evidence; no T099 is created. Phase 7 is COMPLETE; Phase 8 Planning is APPROVED / frozen; implementation is NOT STARTED; T101 is next.
+DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T092 owns persisted-payload redaction tests, T097 owns timeline-response redaction tests, and T098 audits their evidence; no T099 is created. Phase 7 is COMPLETE; Phase 8 Planning is APPROVED / frozen; Batch 1 (T101–T103) is COMPLETE / STRONG REVIEW APPROVED; Batch 2 starts at T104.
 
-## Phase 8 Task Cards — Evaluation [PLANNING GATE AWAITING STRONG REVIEW]
+## Phase 8 Task Cards — Evaluation [BATCH 1 COMPLETE / STRONG REVIEW APPROVED]
 
 T100 remains the architecture/planning gate. Planning Strong Review is APPROVED; ADR-010 is Accepted/frozen, T100 is COMPLETE / APPROVED, and implementation begins at T101.
 
 | Task | Purpose | Model | Review | Depends On | Status |
 |---|---|---|---|---|---|
 | T100 | Evaluation architecture/planning gate / ADR-010 | STRONG planning | Planning Strong Review APPROVED | T098 | COMPLETE / APPROVED / FROZEN |
-| T101 | Deterministic existing-capability baseline and fixture set | LOW_COST/STANDARD | Strong Review | T100 | NOT STARTED |
-| T102 | Workflow Evaluation runner | STANDARD | Strong Review | T100, T101 | NOT STARTED |
-| T103 | Deterministic metrics | LOW_COST | Strong Review | T102 | NOT STARTED |
+| T101 | Deterministic existing-capability baseline and fixture set | LOW_COST/STANDARD | Strong Review | T100 | COMPLETE / APPROVED |
+| T102 | Workflow Evaluation runner | STANDARD | Strong Review | T100, T101 | COMPLETE / APPROVED |
+| T103 | Deterministic metrics | LOW_COST | Strong Review | T102 | COMPLETE / APPROVED |
 | T104 | Machine-readable report | LOW_COST | Strong Review | T102, T103 | NOT STARTED |
 | T105 | Human-readable report | LOW_COST | Strong Review | T104 | NOT STARTED |
 | T106 | CI cheap smoke Evaluation | STANDARD | Strong Review | T101–T104 | NOT STARTED |

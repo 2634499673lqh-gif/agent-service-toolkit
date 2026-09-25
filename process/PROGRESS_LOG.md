@@ -1,3 +1,11 @@
+### 2026-09-25 — Phase 8 Batch 1 blocker-fix current-state synchronization
+
+Current status: T101–T103 are COMPLETE / APPROVED after focused Batch Strong
+Re-review. Batch 1 is COMPLETE / STRONG REVIEW APPROVED; T104 is next.
+
+Changed only the stale current-state wording in docs/ARCHITECTURE.md and
+process/ADR-009.md; historical progress entries remain unchanged.
+
 ### 2026-09-25 — Phase 7 final status synchronization
 
 Status: T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is
@@ -4616,3 +4624,28 @@ Validation:
 - No runtime or full-suite execution was required for this planning review.
 
 Suggested next task: T101 deterministic fixture implementation.
+### 2026-09-25 — Phase 8 Batch 1 implementation (T101–T103)
+
+Status: T101–T103 implementation is complete and ready for Batch Strong
+Review. T104 remains the next implementation batch; no T104 work has started.
+
+Changed: added the bounded five-case fixture suite, the provider-free in-memory
+runner, typed case/run results, and pure Decimal metrics in `src/evaluation/`.
+Added focused fixture, runner, failure-isolation, ordering, rounding, and
+zero-applicability tests in `tests/evaluation/`.
+
+Validation: focused Phase 8 tests passed (5); Ruff check and format checks
+passed; deterministic runner smoke produced five PASS cases and all four
+`1.0000` metrics. No database, migration, provider, network, or report
+serialization work was added.
+
+Known limitation: the L2 fixture observes the existing graph approval boundary
+and applies the already validated deterministic mock action in memory; durable
+approval persistence and HTTP resume remain owned by the Phase 6 runtime and
+are not recreated by Evaluation.
+
+Learner notes: read `src/evaluation/fixtures.py`, `src/evaluation/runner.py`,
+`src/evaluation/metrics.py`, and `tests/evaluation/test_phase8_evaluation.py`.
+The key concept is observational evaluation over existing runtime contracts.
+Exercise: change one expected evidence code and observe the case become FAIL
+while the runner remains bounded. Do not worry about T104 report bytes yet.
