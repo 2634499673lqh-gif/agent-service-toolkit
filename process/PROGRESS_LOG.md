@@ -1,6 +1,6 @@
 ### 2026-09-25 — T107 Phase 8 Final Audit
 
-Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
 
 Independent validation: Evaluation tests (34 passed), full repository suite (632 passed, 125 skipped), provider-free three-case smoke (exit 0), Ruff, Pyrefly, report serialization bounds, CI workflow inspection, and documentation consistency checks all passed. No implementation, test, migration, contract, architecture, or runtime changes were made.
 
@@ -4714,3 +4714,199 @@ Validation: 34 Evaluation tests passed; deterministic executor regression
 passed (5); Ruff, format, Pyrefly, and git diff checks passed.
 
 \r\n
+### 2026-09-26 — Phase 9 Product UI planning
+
+Status: READY FOR PLANNING STRONG REVIEW. Added proposed ADR-011 and implementation-ready T110–T119 cards. Verified the current Streamlit/AgentClient, AuthService, Task/TaskRun, Approval and trace contracts. Documented the gap matrix, secure AuthService-backed HTTP requirement (T118), run discovery requirement (T119), Streamlit-first architecture, state/error boundaries, truthful no-runtime-execution behavior, canonical DAG, batches and deferred scope.
+
+Files changed: `process/ADR-011.md`, `process/tasks/T110.md`–`T119.md`, `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, `process/DECISION_LOG.md`, `process/PROGRESS_LOG.md`.
+
+Validation: repository inspection, numbering/contract cross-check, `git diff --check`. No production code, tests, migrations, dependencies or CI changed. Current planning baseline is branch `phase-9-product-ui` at HEAD `8f152a4`; Phase 8 is already merged and complete.
+
+Known limitation: this is planning only; T118/T119 and all Product UI behavior remain unimplemented pending planning approval.
+
+Learner notes: read `process/ADR-011.md`, `process/tasks/T110.md`, `src/service/session.py`, `src/service/task_api.py`, and `src/service/trace_service.py`. The key concept is separating UI presentation state from server-owned identity, lifecycle and approval authority. Exercise: trace a task from Streamlit action to protected route and list every server check. Do not worry about React, workers or live updates yet. Suggested next task: Planning Strong Review of T110/ADR-011.
+
+### 2026-09-26 — Phase 9 Planning Focused Strong Re-review
+
+Status: APPROVED / frozen. The stale branch baseline blocker was corrected: ADR-011 and the planning log record `phase-9-product-ui` at HEAD `8f152a4`, with Phase 8 merged and complete. The reviewed architecture, T110–T119 contracts, numbering, DAG, batches, authentication, TaskRun discovery, approval/trace scope and deferred scope are unchanged. No production code, tests, migrations, dependencies or CI changed.
+
+Validation: current branch/HEAD verification, stale-current-state search, planning diff inspection and `git diff --check` passed.
+
+Next executable implementation batch: T118–T119.
+
+### 2026-09-26 — Phase 9 Batch 1 implementation (T118–T119)
+
+Status: T118–T119 implementation and focused HTTP integration coverage are
+complete; PostgreSQL/API validation passed and the batch is ready for Strong
+Review.
+
+What changed: added the AuthService-backed login, session and logout HTTP
+routes with opaque bearer sessions, service-owned commit/rollback, generic
+credential failures and no-store responses; added the tenant-scoped ordered
+TaskRun list route. Existing identity, lifecycle and repository contracts are
+reused without schema or dependency changes.
+
+Files changed: `src/schema/auth_api.py`, `src/service/auth_api.py`,
+`src/service/auth_dependency.py`, `src/service/session.py`,
+`src/service/service.py`, `src/service/task_api.py`,
+`src/service/task_run_service.py`.
+
+Validation: T118/T119 HTTP PostgreSQL tests passed; affected PostgreSQL
+regression passed; focused unit regression, Ruff check, focused format check,
+Pyrefly and `git diff --check` passed. No unrelated legacy formatting was
+changed.
+
+Known limitations: Product UI, client support, runtime execution and all other
+Phase 9 tasks remain deferred. No migration, dependency, commit or push was
+performed.
+
+Learner notes: read `src/service/auth_api.py`, `src/service/session.py`,
+`src/service/auth_dependency.py`, and `src/service/task_api.py`. The key
+concept is keeping identity and tenant scope server-derived while HTTP routes
+only map typed service results. Exercise: trace a logout request and identify
+where the principal is resolved, where the session row is rechecked, and where
+the commit occurs. Do not worry about the Product UI or runtime worker yet.
+
+### 2026-09-26 — Phase 9 Batch 1 Strong Review blocker fix
+
+Status: T118–T119 COMPLETE / APPROVED after focused Strong Re-review. Phase 9 Batch 1 COMPLETE / STRONG REVIEW APPROVED; T111 is next.
+
+Added PostgreSQL HTTP evidence for organization selection, malformed credentials, duplicate logout, fresh role resolution, secret-safe logs and commit rollback. T119 behavior was unchanged. Formatted only touched Batch 1 files and reran the complete affected PostgreSQL regression.
+
+Validation: focused T118 evidence 4 passed; T119 evidence 1 passed; affected PostgreSQL authentication/security/Task/TaskRun regression 53 passed; focused unit regression 88 passed; Ruff, touched-file format checks, Pyrefly and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 implementation (T111–T112)
+
+Status: Product client and persisted TaskPilot task shell are implemented and
+ready for Strong Review. Added a per-Streamlit-session bearer client with fixed
+timeouts, safe error classes, login organization selection, logout cleanup,
+task create, fresh list reads and server re-read detail navigation. The legacy
+chat remains isolated behind an explicit view choice and does not use the
+Product client.
+
+Files changed: `src/client/taskpilot.py`, `src/client/__init__.py`,
+`src/taskpilot_ui.py`, `src/streamlit_app.py`.
+
+Validation: Python compile smoke, Ruff check, touched-file Ruff format check and
+`git diff --check` passed. Existing legacy AppTest expectations still assume
+the pre-ADR default chat view and therefore fail until their Phase 9 fixtures
+are updated; no live provider was used. No migration, dependency, commit or
+push was performed.
+
+Learner notes: read `src/client/taskpilot.py`, `src/taskpilot_ui.py`,
+`src/streamlit_app.py`, and `process/ADR-011.md`. The key concept is that the
+server owns identity and task state while Streamlit stores only transient
+session presentation state. Exercise: trace a 401 from the client request to
+the exact keys cleared in the Product session. Do not worry about run,
+approval, trace or runtime execution UI yet. Suggested next task: Batch 2
+Strong Review for T111–T112.
+
+### 2026-09-26 — Phase 9 Batch 2 acceptance completion
+
+Status: T111–T112 acceptance evidence complete; ready for Strong Review.
+Legacy AppTests now explicitly select the Legacy chat view, preserving Product
+as the default. Product AppTest coverage verifies default routing, login,
+organization selection, password-widget clearing, empty task rendering and
+safe session-local startup. Client tests cover allowed create fields, no POST
+retry, lost-response read recovery, safe 404/timeout behavior, auth clearing,
+and organization login.
+
+Validation: focused client/Product/legacy Streamlit tests passed (24 tests);
+Ruff check and touched-file format checks passed; Pyrefly passed with
+`src/streamlit_app.py` excluded by repository configuration; client-only
+import smoke passed under `--only-group client` with no SQLAlchemy/service/
+voice imports; `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 AppTest blocker fix
+
+Status: Focused Strong Review blocker evidence is complete. Added real Product
+AppTests for create/reconciliation/no replay, 401 and logout cleanup, account
+change, independent sessions, timeout/network-safe messages, task selection,
+fresh detail reads, server status/timestamps, explicit refresh, unavailable
+resource behavior and descendant selection clearing. No production defect was
+exposed by the added evidence.
+
+Validation: Product, client and explicit-Legacy AppTests passed (33 tests);
+Ruff, format, Pyrefly, client-only import smoke and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 focused Strong Re-review
+
+Status: T111–T112 COMPLETE / APPROVED. Phase 9 Batch 2 COMPLETE / STRONG
+REVIEW APPROVED. The original executable Product UI evidence blockers are
+resolved; next executable work is T113–T116.
+
+Independent validation: real Product AppTests covered create/no replay,
+lost-response reconciliation, 401/logout/account-change cleanup, independent
+session isolation, bounded network errors, list/detail/refresh/status behavior,
+unavailable resources and descendant selection clearing. Product, client and
+explicit-Legacy tests passed (33); Ruff, format, Pyrefly, client-only import
+smoke and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 3 implementation (T113–T116)
+
+Status: T113–T116 implementation is complete and ready for Strong Review.
+
+What changed: extended the thin TaskPilot client with tenant-scoped run
+discovery/status/start, selected-run approvals and decisions, and bounded trace
+reads. The Product view now renders server-ordered run history, explicit
+start/retry with read reconciliation, selected-run approval details and
+owner/admin decisions, and an ordered sanitized trace timeline. Loading,
+empty/error handling, in-flight mutation protection, descendant cleanup,
+logout/account isolation and the truthful no-public-runtime-execution message
+are integrated without changing Legacy chat.
+
+Files changed: `src/client/taskpilot.py`, `src/taskpilot_ui.py`,
+`tests/client/test_taskpilot.py`,
+`tests/app/test_taskpilot_runs_approvals_trace.py`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, `process/tasks/INDEX.md`, and this log.
+
+Validation: focused run/approval/trace client/Product AppTests passed (19); the
+complete client, Product and explicit Legacy AppTests passed (57); the full
+repository suite passed (666 passed, 129 skipped); Ruff check/format, Pyrefly,
+Python compile, `uv lock --check`, and `git diff --check` passed. No live
+provider, migration, dependency, commit or push was used.
+
+Known limitations: Product start persists the backend queued/pending run only;
+the public UI does not execute or resume the internal runtime. Trace and
+approval data remain bounded server projections, and broader PostgreSQL/API
+regression is deferred to the required batch review evidence.
+
+Learner notes: read `src/client/taskpilot.py`, `src/taskpilot_ui.py`, the new
+run/approval/trace AppTest, and ADR-011 sections 5–7. The key concept is
+reconciling uncertain mutations from fresh server reads while keeping UI state
+non-authoritative. Exercise: trace a timeout during start and list every read
+performed before the UI allows another deliberate action. Do not worry about
+runtime workers, websocket polling, or TaskStep persistence yet.
+
+Suggested next task: independent Strong Review of T113–T116, then T117 Phase 9
+Final Audit.
+
+### 2026-09-26 — Phase 9 Batch 3 minimum blocker fix (T114/T116)
+
+Status: T114/T116 blocker fixes are complete and ready for focused batch
+re-review. T113 and T115 behavior was preserved.
+
+What changed: task creation now disables its form submit control while a create
+mutation is in flight and clears the guard safely after the request. Added real
+Product AppTests for duplicate-create protection, approval 401/403 handling,
+409 conflict reconciliation, timeout/unknown decision reconciliation by fresh
+reads, and bounded 403/422/5xx UX without backend detail leakage.
+
+Validation: focused blocker, Product, client and Legacy AppTests passed (64);
+Ruff check/format, Pyrefly, Python compile, `uv lock --check`, and
+`git diff --check` passed. No backend, migration, dependency, commit or push
+changes were made.
+
+Remaining limitation: approval decisions remain persisted human decisions and
+do not execute or resume the public runtime.
+
+### 2026-09-26 — Phase 9 Batch 3 focused Strong Re-review
+
+Status: T113–T116 are COMPLETE / APPROVED. Phase 9 Batch 3 is COMPLETE /
+STRONG REVIEW APPROVED. T117 Phase 9 Final Audit is the next executable work.
+
+Validation: focused Product/client/AppTest and Legacy regression passed (53);
+Ruff check/format, Python compile, `uv lock --check`, and `git diff --check`
+passed. The re-review confirmed the create mutation guard, approval 401/403/
+409/timeout reconciliation, and bounded 403/422/5xx messaging on the real
+Product render path.

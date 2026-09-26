@@ -64,7 +64,7 @@ def fetch_user_threads_cached(
     return client.get_user_threads(user_id=user_id, agent=agent_id, limit=limit)
 
 
-async def main() -> None:
+async def legacy_main() -> None:
     st.set_page_config(
         page_title=APP_TITLE,
         page_icon=APP_ICON,
@@ -639,6 +639,29 @@ async def handle_sub_agent_msgs(messages_agen, status, is_new):
                         popover.write(tc["args"])
                         # Store the popover reference using the tool call ID
                         nested_popovers[tc["id"]] = popover
+
+
+async def main() -> None:
+    """Route between isolated Product and legacy chat sessions."""
+    st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, menu_items={})
+    view = st.sidebar.radio("View", ["TaskPilot Product", "Legacy chat"], key="app_view")
+    if view == "Legacy chat" and st.session_state.get("app_previous_view") == "TaskPilot Product":
+        from taskpilot_ui import _clear_product_state
+
+        client = st.session_state.get("taskpilot_client")
+        if client is not None and client.token:
+            try:
+                client.logout()
+            except Exception:
+                pass
+        _clear_product_state()
+    st.session_state.app_previous_view = view
+    if view == "TaskPilot Product":
+        from taskpilot_ui import render_product
+
+        render_product()
+        return
+    await legacy_main()
 
 
 if __name__ == "__main__":

@@ -47,3 +47,7 @@ The UI should show:
 ## Known V1 limitations
 
 Keep this section factual and update after every major release.
+
+## Phase 9 planning status (2026-09-26)
+
+The Product UI is approved as a Streamlit-first, authenticated TaskPilot view. Planning found no public login/session/logout route and no HTTP run-discovery route, so T118 and T119 are explicit prerequisites. The UI will use server-owned identity and lifecycle state, show only selected-run approvals and sanitized trace evidence, and clearly label that starting a run creates persisted pending/queued state without running the internal runtime. No TaskStep, public execution endpoint, React rewrite, live updates, uploads or admin console is included. The next executable implementation batch is T118–T119.

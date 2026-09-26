@@ -198,7 +198,7 @@ Phase 6 planning narrows the former nine-item sketch to six reviewable cards;
 the cards below are authoritative. Phase 6 Planning is APPROVED, frozen,
 committed, and published. T080 is complete; T081 is Strong Review approved,
 committed, and pushed. T082 is complete, Strong Review approved, committed, and
-pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
 
 Numbering verified against pre-planning HEAD `a2cad167eac375bf0680c9bb0f0c6b67e5dd2020`:
 its backlog already assigned Phase 6 T080–T088, and its roadmap referenced that
@@ -318,28 +318,9 @@ Batches: Planning gate **T100**; Implementation Batch 1 **T101–T103**; Impleme
 
 DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`.
 
-## Phase 9 — UI
+## Phase 9 — UI (superseded planning sketch)
 
-### T110 — Existing UI gap assessment [B]
-No code rewrite; decide minimal needed screens.
-
-### T111 — Task create form [C]
-Single UI component/flow.
-
-### T112 — Task list/detail [C]
-Use existing API client; no state duplication.
-
-### T113 — Run/step timeline [C/B]
-Render backend state.
-
-### T114 — Approval queue/detail [C/B]
-Render proposed action/risk and invoke decision APIs.
-
-### T115 — Trace timeline [C]
-Render sanitized trace.
-
-### T116 — Error/loading states [C]
-UI-only hardening.
+The original T110–T116 sketch is retained as history only. The implementation-ready Phase 9 contract is the ADR-011 section appended below, including T118/T119 prerequisites and T117 Final Audit.
 
 ## Phase 10 — deployment/concurrency
 
@@ -391,3 +372,25 @@ No production code unless needed for demo fixtures.
 Run actual commands and record outputs.
 
 \r\n
+## Phase 9 — Product UI (planning APPROVED / frozen, ADR-011 accepted/frozen)
+
+Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the single planning gate. The current repository has protected Task/TaskRun/Approval/trace APIs, the accepted T118/T119 HTTP prerequisites, the approved T111/T112 Product client and task UI, and a legacy chat Streamlit UI. ADR-011 freezes Streamlit-first Product UI, T118 authentication/session/logout HTTP, T119 tenant-scoped run discovery, and truthful persisted-task/evidence inspection scope. Phase 9 does not execute the internal runtime from the UI.
+
+| Task | Purpose | Model | Review | Depends | Status |
+|---|---|---|---|---|---|
+| T110 | Product UI architecture/planning gate / ADR-011 | STRONG planning | Planning Strong Review | T107 | COMPLETE / APPROVED |
+| T118 | AuthService-backed login/session/logout HTTP API | STANDARD/STRONG | Strong Review | T110 | COMPLETE / APPROVED |
+| T119 | Tenant-scoped TaskRun list HTTP API | LOW_COST | Strong Review | T110 | COMPLETE / APPROVED |
+| T111 | Product login/session client and task create form | STANDARD | Strong Review | T118 | COMPLETE / APPROVED |
+| T112 | Task list/detail navigation | LOW_COST/STANDARD | Strong Review | T111 | COMPLETE / APPROVED |
+| T113 | TaskRun start/discovery/status view | STANDARD | Strong Review | T112, T119 | COMPLETE / APPROVED |
+| T114 | Selected-run approval list/detail/decision | STANDARD | Strong Review | T113 | COMPLETE / APPROVED |
+| T115 | Sanitized deterministic trace timeline | LOW_COST | Strong Review | T113 | COMPLETE / APPROVED |
+| T116 | Product error/loading and session-isolation integration | STANDARD | Strong Review | T114, T115 | COMPLETE / APPROVED |
+| T117 | Phase 9 Final Audit | STRONG read-only | Phase Final Audit | T110–T116, T118–T119 | NOT STARTED |
+
+DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116`; `T110–T119 (excluding unused gaps) → T117`.
+
+Batches: planning T110; backend T118–T119; client/task T111–T112; run/approval/trace/error T113–T116; independent Final Audit T117. React/Next.js, TaskStep persistence, public runtime execution, websocket/live updates, uploads, eval dashboard, admin/org management, worker UI, deployment, update/cancel UI, registration/SSO/refresh tokens and external effects remain deferred. See `process/ADR-011.md` and cards T110–T119.
+
+Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Next gate: T117 Phase 9 Final Audit.

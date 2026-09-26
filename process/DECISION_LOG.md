@@ -605,3 +605,7 @@ Accepted/frozen, T100 is COMPLETE / APPROVED, Phase 8 Planning is APPROVED /
 frozen, and implementation begins at T101. The corrected batches remain
 T101–T103, T104–T106, and independent Final Audit T107. No runtime, test,
 schema, migration, dependency, security, or DAG changes were made.
+
+## Phase 9 planning decision — ADR-011 (2026-09-26)
+
+Planning inspected the current Streamlit/AgentClient and protected Task, TaskRun, Approval and trace surfaces. The minimum truthful Product UI is Streamlit-first with a thin separate TaskPilot client. The repository lacks public login/session/logout HTTP and run-discovery HTTP, so T118 and T119 are explicit backend prerequisites. Caller-supplied user IDs and legacy AUTH_SECRET remain non-identity compatibility inputs. No TaskStep persistence or public runtime execution is introduced. ADR-011 is accepted/frozen after independent Planning Strong Review; T110 is COMPLETE / APPROVED. T117 is the Phase 9 Final Audit; no branch, code, tests, migrations, dependencies or CI were changed. Next executable batch: T118–T119.

@@ -335,3 +335,50 @@ async def test_task_run_retry_preserves_history_and_rejects_illegal_states(api_c
         assert task.status is TaskStatus.QUEUED
         assert [run.run_number for run in runs] == [1, 2]
         assert [run.status for run in runs] == [TaskRunStatus.FAILED, TaskRunStatus.PENDING]
+
+
+@pytest.mark.asyncio
+async def test_t119_lists_only_visible_runs_in_deterministic_order(api_context) -> None:
+    factory, tokens, ids = api_context
+    async with factory() as session:
+        async with session.begin():
+            session.add_all(
+                [
+                    TaskRun(
+                        task_id=ids["failed_task"],
+                        run_number=3,
+                        status=TaskRunStatus.CANCELLED,
+                    ),
+                    TaskRun(
+                        task_id=ids["failed_task"],
+                        run_number=2,
+                        status=TaskRunStatus.FAILED,
+                    ),
+                ]
+            )
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://taskpilot.test") as client:
+        listed = await client.get(
+            f"/api/v1/tasks/{ids['failed_task']}/runs", headers=_headers(tokens["member"])
+        )
+        assert listed.status_code == 200
+        assert [item["run_number"] for item in listed.json()] == [1, 2, 3]
+
+        empty = await client.get(
+            f"/api/v1/tasks/{ids['draft_task']}/runs", headers=_headers(tokens["member"])
+        )
+        assert empty.status_code == 200
+        assert empty.json() == []
+
+        foreign = await client.get(
+            f"/api/v1/tasks/{ids['foreign_task']}/runs", headers=_headers(tokens["member"])
+        )
+        missing = await client.get(
+            f"/api/v1/tasks/{uuid4()}/runs", headers=_headers(tokens["member"])
+        )
+        assert foreign.status_code == missing.status_code == 404
+        assert foreign.json() == missing.json() == {"detail": "Not Found"}
+
+        unauthenticated = await client.get(f"/api/v1/tasks/{ids['failed_task']}/runs")
+        assert unauthenticated.status_code == 401

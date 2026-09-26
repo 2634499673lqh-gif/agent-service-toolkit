@@ -150,6 +150,21 @@ async def start_task_run(
     return TaskRunResponse.model_validate(task_run)
 
 
+@task_router.get("/{task_id}/runs", response_model=list[TaskRunResponse])
+async def list_task_runs(
+    task_id: UUID,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> list[TaskRunResponse]:
+    task_runs = await TaskRunService(session).list_runs(principal, task_id)
+    if task_runs is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=RESOURCE_NOT_FOUND_DETAIL,
+        )
+    return [TaskRunResponse.model_validate(task_run) for task_run in task_runs]
+
+
 @task_router.get("/{task_id}/runs/{run_id}", response_model=TaskRunResponse)
 async def get_task_run(
     task_id: UUID,

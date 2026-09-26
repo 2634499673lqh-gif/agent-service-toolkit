@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import TaskRun
-from persistence.repositories import TaskRunRepository
+from persistence.repositories import TaskRepository, TaskRunRepository
 from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService
 
@@ -35,6 +35,16 @@ class TaskRunService:
         return await self.runs.get_for_task_in_principal_tenant(
             task_id, run_id, principal.organization_id
         )
+
+    async def list_runs(self, principal: CurrentPrincipal, task_id: UUID) -> list[TaskRun] | None:
+        """List runs only for a task visible in the principal's organization."""
+
+        task = await TaskRepository(self.session).get_in_principal_tenant(
+            task_id, principal.organization_id
+        )
+        if task is None:
+            return None
+        return await self.runs.list_for_task_in_organization(task_id, principal.organization_id)
 
 
 __all__ = ["TaskRunService"]
