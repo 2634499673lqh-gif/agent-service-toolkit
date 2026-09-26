@@ -4910,3 +4910,27 @@ Ruff check/format, Python compile, `uv lock --check`, and `git diff --check`
 passed. The re-review confirmed the create mutation guard, approval 401/403/
 409/timeout reconciliation, and bounded 403/422/5xx messaging on the real
 Product render path.
+
+### 2026-09-26 — Phase 10 planning (T120)
+
+Status: Phase 10 planning artifacts are complete and ready for Planning Strong Review. Added ADR-012 and T120–T128 cards. Repository evidence confirms PostgreSQL row-lock/constraint concurrency and discrete runtime transactions are already the correct authority; no worker, distributed limiter, or exactly-once provider guarantee is justified. Planned work focuses on pool/timeouts/disposal, bounded in-process backpressure, explicit liveness/readiness, Compose startup and health ordering, CI evidence tiers, and a deterministic two-user PostgreSQL smoke.
+
+Files changed: `process/ADR-012.md`, `process/tasks/T120.md`–`T128.md`, `ROADMAP.md`, `TASK_BACKLOG.md`, `process/tasks/INDEX.md`, and this log.
+
+Validation: read-only repository inspection, DAG/card/ADR reconciliation, and `git diff --check`. No production code, migration, dependency, or runtime behavior changed.
+
+Known limitations: this is planning only; PostgreSQL/Docker/CI evidence will be produced by later implementation tasks. Phase 10 does not claim generic production readiness.
+
+Learner notes: read `process/ADR-012.md`, `src/persistence/engine.py`, `src/service/task_lifecycle.py`, and `compose.yaml`. The key concept is separating database transaction authority from runtime work and deployment readiness. Exercise: draw the begin, execute, and terminal-commit phases and mark where a transaction must be closed. Do not worry about workers or distributed locks yet.
+
+Suggested next task: Planning Strong Review of T120/ADR-012.
+
+### 2026-09-26 — Phase 10 Planning Strong Review
+
+Status: APPROVED. Independent review verified the ADR-012 architecture, deferred worker boundary,
+backpressure scope, liveness/readiness semantics, Compose and CI evidence requirements, canonical
+DAG, task boundaries, and deterministic multi-user exit evidence. ADR-012 is Accepted/frozen and
+T120 is COMPLETE / APPROVED. The next executable batch is T121 + T123 + T124.
+
+Validation: repository/source inspection, contract and dependency cross-check, and `git diff --check`.
+No production code, tests, migrations, dependencies, or runtime behavior changed.

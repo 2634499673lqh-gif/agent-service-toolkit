@@ -189,21 +189,29 @@ DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + 
 
 The original sketch is retained as history only. The canonical implementation-ready plan is the ADR-011 section below.
 
-## Phase 10 — Concurrency & Deployment Hardening [STRONG DESIGN + STANDARD IMPLEMENTATION]
+## Phase 10 — Concurrency & Deployment Hardening [PLANNING APPROVED / FROZEN]
 
 Tasks:
-- T120 concurrency architecture review
-- T121 DB pool/transaction review
-- T122 background worker integration (only if approved)
-- T123 rate limiting/backpressure
-- T124 health/readiness
+- T120 concurrency/deployment architecture gate (ADR-012)
+- T121 PostgreSQL pool and transaction hardening
+- T122 background worker integration (DEFERRED)
+- T123 in-process rate limiting/backpressure
+- T124 liveness/readiness endpoints
 - T125 Docker Compose hardening
-- T126 CI pipeline
-- T127 concurrency smoke test
+- T126 CI evidence tiers
+- T127 deterministic multi-user concurrency smoke
+- T128 Phase 10 Final Audit (independent, read-only)
 
 Exit:
 - multiple simultaneous demo users do not corrupt state
-- startup/health/recovery documented
+- startup/health/recovery documented; see `process/ADR-012.md` and `process/tasks/T120.md`–`T128.md`
+
+Planning status: T120 is COMPLETE / APPROVED and ADR-012 is Accepted / frozen. The next executable
+batch is T121 + T123 + T124. Canonical DAG is
+`T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is deferred and not a dependency.
+Implementation batches are Batch 1 (T121, T123, T124) and Batch 2 (T125–T127), followed by the
+independent Final Audit T128. No worker, distributed limiter, Redis, Kubernetes, or exactly-once
+provider guarantee is planned.
 
 ## Phase 11 — Documentation, Demo, Final Audit [STRONG REVIEW + ECONOMY DOC WORK]
 
