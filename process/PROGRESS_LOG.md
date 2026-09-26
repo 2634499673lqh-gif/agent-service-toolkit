@@ -4774,3 +4774,70 @@ Status: T118–T119 COMPLETE / APPROVED after focused Strong Re-review. Phase 9 
 Added PostgreSQL HTTP evidence for organization selection, malformed credentials, duplicate logout, fresh role resolution, secret-safe logs and commit rollback. T119 behavior was unchanged. Formatted only touched Batch 1 files and reran the complete affected PostgreSQL regression.
 
 Validation: focused T118 evidence 4 passed; T119 evidence 1 passed; affected PostgreSQL authentication/security/Task/TaskRun regression 53 passed; focused unit regression 88 passed; Ruff, touched-file format checks, Pyrefly and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 implementation (T111–T112)
+
+Status: Product client and persisted TaskPilot task shell are implemented and
+ready for Strong Review. Added a per-Streamlit-session bearer client with fixed
+timeouts, safe error classes, login organization selection, logout cleanup,
+task create, fresh list reads and server re-read detail navigation. The legacy
+chat remains isolated behind an explicit view choice and does not use the
+Product client.
+
+Files changed: `src/client/taskpilot.py`, `src/client/__init__.py`,
+`src/taskpilot_ui.py`, `src/streamlit_app.py`.
+
+Validation: Python compile smoke, Ruff check, touched-file Ruff format check and
+`git diff --check` passed. Existing legacy AppTest expectations still assume
+the pre-ADR default chat view and therefore fail until their Phase 9 fixtures
+are updated; no live provider was used. No migration, dependency, commit or
+push was performed.
+
+Learner notes: read `src/client/taskpilot.py`, `src/taskpilot_ui.py`,
+`src/streamlit_app.py`, and `process/ADR-011.md`. The key concept is that the
+server owns identity and task state while Streamlit stores only transient
+session presentation state. Exercise: trace a 401 from the client request to
+the exact keys cleared in the Product session. Do not worry about run,
+approval, trace or runtime execution UI yet. Suggested next task: Batch 2
+Strong Review for T111–T112.
+
+### 2026-09-26 — Phase 9 Batch 2 acceptance completion
+
+Status: T111–T112 acceptance evidence complete; ready for Strong Review.
+Legacy AppTests now explicitly select the Legacy chat view, preserving Product
+as the default. Product AppTest coverage verifies default routing, login,
+organization selection, password-widget clearing, empty task rendering and
+safe session-local startup. Client tests cover allowed create fields, no POST
+retry, lost-response read recovery, safe 404/timeout behavior, auth clearing,
+and organization login.
+
+Validation: focused client/Product/legacy Streamlit tests passed (24 tests);
+Ruff check and touched-file format checks passed; Pyrefly passed with
+`src/streamlit_app.py` excluded by repository configuration; client-only
+import smoke passed under `--only-group client` with no SQLAlchemy/service/
+voice imports; `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 AppTest blocker fix
+
+Status: Focused Strong Review blocker evidence is complete. Added real Product
+AppTests for create/reconciliation/no replay, 401 and logout cleanup, account
+change, independent sessions, timeout/network-safe messages, task selection,
+fresh detail reads, server status/timestamps, explicit refresh, unavailable
+resource behavior and descendant selection clearing. No production defect was
+exposed by the added evidence.
+
+Validation: Product, client and explicit-Legacy AppTests passed (33 tests);
+Ruff, format, Pyrefly, client-only import smoke and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 2 focused Strong Re-review
+
+Status: T111–T112 COMPLETE / APPROVED. Phase 9 Batch 2 COMPLETE / STRONG
+REVIEW APPROVED. The original executable Product UI evidence blockers are
+resolved; next executable work is T113–T116.
+
+Independent validation: real Product AppTests covered create/no replay,
+lost-response reconciliation, 401/logout/account-change cleanup, independent
+session isolation, bounded network errors, list/detail/refresh/status behavior,
+unavailable resources and descendant selection clearing. Product, client and
+explicit-Legacy tests passed (33); Ruff, format, Pyrefly, client-only import
+smoke and `git diff --check` passed.

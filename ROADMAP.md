@@ -285,4 +285,4 @@ ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. Th
 Batches: T110; T118–T119; T111–T112; T113–T116; T117 Final Audit.
 DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116 → T117`.
 
-Next executable implementation batch: T111.
+Next executable implementation batch: T113–T116.
