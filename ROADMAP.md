@@ -121,7 +121,7 @@ Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
 Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
 
 T081 is COMPLETE and Strong Review approved, committed, and pushed. T082 is
-COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
+COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the
@@ -140,7 +140,7 @@ Exit:
 Planning authority: ADR-009. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`; T098 is the read-only Phase 7 Final Audit.
 
 T090–T097 implementation and review work is COMPLETE / APPROVED. T098 Phase 7
-Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
+Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
 
 Tasks:
 - T090 trace data model decision

@@ -1,6 +1,6 @@
 ### 2026-09-25 — T107 Phase 8 Final Audit
 
-Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
+Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
 
 Independent validation: Evaluation tests (34 passed), full repository suite (632 passed, 125 skipped), provider-free three-case smoke (exit 0), Ruff, Pyrefly, report serialization bounds, CI workflow inspection, and documentation consistency checks all passed. No implementation, test, migration, contract, architecture, or runtime changes were made.
 
