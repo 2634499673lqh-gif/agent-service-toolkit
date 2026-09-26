@@ -1,10 +1,12 @@
 """PostgreSQL-backed HTTP/security evidence for T036."""
 
 import asyncio
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import httpx
@@ -17,7 +19,7 @@ from sqlalchemy import make_url, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from persistence.engine import create_async_engine
-from persistence.models import Membership, Organization, Role, Task, TaskRun, User
+from persistence.models import AuthSession, Membership, Organization, Role, Task, TaskRun, User
 from persistence.passwords import hash_password
 from service.auth_dependency import get_session_factory
 from service.service import app
@@ -66,11 +68,16 @@ async def api_context() -> AsyncIterator[tuple[async_sessionmaker[AsyncSession],
         factory = async_sessionmaker(engine, expire_on_commit=False)
         organization = Organization(id=uuid4(), name="T036 own")
         foreign_organization = Organization(id=uuid4(), name="T036 foreign")
+        chooser_organization_a = Organization(id=uuid4(), name="T036 chooser A")
+        chooser_organization_b = Organization(id=uuid4(), name="T036 chooser B")
         owner = User(
             id=uuid4(), email="t036-owner@example.com", password_hash=hash_password(PASSWORD)
         )
         foreign_user = User(
             id=uuid4(), email="t036-foreign@example.com", password_hash=hash_password(PASSWORD)
+        )
+        chooser = User(
+            id=uuid4(), email="t036-chooser@example.com", password_hash=hash_password(PASSWORD)
         )
         owner_membership = Membership(
             user_id=owner.id,
@@ -82,11 +89,33 @@ async def api_context() -> AsyncIterator[tuple[async_sessionmaker[AsyncSession],
             organization_id=foreign_organization.id,
             role=Role.MEMBER,
         )
+        chooser_memberships = [
+            Membership(
+                user_id=chooser.id,
+                organization_id=chooser_organization_a.id,
+                role=Role.OWNER,
+            ),
+            Membership(
+                user_id=chooser.id,
+                organization_id=chooser_organization_b.id,
+                role=Role.ADMIN,
+            ),
+        ]
         async with factory() as session:
             async with session.begin():
-                session.add_all([organization, foreign_organization, owner, foreign_user])
+                session.add_all(
+                    [
+                        organization,
+                        foreign_organization,
+                        chooser_organization_a,
+                        chooser_organization_b,
+                        owner,
+                        foreign_user,
+                        chooser,
+                    ]
+                )
                 await session.flush()
-                session.add_all([owner_membership, foreign_membership])
+                session.add_all([owner_membership, foreign_membership, *chooser_memberships])
         async with factory() as session:
             async with session.begin():
                 owner_login = await AuthService(session).login("t036-owner@example.com", PASSWORD)
@@ -101,6 +130,7 @@ async def api_context() -> AsyncIterator[tuple[async_sessionmaker[AsyncSession],
                 {
                     "owner": owner_login.token,  # type: ignore[union-attr]
                     "foreign": foreign_login.token,  # type: ignore[union-attr]
+                    "chooser": "unused",
                 },
             )
         finally:
@@ -161,3 +191,139 @@ async def test_task_api_auth_create_list_get_and_tenant_isolation(api_context) -
         )
         assert task.status.value == "draft"
         assert runs == []
+
+
+@pytest.mark.asyncio
+async def test_t118_login_session_and_logout_are_real_http_paths(api_context) -> None:
+    factory, tokens = api_context
+    del factory, tokens
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://taskpilot.test") as client:
+        invalid = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "t036-owner@example.com", "password": "wrong-password"},
+        )
+        assert invalid.status_code == 401
+        assert invalid.json() == {"detail": "Not authenticated"}
+        assert invalid.headers["www-authenticate"] == "Bearer"
+        assert invalid.headers["cache-control"] == "no-store"
+
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "t036-owner@example.com", "password": PASSWORD},
+        )
+        assert login.status_code == 200
+        assert login.headers["cache-control"] == "no-store"
+        body = login.json()
+        assert body["token_type"] == "bearer"
+        assert body["access_token"]
+        token = body["access_token"]
+
+        current = await client.get(
+            "/api/v1/auth/session", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert current.status_code == 200
+        assert current.json()["role"] == "member"
+        assert current.headers["cache-control"] == "no-store"
+
+        logout = await client.post(
+            "/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert logout.status_code == 204
+        assert logout.headers["cache-control"] == "no-store"
+
+        revoked = await client.get(
+            "/api/v1/auth/session", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert revoked.status_code == 401
+        assert revoked.json() == {"detail": "Not authenticated"}
+
+
+@pytest.mark.asyncio
+async def test_t118_selection_malformed_duplicate_logout_and_freshness(
+    api_context, caplog: pytest.LogCaptureFixture
+) -> None:
+    factory, _ = api_context
+    transport = httpx.ASGITransport(app=app)
+    caplog.set_level(logging.WARNING)
+    async with httpx.AsyncClient(transport=transport, base_url="http://taskpilot.test") as client:
+        selection = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "t036-chooser@example.com", "password": PASSWORD},
+        )
+        assert selection.status_code == 409
+        selection_body = selection.json()
+        assert selection_body["code"] == "ORGANIZATION_SELECTION_REQUIRED"
+        organization_ids = selection_body["organization_ids"]
+        assert organization_ids == sorted(set(organization_ids))
+        assert "access_token" not in selection_body
+        assert "token" not in selection.text.casefold()
+
+        malformed = await client.post(
+            "/api/v1/auth/login",
+            json={"email": 123, "password": PASSWORD, "unexpected": "secret"},
+        )
+        assert malformed.status_code == 401
+        assert malformed.json() == {"detail": "Not authenticated"}
+
+        selected = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "t036-chooser@example.com",
+                "password": PASSWORD,
+                "organization_id": organization_ids[0],
+            },
+        )
+        assert selected.status_code == 200
+        token = selected.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        first = await client.get("/api/v1/auth/session", headers=headers)
+        assert first.status_code == 200
+
+        async with factory() as session:
+            membership = await session.get(Membership, first.json()["membership_id"])
+            assert membership is not None
+            membership.role = Role.MEMBER
+            await session.commit()
+
+        fresh = await client.get("/api/v1/auth/session", headers=headers)
+        assert fresh.status_code == 200
+        assert fresh.json()["role"] == "member"
+
+        logout = await client.post("/api/v1/auth/logout", headers=headers)
+        assert logout.status_code == 204
+        duplicate = await client.post("/api/v1/auth/logout", headers=headers)
+        assert duplicate.status_code == 401
+        assert duplicate.json() == {"detail": "Not authenticated"}
+
+    assert PASSWORD not in caplog.text
+    assert token not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_t118_login_commit_failure_rolls_back_real_postgres_session(api_context) -> None:
+    factory, _ = api_context
+    async with factory() as session:
+        user = await session.scalar(select(User).where(User.email == "t036-owner@example.com"))
+        assert user is not None
+        user_id = user.id
+        before = len(
+            list(
+                (
+                    await session.scalars(select(AuthSession).where(AuthSession.user_id == user_id))
+                ).all()
+            )
+        )
+        original_commit = session.commit
+        session.commit = AsyncMock(side_effect=RuntimeError("commit failed"))  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="commit failed"):
+            await AuthService(session).login_and_commit("t036-owner@example.com", PASSWORD)
+        session.commit = original_commit  # type: ignore[method-assign]
+        after = len(
+            list(
+                (
+                    await session.scalars(select(AuthSession).where(AuthSession.user_id == user_id))
+                ).all()
+            )
+        )
+        assert after == before

@@ -266,6 +266,46 @@ class AuthService:
         await self.revoke_session(auth_session)
         return True
 
+    async def login_and_commit(
+        self,
+        email: str,
+        password: str,
+        *,
+        organization_id: UUID | None = None,
+    ) -> AuthenticatedSession | OrganizationSelectionRequired:
+        """Run login and own the transaction boundary for HTTP callers."""
+
+        try:
+            result = await self.login(email, password, organization_id=organization_id)
+            if isinstance(result, OrganizationSelectionRequired):
+                await self.session.rollback()
+                return result
+            await self.session.commit()
+            return result
+        except Exception:
+            await self.session.rollback()
+            raise
+
+    async def revoke_principal_and_commit(self, principal: CurrentPrincipal) -> bool:
+        """Revoke exactly the session represented by a fresh principal."""
+
+        try:
+            auth_session = await self._auth_sessions.get(principal.session_id)
+            if (
+                auth_session is None
+                or auth_session.user_id != principal.user_id
+                or auth_session.membership_id != principal.membership_id
+                or not self.is_session_valid(auth_session)
+            ):
+                await self.session.rollback()
+                return False
+            await self.revoke_session(auth_session)
+            await self.session.commit()
+            return True
+        except Exception:
+            await self.session.rollback()
+            raise
+
     async def cleanup_expired_sessions(self) -> int:
         """Delete sessions whose 24-hour window already closed."""
 

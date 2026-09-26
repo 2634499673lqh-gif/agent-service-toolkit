@@ -4733,3 +4733,44 @@ Status: APPROVED / frozen. The stale branch baseline blocker was corrected: ADR-
 Validation: current branch/HEAD verification, stale-current-state search, planning diff inspection and `git diff --check` passed.
 
 Next executable implementation batch: T118–T119.
+
+### 2026-09-26 — Phase 9 Batch 1 implementation (T118–T119)
+
+Status: T118–T119 implementation and focused HTTP integration coverage are
+complete; PostgreSQL/API validation passed and the batch is ready for Strong
+Review.
+
+What changed: added the AuthService-backed login, session and logout HTTP
+routes with opaque bearer sessions, service-owned commit/rollback, generic
+credential failures and no-store responses; added the tenant-scoped ordered
+TaskRun list route. Existing identity, lifecycle and repository contracts are
+reused without schema or dependency changes.
+
+Files changed: `src/schema/auth_api.py`, `src/service/auth_api.py`,
+`src/service/auth_dependency.py`, `src/service/session.py`,
+`src/service/service.py`, `src/service/task_api.py`,
+`src/service/task_run_service.py`.
+
+Validation: T118/T119 HTTP PostgreSQL tests passed; affected PostgreSQL
+regression passed; focused unit regression, Ruff check, focused format check,
+Pyrefly and `git diff --check` passed. No unrelated legacy formatting was
+changed.
+
+Known limitations: Product UI, client support, runtime execution and all other
+Phase 9 tasks remain deferred. No migration, dependency, commit or push was
+performed.
+
+Learner notes: read `src/service/auth_api.py`, `src/service/session.py`,
+`src/service/auth_dependency.py`, and `src/service/task_api.py`. The key
+concept is keeping identity and tenant scope server-derived while HTTP routes
+only map typed service results. Exercise: trace a logout request and identify
+where the principal is resolved, where the session row is rechecked, and where
+the commit occurs. Do not worry about the Product UI or runtime worker yet.
+
+### 2026-09-26 — Phase 9 Batch 1 Strong Review blocker fix
+
+Status: T118–T119 COMPLETE / APPROVED after focused Strong Re-review. Phase 9 Batch 1 COMPLETE / STRONG REVIEW APPROVED; T111 is next.
+
+Added PostgreSQL HTTP evidence for organization selection, malformed credentials, duplicate logout, fresh role resolution, secret-safe logs and commit rollback. T119 behavior was unchanged. Formatted only touched Batch 1 files and reran the complete affected PostgreSQL regression.
+
+Validation: focused T118 evidence 4 passed; T119 evidence 1 passed; affected PostgreSQL authentication/security/Task/TaskRun regression 53 passed; focused unit regression 88 passed; Ruff, touched-file format checks, Pyrefly and `git diff --check` passed.

@@ -379,8 +379,8 @@ Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the s
 | Task | Purpose | Model | Review | Depends | Status |
 |---|---|---|---|---|---|
 | T110 | Product UI architecture/planning gate / ADR-011 | STRONG planning | Planning Strong Review | T107 | COMPLETE / APPROVED |
-| T118 | AuthService-backed login/session/logout HTTP API | STANDARD/STRONG | Strong Review | T110 | NOT STARTED |
-| T119 | Tenant-scoped TaskRun list HTTP API | LOW_COST | Strong Review | T110 | NOT STARTED |
+| T118 | AuthService-backed login/session/logout HTTP API | STANDARD/STRONG | Strong Review | T110 | COMPLETE / APPROVED |
+| T119 | Tenant-scoped TaskRun list HTTP API | LOW_COST | Strong Review | T110 | COMPLETE / APPROVED |
 | T111 | Product login/session client and task create form | STANDARD | Strong Review | T118 | NOT STARTED |
 | T112 | Task list/detail navigation | LOW_COST/STANDARD | Strong Review | T111 | NOT STARTED |
 | T113 | TaskRun start/discovery/status view | STANDARD | Strong Review | T112, T119 | NOT STARTED |
@@ -393,4 +393,4 @@ DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 �
 
 Batches: planning T110; backend T118–T119; client/task T111–T112; run/approval/trace/error T113–T116; independent Final Audit T117. React/Next.js, TaskStep persistence, public runtime execution, websocket/live updates, uploads, eval dashboard, admin/org management, worker UI, deployment, update/cancel UI, registration/SSO/refresh tokens and external effects remain deferred. See `process/ADR-011.md` and cards T110–T119.
 
-Next executable implementation batch: T118–T119.
+Next executable implementation batch: T111.

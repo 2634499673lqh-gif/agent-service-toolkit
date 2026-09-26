@@ -151,4 +151,4 @@ DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + 
 \r\n
 ## Phase 9 Task Cards — Product UI (ADR-011 accepted/frozen)
 
-See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APPROVED as the planning gate; T118/T119 are explicit backend prerequisites. T117 is the conflict-free Phase 9 Final Audit. Phase 9 Planning is APPROVED / frozen and implementation has not started. Next executable batch: T118–T119.
+See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APPROVED as the planning gate; T118/T119 are COMPLETE / APPROVED backend prerequisites. T117 is the conflict-free Phase 9 Final Audit. Phase 9 Planning is APPROVED / frozen. Next executable batch: T111.

@@ -65,7 +65,7 @@ def _authentication_error() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=AUTHENTICATION_ERROR_DETAIL,
-        headers=dict(WWW_AUTHENTICATE_HEADER),
+        headers={**WWW_AUTHENTICATE_HEADER, "Cache-Control": "no-store"},
     )
 
 
