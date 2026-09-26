@@ -135,3 +135,7 @@ and Phase 4 makes no exactly-once execution guarantee.
 ### Phase 5 implementation boundary
 
 The implemented Phase 5 package (T060–T064, following approved T051) adds one bounded Capability contract and an explicit in-process dispatch dependency to the existing Executor. The first capability remains deterministic, read-only, and side-effect-free. A typed, provenance-labeled ContextEnvelope is sanitized and size-bounded; authority, secrets, repositories, ORM objects, provider clients, and checkpoint objects remain outside AgentState and checkpoints. No new persistence or public runtime API has been introduced.
+
+## Phase 9 planning boundary (accepted/frozen ADR-011, 2026-09-26)
+
+The current Product UI plan keeps Streamlit and the legacy AgentClient/chat path separate. Product UI requires an explicit AuthService-backed login/session/logout HTTP surface (T118) and a tenant-scoped TaskRun discovery route (T119), because neither exists today. The thin Product client uses server-derived CurrentPrincipal and does not treat caller user IDs or `AUTH_SECRET` as TaskPilot identity. V1 covers persisted task management plus run, approval and sanitized trace inspection; starting a run does not execute the internal runtime and no TaskStep or public runtime endpoint is introduced. See `process/ADR-011.md` and T110–T119.

@@ -107,7 +107,7 @@ T084 is COMPLETE; Strong Review APPROVED; committed and pushed.
 | T084 | Resume and idempotent approved action | STRONG/STANDARD | Strong Review | T083 | COMPLETE / STRONG REVIEW APPROVED / COMMITTED / PUSHED |
 | T085 | Phase 6 Final Audit | STRONG read-only | Phase Final Audit | T080–T084 | FOCUSED FINAL AUDIT RE-REVIEW APPROVED; PHASE 6 COMPLETE |
 
-DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+DAG: `T080 → T081 → T082 → T083 → T084 → T085`. T086–T088 are retired as standalone cards; their required behavior is included in T083/T084. ADR-008 is Accepted and frozen after T080 Strong Review approval. T080–T084 are complete and approved, committed, and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE; Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 Numbering evidence: pre-planning HEAD `a2cad16` TASK_BACKLOG.md and ROADMAP.md
 already assign Phase 6 T080–T088. Keep T080 despite Phase 5 ending at T064.
@@ -127,7 +127,7 @@ T081–T084 follow ADR-008 B1–B3 for schema, canonical identity and mock claim
 | T097 | Tenant-safe trace query API | LOW_COST/STANDARD | Strong Review APPROVED | T091–T096 |
 | T098 | Phase 7 Final Audit | STRONG read-only | Phase Final Audit APPROVED | T097 |
 
-DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T092 owns persisted-payload redaction tests, T097 owns timeline-response redaction tests, and T098 audits their evidence; no T099 is created. Phase 7 is COMPLETE; Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`. T092 owns persisted-payload redaction tests, T097 owns timeline-response redaction tests, and T098 audits their evidence; no T099 is created. Phase 7 is COMPLETE; Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 ## Phase 8 Task Cards — Evaluation [COMPLETE / FINAL AUDIT APPROVED]
 
@@ -149,3 +149,6 @@ Implementation batches: Planning gate **T100**; Batch 1 **T101–T103**; Batch 2
 DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`. T107 is the next conflict-free audit ID after completed T098; no T099 is introduced. The baseline is `deterministic.fixture_baseline` using existing `DeterministicFixtureCapability`; no tabular/sum capability is planned.
 
 \r\n
+## Phase 9 Task Cards — Product UI (ADR-011 accepted/frozen)
+
+See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APPROVED as the planning gate; T118/T119 are explicit backend prerequisites. T117 is the conflict-free Phase 9 Final Audit. Phase 9 Planning is APPROVED / frozen and implementation has not started. Next executable batch: T118–T119.

@@ -1,6 +1,6 @@
 ### 2026-09-25 — T107 Phase 8 Final Audit
 
-Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 Independent validation: Evaluation tests (34 passed), full repository suite (632 passed, 125 skipped), provider-free three-case smoke (exit 0), Ruff, Pyrefly, report serialization bounds, CI workflow inspection, and documentation consistency checks all passed. No implementation, test, migration, contract, architecture, or runtime changes were made.
 
@@ -4714,3 +4714,22 @@ Validation: 34 Evaluation tests passed; deterministic executor regression
 passed (5); Ruff, format, Pyrefly, and git diff checks passed.
 
 \r\n
+### 2026-09-26 — Phase 9 Product UI planning
+
+Status: READY FOR PLANNING STRONG REVIEW. Added proposed ADR-011 and implementation-ready T110–T119 cards. Verified the current Streamlit/AgentClient, AuthService, Task/TaskRun, Approval and trace contracts. Documented the gap matrix, secure AuthService-backed HTTP requirement (T118), run discovery requirement (T119), Streamlit-first architecture, state/error boundaries, truthful no-runtime-execution behavior, canonical DAG, batches and deferred scope.
+
+Files changed: `process/ADR-011.md`, `process/tasks/T110.md`–`T119.md`, `TASK_BACKLOG.md`, `ROADMAP.md`, `process/tasks/INDEX.md`, `process/DECISION_LOG.md`, `process/PROGRESS_LOG.md`.
+
+Validation: repository inspection, numbering/contract cross-check, `git diff --check`. No production code, tests, migrations, dependencies or CI changed. Current planning baseline is branch `phase-9-product-ui` at HEAD `8f152a4`; Phase 8 is already merged and complete.
+
+Known limitation: this is planning only; T118/T119 and all Product UI behavior remain unimplemented pending planning approval.
+
+Learner notes: read `process/ADR-011.md`, `process/tasks/T110.md`, `src/service/session.py`, `src/service/task_api.py`, and `src/service/trace_service.py`. The key concept is separating UI presentation state from server-owned identity, lifecycle and approval authority. Exercise: trace a task from Streamlit action to protected route and list every server check. Do not worry about React, workers or live updates yet. Suggested next task: Planning Strong Review of T110/ADR-011.
+
+### 2026-09-26 — Phase 9 Planning Focused Strong Re-review
+
+Status: APPROVED / frozen. The stale branch baseline blocker was corrected: ADR-011 and the planning log record `phase-9-product-ui` at HEAD `8f152a4`, with Phase 8 merged and complete. The reviewed architecture, T110–T119 contracts, numbering, DAG, batches, authentication, TaskRun discovery, approval/trace scope and deferred scope are unchanged. No production code, tests, migrations, dependencies or CI changed.
+
+Validation: current branch/HEAD verification, stale-current-state search, planning diff inspection and `git diff --check` passed.
+
+Next executable implementation batch: T118–T119.

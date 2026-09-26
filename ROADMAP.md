@@ -121,7 +121,7 @@ Phase 6 Planning is APPROVED, frozen, committed, and published. T080 Strong
 Review is APPROVED; ADR-008 is Accepted and its contract is frozen.
 
 T081 is COMPLETE and Strong Review approved, committed, and pushed. T082 is
-COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+COMPLETE with Strong Review APPROVED, committed, and pushed to origin. T083 is COMPLETE; Strong Review APPROVED; committed and pushed. T084 is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker; after the fix, focused Final Audit re-review APPROVED T085. Phase 6 is COMPLETE. Phase 7 Planning is APPROVED; ADR-009 is accepted/frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 Pre-planning HEAD `a2cad16` already reserved Phase 6 T080–T088 in backlog and
 roadmap; the T064-to-T080 gap requires no renumbering. ADR-008 B1–B3 are the
@@ -140,7 +140,7 @@ Exit:
 Planning authority: ADR-009. DAG: `T090 → (T091, T092) → T093 → (T094, T095) → T096 → T097 → T098`; T098 is the read-only Phase 7 Final Audit.
 
 T090–T097 implementation and review work is COMPLETE / APPROVED. T098 Phase 7
-Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 is NOT STARTED / next phase.
+Final Audit is APPROVED. Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T100–T106 are COMPLETE / APPROVED; T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; implementation is NOT STARTED.
 
 Tasks:
 - T090 trace data model decision
@@ -185,31 +185,9 @@ Batches:
 
 DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`. No tabular/sum capability is planned; the baseline reuses the existing `DeterministicFixtureCapability`. No Evaluation database, UI, live LLM-as-judge, remote SaaS, or automatic production gating is in Phase 8.
 
-## Phase 9 — Product UI [STANDARD/ECONOMY]
+## Phase 9 — Product UI (superseded roadmap sketch)
 
-Tasks:
-- T110 existing UI gap assessment
-- T111 task create form
-- T112 task list/detail
-- T113 run/step timeline
-- T114 approval queue/detail
-- T115 trace timeline
-- T116 error/loading states
-
-First stabilize existing Streamlit UI.
-Optional second step: add Next.js/React when APIs are stable.
-
-Views:
-- login
-- task create
-- task list/detail
-- step/trace timeline
-- approval queue
-- knowledge/file upload
-- eval/observability summary
-
-Exit:
-- demo can be used without Postman
+The original sketch is retained as history only. The canonical implementation-ready plan is the ADR-011 section below.
 
 ## Phase 10 — Concurrency & Deployment Hardening [STRONG DESIGN + STANDARD IMPLEMENTATION]
 
@@ -300,3 +278,11 @@ retired T086–T088.
 | T118 | T136 | Final test/evaluation report |
 
 \r\n
+## Phase 9 — Product UI [PLANNING APPROVED / FROZEN]
+
+ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. The canonical plan adds explicit T118 AuthService-backed login/session/logout HTTP and T119 tenant-scoped TaskRun discovery before the Streamlit Product UI. The UI remains Streamlit-first and exposes persisted task/run/approval/trace evidence; it does not execute the internal runtime. Canonical cards, DAG and batches are in `process/tasks/T110.md`–`T119.md` and `process/ADR-011.md`.
+
+Batches: T110; T118–T119; T111–T112; T113–T116; T117 Final Audit.
+DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116 → T117`.
+
+Next executable implementation batch: T118–T119.
