@@ -69,17 +69,24 @@ class TaskPilotClient:
         if response.status_code >= 400 and not (
             method == "POST" and path == "/api/v1/auth/login" and response.status_code == 409
         ):
-            if response.status_code == 404:
-                message = "The requested resource was not found."
-            elif response.status_code == 409:
-                message = "This request could not be completed because the resource changed."
-            elif response.status_code == 422:
-                message = "The submitted values are invalid."
-            elif response.status_code >= 500:
+            messages = {
+                403: "You do not have permission to perform this action.",
+                404: "The requested resource was not found.",
+                409: "This request could not be completed because the resource changed.",
+                422: "The submitted values are invalid.",
+            }
+            if response.status_code >= 500:
                 message = "The TaskPilot service is unavailable."
+                kind = "service_unavailable"
             else:
-                message = "The TaskPilot request was rejected."
-            raise TaskPilotClientError(message, status_code=response.status_code)
+                message = messages.get(response.status_code, "The TaskPilot request was rejected.")
+                kind = {
+                    403: "forbidden",
+                    404: "not_found",
+                    409: "conflict",
+                    422: "validation",
+                }.get(response.status_code, "error")
+            raise TaskPilotClientError(message, kind=kind, status_code=response.status_code)
         return response
 
     @staticmethod
@@ -87,9 +94,13 @@ class TaskPilotClient:
         try:
             value = response.json()
         except ValueError:
-            raise TaskPilotClientError("The service returned an invalid response.") from None
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            ) from None
         if not isinstance(value, (dict, list)):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         return value
 
     def login(self, email: str, password: str, organization_id: UUID | None = None) -> LoginResult:
@@ -103,16 +114,22 @@ class TaskPilotClient:
             try:
                 return LoginResult(organization_ids=tuple(UUID(str(item)) for item in ids))
             except (TypeError, ValueError):
-                raise TaskPilotClientError("The service returned an invalid response.") from None
+                raise TaskPilotClientError(
+                    "The service returned an invalid response.", kind="malformed_response"
+                ) from None
         if not isinstance(data, dict) or not isinstance(data.get("access_token"), str):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         self.token = data["access_token"]
         return LoginResult(token=self.token)
 
     def session(self) -> dict[str, Any]:
         data = self._json(self._request("GET", "/api/v1/auth/session"))
         if not isinstance(data, dict):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         return data
 
     def logout(self) -> None:
@@ -124,13 +141,17 @@ class TaskPilotClient:
     def list_tasks(self) -> list[dict[str, Any]]:
         data = self._json(self._request("GET", "/api/v1/tasks"))
         if not isinstance(data, list):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         return [item for item in data if isinstance(item, dict)]
 
     def get_task(self, task_id: str | UUID) -> dict[str, Any]:
         data = self._json(self._request("GET", f"/api/v1/tasks/{task_id}"))
         if not isinstance(data, dict):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         return data
 
     def create_task(self, title: str, description: str | None = None) -> dict[str, Any]:
@@ -139,8 +160,109 @@ class TaskPilotClient:
             payload["description"] = description
         data = self._json(self._request("POST", "/api/v1/tasks", json=payload))
         if not isinstance(data, dict):
-            raise TaskPilotClientError("The service returned an invalid response.")
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
         return data
+
+    @staticmethod
+    def _resource_path(task_id: str | UUID, suffix: str = "") -> str:
+        return f"/api/v1/tasks/{task_id}{suffix}"
+
+    def list_task_runs(self, task_id: str | UUID) -> list[dict[str, Any]]:
+        """Read the server-ordered run history for one visible task."""
+
+        data = self._json(self._request("GET", self._resource_path(task_id, "/runs")))
+        if not isinstance(data, list):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return [item for item in data if isinstance(item, dict)]
+
+    def get_task_run(self, task_id: str | UUID, run_id: str | UUID) -> dict[str, Any]:
+        data = self._json(self._request("GET", self._resource_path(task_id, f"/runs/{run_id}")))
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def start_task_run(self, task_id: str | UUID) -> dict[str, Any]:
+        """Deliberately create one persisted run; callers must reconcile reads."""
+
+        data = self._json(self._request("POST", self._resource_path(task_id, "/runs")))
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def list_approvals(self, task_id: str | UUID, run_id: str | UUID) -> list[dict[str, Any]]:
+        data = self._json(
+            self._request("GET", self._resource_path(task_id, f"/runs/{run_id}/approvals"))
+        )
+        if not isinstance(data, list):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return [item for item in data if isinstance(item, dict)]
+
+    def get_approval(
+        self, task_id: str | UUID, run_id: str | UUID, approval_id: str | UUID
+    ) -> dict[str, Any]:
+        data = self._json(
+            self._request(
+                "GET",
+                self._resource_path(task_id, f"/runs/{run_id}/approvals/{approval_id}"),
+            )
+        )
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def decide_approval(
+        self,
+        task_id: str | UUID,
+        run_id: str | UUID,
+        approval_id: str | UUID,
+        decision: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        if decision not in {"approve", "reject"}:
+            raise ValueError("decision must be approve or reject")
+        payload = {"reason": reason} if reason else {}
+        data = self._json(
+            self._request(
+                "POST",
+                self._resource_path(task_id, f"/runs/{run_id}/approvals/{approval_id}/{decision}"),
+                json=payload,
+            )
+        )
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def get_trace(
+        self, task_id: str | UUID, run_id: str | UUID, *, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        if isinstance(limit, bool) or not 1 <= limit <= 500:
+            raise ValueError("trace limit must be between 1 and 500")
+        data = self._json(
+            self._request(
+                "GET",
+                self._resource_path(task_id, f"/runs/{run_id}/trace"),
+                params={"limit": limit},
+            )
+        )
+        if not isinstance(data, list):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return [item for item in data if isinstance(item, dict)]
 
 
 __all__ = ["LoginResult", "TaskPilotClient", "TaskPilotClientError"]

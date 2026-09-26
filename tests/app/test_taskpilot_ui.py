@@ -338,6 +338,8 @@ def test_product_list_detail_status_refresh_and_selection_clear():
         if url.endswith("/tasks"):
             list_reads += 1
             return _response(method, url, tasks)
+        if url.endswith("/runs"):
+            return _response(method, url, [])
         detail_reads += 1
         return _response(method, url, next(task for task in tasks if url.endswith(task["id"])))
 

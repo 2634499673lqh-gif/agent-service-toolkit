@@ -4841,3 +4841,72 @@ session isolation, bounded network errors, list/detail/refresh/status behavior,
 unavailable resources and descendant selection clearing. Product, client and
 explicit-Legacy tests passed (33); Ruff, format, Pyrefly, client-only import
 smoke and `git diff --check` passed.
+
+### 2026-09-26 — Phase 9 Batch 3 implementation (T113–T116)
+
+Status: T113–T116 implementation is complete and ready for Strong Review.
+
+What changed: extended the thin TaskPilot client with tenant-scoped run
+discovery/status/start, selected-run approvals and decisions, and bounded trace
+reads. The Product view now renders server-ordered run history, explicit
+start/retry with read reconciliation, selected-run approval details and
+owner/admin decisions, and an ordered sanitized trace timeline. Loading,
+empty/error handling, in-flight mutation protection, descendant cleanup,
+logout/account isolation and the truthful no-public-runtime-execution message
+are integrated without changing Legacy chat.
+
+Files changed: `src/client/taskpilot.py`, `src/taskpilot_ui.py`,
+`tests/client/test_taskpilot.py`,
+`tests/app/test_taskpilot_runs_approvals_trace.py`, `TASK_BACKLOG.md`,
+`ROADMAP.md`, `process/tasks/INDEX.md`, and this log.
+
+Validation: focused run/approval/trace client/Product AppTests passed (19); the
+complete client, Product and explicit Legacy AppTests passed (57); the full
+repository suite passed (666 passed, 129 skipped); Ruff check/format, Pyrefly,
+Python compile, `uv lock --check`, and `git diff --check` passed. No live
+provider, migration, dependency, commit or push was used.
+
+Known limitations: Product start persists the backend queued/pending run only;
+the public UI does not execute or resume the internal runtime. Trace and
+approval data remain bounded server projections, and broader PostgreSQL/API
+regression is deferred to the required batch review evidence.
+
+Learner notes: read `src/client/taskpilot.py`, `src/taskpilot_ui.py`, the new
+run/approval/trace AppTest, and ADR-011 sections 5–7. The key concept is
+reconciling uncertain mutations from fresh server reads while keeping UI state
+non-authoritative. Exercise: trace a timeout during start and list every read
+performed before the UI allows another deliberate action. Do not worry about
+runtime workers, websocket polling, or TaskStep persistence yet.
+
+Suggested next task: independent Strong Review of T113–T116, then T117 Phase 9
+Final Audit.
+
+### 2026-09-26 — Phase 9 Batch 3 minimum blocker fix (T114/T116)
+
+Status: T114/T116 blocker fixes are complete and ready for focused batch
+re-review. T113 and T115 behavior was preserved.
+
+What changed: task creation now disables its form submit control while a create
+mutation is in flight and clears the guard safely after the request. Added real
+Product AppTests for duplicate-create protection, approval 401/403 handling,
+409 conflict reconciliation, timeout/unknown decision reconciliation by fresh
+reads, and bounded 403/422/5xx UX without backend detail leakage.
+
+Validation: focused blocker, Product, client and Legacy AppTests passed (64);
+Ruff check/format, Pyrefly, Python compile, `uv lock --check`, and
+`git diff --check` passed. No backend, migration, dependency, commit or push
+changes were made.
+
+Remaining limitation: approval decisions remain persisted human decisions and
+do not execute or resume the public runtime.
+
+### 2026-09-26 — Phase 9 Batch 3 focused Strong Re-review
+
+Status: T113–T116 are COMPLETE / APPROVED. Phase 9 Batch 3 is COMPLETE /
+STRONG REVIEW APPROVED. T117 Phase 9 Final Audit is the next executable work.
+
+Validation: focused Product/client/AppTest and Legacy regression passed (53);
+Ruff check/format, Python compile, `uv lock --check`, and `git diff --check`
+passed. The re-review confirmed the create mutation guard, approval 401/403/
+409/timeout reconciliation, and bounded 403/422/5xx messaging on the real
+Product render path.

@@ -383,14 +383,14 @@ Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the s
 | T119 | Tenant-scoped TaskRun list HTTP API | LOW_COST | Strong Review | T110 | COMPLETE / APPROVED |
 | T111 | Product login/session client and task create form | STANDARD | Strong Review | T118 | COMPLETE / APPROVED |
 | T112 | Task list/detail navigation | LOW_COST/STANDARD | Strong Review | T111 | COMPLETE / APPROVED |
-| T113 | TaskRun start/discovery/status view | STANDARD | Strong Review | T112, T119 | NOT STARTED |
-| T114 | Selected-run approval list/detail/decision | STANDARD | Strong Review | T113 | NOT STARTED |
-| T115 | Sanitized deterministic trace timeline | LOW_COST | Strong Review | T113 | NOT STARTED |
-| T116 | Product error/loading and session-isolation integration | STANDARD | Strong Review | T114, T115 | NOT STARTED |
+| T113 | TaskRun start/discovery/status view | STANDARD | Strong Review | T112, T119 | COMPLETE / APPROVED |
+| T114 | Selected-run approval list/detail/decision | STANDARD | Strong Review | T113 | COMPLETE / APPROVED |
+| T115 | Sanitized deterministic trace timeline | LOW_COST | Strong Review | T113 | COMPLETE / APPROVED |
+| T116 | Product error/loading and session-isolation integration | STANDARD | Strong Review | T114, T115 | COMPLETE / APPROVED |
 | T117 | Phase 9 Final Audit | STRONG read-only | Phase Final Audit | T110–T116, T118–T119 | NOT STARTED |
 
 DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116`; `T110–T119 (excluding unused gaps) → T117`.
 
 Batches: planning T110; backend T118–T119; client/task T111–T112; run/approval/trace/error T113–T116; independent Final Audit T117. React/Next.js, TaskStep persistence, public runtime execution, websocket/live updates, uploads, eval dashboard, admin/org management, worker UI, deployment, update/cancel UI, registration/SSO/refresh tokens and external effects remain deferred. See `process/ADR-011.md` and cards T110–T119.
 
-Next executable implementation batch: T113–T116.
+Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Next gate: T117 Phase 9 Final Audit.

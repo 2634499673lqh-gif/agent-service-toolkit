@@ -285,4 +285,5 @@ ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. Th
 Batches: T110; T118–T119; T111–T112; T113–T116; T117 Final Audit.
 DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116 → T117`.
 
-Next executable implementation batch: T113–T116.
+T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW
+APPROVED. T117 Phase 9 Final Audit is the next executable work.
