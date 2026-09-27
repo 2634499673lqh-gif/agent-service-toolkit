@@ -324,29 +324,24 @@ The original T110–T116 sketch is retained as history only. The implementation-
 
 ## Phase 10 — deployment/concurrency
 
-### T120 — Concurrency architecture review [A]
-Measure/identify need for background worker.
+Phase 10 planning is APPROVED / frozen. ADR-012 is Accepted / frozen and T120–T128 are COMPLETE /
+APPROVED except deferred T122. Canonical DAG:
+`T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is explicitly DEFERRED. See
+`process/tasks/T120.md`–`T128.md`.
 
-### T121 — DB pool/transaction review [A/B]
-Fix only evidenced issues.
+| Task | Purpose | Model | Review | Depends | Status |
+|---|---|---|---|---|---|
+| T120 | Concurrency/deployment architecture gate / ADR-012 | STRONG planning | Planning Strong Review | Phase 9 | COMPLETE / APPROVED |
+| T121 | PostgreSQL pool and transaction hardening | STANDARD/STRONG | Strong Review | T120 | COMPLETE / APPROVED |
+| T122 | Background worker integration | — | — | — | DEFERRED |
+| T123 | In-process rate limiting/backpressure | STANDARD | Strong Review | T120, T121 | COMPLETE / APPROVED |
+| T124 | Liveness/readiness endpoints | STANDARD | Strong Review | T120, T121 | COMPLETE / APPROVED |
+| T125 | Docker Compose hardening | STANDARD | Strong Review | T123, T124 | COMPLETE / APPROVED |
+| T126 | CI evidence tiers | STANDARD | Strong Review | T125 | COMPLETE / APPROVED |
+| T127 | Deterministic multi-user concurrency smoke | STANDARD | Strong Review | T121, T123–T126 | COMPLETE / APPROVED |
+| T128 | Phase 10 Final Audit | STRONG read-only | Phase Final Audit | T120–T127 except T122 | COMPLETE / APPROVED |
 
-### T122 — Background worker integration [B, only if approved]
-One queue path, not a new distributed platform.
-
-### T123 — Rate limiting/backpressure [B]
-Protect API/LLM execution.
-
-### T124 — Health/readiness [C]
-Small endpoints/checks.
-
-### T125 — Docker Compose hardening [B]
-Reproducible services/volumes/env.
-
-### T126 — CI pipeline [B/C]
-Install, lint/type/test/smoke.
-
-### T127 — Concurrency smoke test [B]
-Simulate multiple users/runs; verify no cross-state corruption.
+Phase 10 is COMPLETE / FINAL AUDIT APPROVED. T122 remains DEFERRED.
 
 ## Phase 11 — finalization
 
@@ -387,10 +382,10 @@ Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the s
 | T114 | Selected-run approval list/detail/decision | STANDARD | Strong Review | T113 | COMPLETE / APPROVED |
 | T115 | Sanitized deterministic trace timeline | LOW_COST | Strong Review | T113 | COMPLETE / APPROVED |
 | T116 | Product error/loading and session-isolation integration | STANDARD | Strong Review | T114, T115 | COMPLETE / APPROVED |
-| T117 | Phase 9 Final Audit | STRONG read-only | Phase Final Audit | T110–T116, T118–T119 | NOT STARTED |
+| T117 | Phase 9 Final Audit | STRONG read-only | Phase Final Audit | T110–T116, T118–T119 | COMPLETE / APPROVED |
 
 DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116`; `T110–T119 (excluding unused gaps) → T117`.
 
 Batches: planning T110; backend T118–T119; client/task T111–T112; run/approval/trace/error T113–T116; independent Final Audit T117. React/Next.js, TaskStep persistence, public runtime execution, websocket/live updates, uploads, eval dashboard, admin/org management, worker UI, deployment, update/cancel UI, registration/SSO/refresh tokens and external effects remain deferred. See `process/ADR-011.md` and cards T110–T119.
 
-Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Next gate: T117 Phase 9 Final Audit.
+Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Phase 9 Final Audit T117 is complete; Phase 10 planning is the next gate.

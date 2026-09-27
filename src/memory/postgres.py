@@ -5,6 +5,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres import AsyncPostgresStore
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
+from sqlalchemy import URL, make_url
 
 from core.settings import settings
 
@@ -38,15 +39,30 @@ def validate_postgres_config() -> None:
 
 
 def get_postgres_connection_string() -> str:
-    """Build and return the PostgreSQL connection string from settings."""
+    """Build the canonical SQLAlchemy PostgreSQL URL from settings."""
     if settings.POSTGRES_PASSWORD is None:
         raise ValueError("POSTGRES_PASSWORD is not set")
+    return URL.create(
+        drivername="postgresql+psycopg",
+        username=settings.POSTGRES_USER,
+        password=settings.POSTGRES_PASSWORD.get_secret_value(),
+        host=settings.POSTGRES_HOST,
+        port=settings.POSTGRES_PORT,
+        database=settings.POSTGRES_DB,
+    ).render_as_string(hide_password=False)
+
+
+def to_psycopg_pool_url(database_url: str) -> str:
+    """Adapt a SQLAlchemy PostgreSQL URL to the libpq syntax required by psycopg_pool."""
     return (
-        f"postgresql://{settings.POSTGRES_USER}:"
-        f"{settings.POSTGRES_PASSWORD.get_secret_value()}@"
-        f"{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/"
-        f"{settings.POSTGRES_DB}"
+        make_url(database_url)
+        .set(drivername="postgresql")
+        .render_as_string(hide_password=False)
     )
+
+
+def _pool_connection_string() -> str:
+    return to_psycopg_pool_url(get_postgres_connection_string())
 
 
 @asynccontextmanager
@@ -56,9 +72,11 @@ async def get_postgres_saver():
     application_name = settings.POSTGRES_APPLICATION_NAME + "-" + "saver"
 
     async with AsyncConnectionPool(
-        get_postgres_connection_string(),
+        _pool_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
+        timeout=settings.POSTGRES_POOL_CHECKOUT_TIMEOUT,
+        max_lifetime=float(settings.POSTGRES_POOL_RECYCLE_SECONDS),
         # Langgraph requires autocommmit=true and row_factory to be set to dict_row.
         # Application_name is passed so you can identify the connection in your Postgres database connection manager.
         kwargs={"autocommit": True, "row_factory": dict_row, "application_name": application_name},
@@ -85,9 +103,11 @@ async def get_postgres_store():
     application_name = settings.POSTGRES_APPLICATION_NAME + "-" + "store"
 
     async with AsyncConnectionPool(
-        get_postgres_connection_string(),
+        _pool_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
+        timeout=settings.POSTGRES_POOL_CHECKOUT_TIMEOUT,
+        max_lifetime=float(settings.POSTGRES_POOL_RECYCLE_SECONDS),
         # Langgraph requires autocommmit=true and row_factory to be set to dict_row
         # Application_name is passed so you can identify the connection in your Postgres database connection manager.
         kwargs={"autocommit": True, "row_factory": dict_row, "application_name": application_name},

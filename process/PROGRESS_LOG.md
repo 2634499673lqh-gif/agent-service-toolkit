@@ -4910,3 +4910,171 @@ Ruff check/format, Python compile, `uv lock --check`, and `git diff --check`
 passed. The re-review confirmed the create mutation guard, approval 401/403/
 409/timeout reconciliation, and bounded 403/422/5xx messaging on the real
 Product render path.
+
+### 2026-09-26 — Phase 10 planning (T120)
+
+Status: Phase 10 planning artifacts are complete and ready for Planning Strong Review. Added ADR-012 and T120–T128 cards. Repository evidence confirms PostgreSQL row-lock/constraint concurrency and discrete runtime transactions are already the correct authority; no worker, distributed limiter, or exactly-once provider guarantee is justified. Planned work focuses on pool/timeouts/disposal, bounded in-process backpressure, explicit liveness/readiness, Compose startup and health ordering, CI evidence tiers, and a deterministic two-user PostgreSQL smoke.
+
+Files changed: `process/ADR-012.md`, `process/tasks/T120.md`–`T128.md`, `ROADMAP.md`, `TASK_BACKLOG.md`, `process/tasks/INDEX.md`, and this log.
+
+Validation: read-only repository inspection, DAG/card/ADR reconciliation, and `git diff --check`. No production code, migration, dependency, or runtime behavior changed.
+
+Known limitations: this is planning only; PostgreSQL/Docker/CI evidence will be produced by later implementation tasks. Phase 10 does not claim generic production readiness.
+
+Learner notes: read `process/ADR-012.md`, `src/persistence/engine.py`, `src/service/task_lifecycle.py`, and `compose.yaml`. The key concept is separating database transaction authority from runtime work and deployment readiness. Exercise: draw the begin, execute, and terminal-commit phases and mark where a transaction must be closed. Do not worry about workers or distributed locks yet.
+
+Suggested next task: Planning Strong Review of T120/ADR-012.
+
+### 2026-09-26 — Phase 10 Planning Strong Review
+
+Status: APPROVED. Independent review verified the ADR-012 architecture, deferred worker boundary,
+backpressure scope, liveness/readiness semantics, Compose and CI evidence requirements, canonical
+DAG, task boundaries, and deterministic multi-user exit evidence. ADR-012 is Accepted/frozen and
+T120 is COMPLETE / APPROVED. The next executable batch is T121 + T123 + T124.
+
+Validation: repository/source inspection, contract and dependency cross-check, and `git diff --check`.
+No production code, tests, migrations, dependencies, or runtime behavior changed.
+### 2026-09-26 — Phase 10 Batch 1 implementation (T121, T123, T124)
+
+Status: Batch implementation complete and ready for Strong Review. T121 now uses explicit
+PostgreSQL pool sizing, bounded checkout timeout, recycle, application names, and process-owned
+engine disposal. Runtime terminal transitions carry a fresh expected TaskRun identity check.
+T123 adds a per-process non-waiting runtime capacity bound for invoke and stream; slots release
+on success, failure, and client cancellation. T124 adds unauthenticated dependency-free
+`/health/live`, bounded PostgreSQL `SELECT 1` `/health/ready`, and keeps `/health` as liveness.
+
+Files changed: `src/core/settings.py`, `src/persistence/engine.py`, `src/memory/postgres.py`,
+`src/service/auth_dependency.py`, `src/service/runtime_capacity.py`, `src/service/service.py`,
+`src/service/task_lifecycle.py`, `src/service/task_runtime.py`.
+
+Validation: compileall; focused settings, lifecycle, runtime, service, and logging tests (76
+passed), plus six real PostgreSQL lifecycle/concurrency tests against a disposable database (6
+passed). The first PostgreSQL run exposed that a one-connection default could not support two
+independent sessions; the conservative default maximum was corrected to four while retaining
+bounded checkout behavior. No worker, Redis, distributed lock, or durable queue was added.
+
+Learner notes: read `src/persistence/engine.py`, `src/service/runtime_capacity.py`,
+`src/service/service.py`, and `src/service/task_lifecycle.py`. The key concept is keeping database
+transactions short while independently bounding expensive in-process work and dependency health.
+Exercise: simulate two concurrent runtime requests with a limit of one and observe the second 429,
+then verify the slot is reusable after cancellation. Do not worry about distributed throttling or
+workers yet.
+
+Suggested next task: Strong Review of Phase 10 Batch 1.
+
+### 2026-09-26 — Phase 10 Batch 1 minimum blocker fix (T121, T123, T124)
+
+Status: blocker fixes complete and ready for focused batch re-review. SQLAlchemy pool checkout
+timeouts now become bounded HTTP 503 responses with `Retry-After`; engine and session-factory
+caches are cleared together during shutdown so the next lifecycle creates a fresh engine/factory.
+Real PostgreSQL evidence covers a one-connection timeout and post-disposal recreation. Endpoint
+evidence covers invoke saturation, fixed 429 responses, failure and stream-cancellation release,
+and health/auth/CRUD requests remaining outside the runtime semaphore. Readiness now checks the
+business PostgreSQL URL when configured and probes both LangGraph PostgreSQL pools when
+`DATABASE_TYPE=postgres`; SQLite/unconfigured persistence skips those probes. Liveness remains
+dependency-free.
+
+Compose `/info` health-check wiring remains owned by T125; this fix only proves the unauthenticated
+readiness endpoint that T125 will wire into Compose. No Compose files were changed.
+
+Files changed: `src/persistence/engine.py`, `src/service/auth_dependency.py`,
+`src/service/service.py`, `tests/service/test_phase10_batch1_blocker.py`,
+`tests/service/test_phase10_batch1_postgres.py`, and this log. Existing Batch 1 files and tests
+remain part of the reviewed working tree; no Compose file was changed.
+
+Validation: affected and blocker regression **99 passed**; real PostgreSQL pool timeout/disposal,
+business readiness failure/recovery, configured LangGraph pool readiness, and existing lifecycle
+concurrency evidence passed; Ruff and diff checks passed.
+
+Learner notes: read `src/persistence/engine.py`, `src/service/service.py`,
+`src/service/runtime_capacity.py`, and `tests/service/test_phase10_batch1_blocker.py`. The key
+concept is keeping bounded failure responses and readiness probes at the application boundary while
+preserving independent capacity domains. Exercise: hold one database connection open, confirm a
+second checkout returns the mapped 503, then release it and confirm recovery. Do not worry about
+Compose changes until T125.
+
+### 2026-09-27 — Phase 10 Batch 1 final evidence fix
+
+Status: T121, T123, and T124 are COMPLETE / APPROVED. Phase 10 Batch 1 is COMPLETE / STRONG
+REVIEW APPROVED. T125 + T126 + T127 are the next executable batch; T122 remains deferred. The real
+PostgreSQL readiness test now derives its failure endpoint with SQLAlchemy URL parsing, verifies
+the HTTP 503 safe response, then restores the configured database URL and verifies HTTP 200
+recovery. The test uses same-loop ASGI transport so the real async engine is exercised without
+cross-loop false failures. Ruff formatting was applied only to touched Batch 1 files that failed
+the format check. Pyrefly, Ruff, and diff checks pass; focused PostgreSQL evidence completed with
+zero relevant skips.
+
+Learner notes: read `tests/service/test_phase10_batch1_postgres.py` and compare the configured,
+unavailable, and recovered URLs. The key concept is testing failure and recovery through the same
+HTTP boundary used by deployment health checks. Exercise: change only the parsed port and observe
+the bounded 503 before restoring the original URL. Do not modify Compose ownership in T124.
+
+### 2026-09-27 — Phase 10 Batch 2 implementation (T125, T126, T127)
+
+Status: Batch implementation complete and ready for Strong Review. Compose now has a disposable
+PostgreSQL migration service, readiness-gated API/UI dependencies, unauthenticated readiness
+healthchecks, restart and bounded stop behavior, named persistence volume, and migration/image
+file coverage. CI now separates lock/lint/type/unit evidence, required PostgreSQL migration and
+race evidence, and an explicitly opt-in heavier Compose end-to-end job with artifacts. Added a
+deterministic PostgreSQL HTTP smoke proving two same-organization sessions, tenant isolation,
+concurrent task creation/listing, and one-active-run start contention.
+
+Files changed: `compose.yaml`, `docker/Dockerfile.service`, `.github/workflows/test.yml`,
+`tests/service/test_task_api_postgres.py`, and this log.
+
+Validation: `docker compose config` PASS; disposable Compose startup/migration/readiness/UI
+health/restart/stop PASS; migration image build PASS; Ruff check and Pyrefly PASS; the
+T127 HTTP smoke and approval race each PASS against disposable PostgreSQL. The broader
+PostgreSQL suite remains environment-gated when `TASKPILOT_TEST_DATABASE_URL` is absent.
+
+Learner notes: read `compose.yaml`, `.github/workflows/test.yml`, and the T127 test. The key
+concept is making readiness and migration completion explicit deployment dependencies while
+keeping database row locks as concurrency authority. Exercise: inspect `docker compose config`
+and identify the dependency chain postgres → migrate → API → UI. Do not worry about load testing,
+workers, or distributed locks in this phase.
+
+Suggested next task: Phase 10 Batch 2 Strong Review.
+
+### 2026-09-27 — Phase 10 Batch 2 T126 CI artifact blocker fix
+
+Status: Ready for focused Batch 2 re-review. The Docker CI job now collects Docker, Buildx,
+Compose, service-container, and app-container diagnostics with `if: always()`, uploads them with
+`if: always()`, and performs unconditional container cleanup only afterward. Existing CI tiers and
+opt-in Compose E2E behavior are unchanged.
+
+Validation: workflow YAML parsed successfully; Docker job ordering is diagnostics → artifact upload
+→ cleanup on success and failure paths.
+
+### 2026-09-27 — Phase 10 Batch 2 focused Strong Re-review
+
+Status: APPROVED. The T126 blocker fix adds unconditional Docker diagnostics collection,
+artifact upload, and post-upload container cleanup. Workflow YAML parsing and effective step
+ordering were independently verified; required CI tiers and opt-in Compose E2E behavior remain
+unchanged.
+
+Validation: workflow YAML parse PASS; Docker job ordering PASS (collect → upload → cleanup),
+all three steps use `if: always()`.
+
+Suggested next task: T128 Phase 10 Final Audit.
+
+### 2026-09-27 — Phase 10 Final Audit blocker fix
+
+Status: T128 Final Audit remains NOT APPROVED pending focused re-review. The LangGraph
+PostgreSQL adapter now keeps the canonical `postgresql+psycopg://` URL at the configuration
+boundary and converts it only for `psycopg_pool`, which consumes libpq `postgresql://` syntax.
+The stale Phase 10 task statuses were corrected in `TASK_BACKLOG.md`; T122 remains deferred
+and Phase 10 is not complete.
+
+Validation: PostgreSQL readiness evidence, affected regression, Ruff, Pyrefly, and `git diff
+--check` are recorded with this blocker-fix result.
+
+### 2026-09-27 — Phase 10 focused Final Audit re-review
+
+Status: APPROVED. T128 is COMPLETE / APPROVED and Phase 10 is COMPLETE / FINAL AUDIT APPROVED.
+T122 remains DEFERRED. Historical blocker and re-review records remain unchanged.
+
+Validation: required PostgreSQL readiness, failure/recovery, pool, tenant, start-race, and
+approval-race evidence passed (14 passed, 0 skipped); directly affected Phase 10 regression
+passed (56 passed); Ruff format/check, Pyrefly, and `git diff --check` passed. The canonical
+`postgresql+psycopg://` URL is converted to libpq `postgresql://` only at the psycopg pool
+boundary for LangGraph saver/store ownership.

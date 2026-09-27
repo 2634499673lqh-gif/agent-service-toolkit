@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from typing import Any
 
 from pydantic import SecretStr
@@ -60,9 +61,37 @@ def create_async_engine(
         if database_url is not None
         else _configured_url(config)
     )
-    options: dict[str, Any] = {"pool_pre_ping": True}
+    options: dict[str, Any] = {
+        "pool_pre_ping": True,
+        "pool_size": config.POSTGRES_MIN_CONNECTIONS_PER_POOL,
+        "max_overflow": max(
+            0, config.POSTGRES_MAX_CONNECTIONS_PER_POOL - config.POSTGRES_MIN_CONNECTIONS_PER_POOL
+        ),
+        "pool_timeout": config.POSTGRES_POOL_CHECKOUT_TIMEOUT,
+        "pool_recycle": config.POSTGRES_POOL_RECYCLE_SECONDS,
+        "connect_args": {"application_name": config.POSTGRES_APPLICATION_NAME + "-business"},
+    }
     options.update(engine_options)
     return sqlalchemy_create_async_engine(url, **options)
+
+
+@lru_cache(maxsize=1)
+def get_business_engine() -> AsyncEngine:
+    return create_async_engine()
+
+
+@lru_cache(maxsize=1)
+def get_business_session_factory() -> async_sessionmaker[AsyncSession]:
+    return create_session_factory(get_business_engine())
+
+
+async def dispose_business_engine() -> None:
+    """Dispose the process-owned business pool during application shutdown."""
+    if get_business_engine.cache_info().currsize:
+        engine = get_business_engine()
+        await engine.dispose()
+        get_business_session_factory.cache_clear()
+        get_business_engine.cache_clear()
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

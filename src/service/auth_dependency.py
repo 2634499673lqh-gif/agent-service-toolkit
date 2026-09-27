@@ -9,13 +9,12 @@ It makes no authorization decision (that is T025) and never treats the legacy
 """
 
 import logging
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from persistence.engine import create_async_engine, create_session_factory
+from persistence.engine import get_business_session_factory
 from service.session import AuthService, CurrentPrincipal
 
 logger = logging.getLogger(__name__)
@@ -26,7 +25,6 @@ WWW_AUTHENTICATE_HEADER = {"WWW-Authenticate": "Bearer"}
 BEARER_SCHEME = "bearer"
 
 
-@lru_cache(maxsize=1)
 def get_session_factory() -> async_sessionmaker[AsyncSession]:
     """Return the process-wide TaskPilot session factory.
 
@@ -35,7 +33,7 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     TaskPilot identity endpoint is used without business persistence.
     """
 
-    return create_session_factory(create_async_engine())
+    return get_business_session_factory()
 
 
 def get_session(

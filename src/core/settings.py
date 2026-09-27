@@ -147,7 +147,11 @@ class Settings(BaseSettings):
     POSTGRES_DB: str | None = None
     POSTGRES_APPLICATION_NAME: str = "agent-service-toolkit"
     POSTGRES_MIN_CONNECTIONS_PER_POOL: int = Field(default=1, ge=1)
-    POSTGRES_MAX_CONNECTIONS_PER_POOL: int = Field(default=1, ge=1)
+    POSTGRES_MAX_CONNECTIONS_PER_POOL: int = Field(default=4, ge=1)
+    POSTGRES_POOL_CHECKOUT_TIMEOUT: float = Field(default=5.0, gt=0)
+    POSTGRES_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=0)
+    RUNTIME_MAX_CONCURRENT: int = Field(default=2, ge=1)
+    READINESS_DATABASE_TIMEOUT: float = Field(default=2.0, gt=0)
 
     # MongoDB Configuration
     MONGO_HOST: str | None = None
