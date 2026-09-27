@@ -327,3 +327,60 @@ async def test_t118_login_commit_failure_rolls_back_real_postgres_session(api_co
             )
         )
         assert after == before
+
+@pytest.mark.asyncio
+async def test_t127_two_users_tenant_isolation_and_single_start(api_context) -> None:
+    factory, tokens = api_context
+    async with factory() as session:
+        owner = await AuthService(session).authenticate(tokens["owner"])
+        assert owner is not None
+        second_user = User(
+            id=uuid4(), email="t127-second@example.test", password_hash=hash_password(PASSWORD)
+        )
+        organization = await session.get(Organization, owner.organization_id)
+        assert organization is not None
+        session.add(second_user)
+        await session.flush()
+        session.add(
+            Membership(user_id=second_user.id, organization_id=organization.id, role=Role.MEMBER)
+        )
+        await session.commit()
+        async with session.begin():
+            second_login = await AuthService(session).login(second_user.email, PASSWORD)
+        assert hasattr(second_login, "token")
+        second_token = second_login.token  # type: ignore[union-attr]
+
+    transport = httpx.ASGITransport(app=app)
+    headers_a = {"Authorization": f"Bearer {tokens['owner']}"}
+    headers_b = {"Authorization": f"Bearer {second_token}"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://taskpilot.test") as client:
+        created_a, created_b = await asyncio.gather(
+            client.post("/api/v1/tasks", headers=headers_a, json={"title": "T127 A"}),
+            client.post("/api/v1/tasks", headers=headers_b, json={"title": "T127 B"}),
+        )
+        assert {created_a.status_code, created_b.status_code} == {201}
+        task_id = created_a.json()["id"]
+        task_b_id = created_b.json()["id"]
+
+        listed_a, listed_b = await asyncio.gather(
+            client.get("/api/v1/tasks", headers=headers_a),
+            client.get("/api/v1/tasks", headers=headers_b),
+        )
+        assert {item["id"] for item in listed_a.json()} == {task_id, task_b_id}
+        assert {item["id"] for item in listed_b.json()} == {task_id, task_b_id}
+
+        starts = await asyncio.gather(
+            client.post(f"/api/v1/tasks/{task_id}/runs", headers=headers_a),
+            client.post(f"/api/v1/tasks/{task_id}/runs", headers=headers_b),
+        )
+        assert sorted(response.status_code for response in starts) == [201, 409]
+        successful = next(response for response in starts if response.status_code == 201)
+        run_id = successful.json()["id"]
+
+        foreign = await client.get(
+            f"/api/v1/tasks/{task_id}", headers={"Authorization": f"Bearer {tokens['foreign']}"}
+        )
+        assert foreign.status_code == 404
+        fresh = await client.get(f"/api/v1/tasks/{task_id}/runs/{run_id}", headers=headers_b)
+        assert fresh.status_code == 200
+        assert fresh.json()["task_id"] == task_id

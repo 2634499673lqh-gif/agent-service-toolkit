@@ -5008,3 +5008,51 @@ Learner notes: read `tests/service/test_phase10_batch1_postgres.py` and compare 
 unavailable, and recovered URLs. The key concept is testing failure and recovery through the same
 HTTP boundary used by deployment health checks. Exercise: change only the parsed port and observe
 the bounded 503 before restoring the original URL. Do not modify Compose ownership in T124.
+
+### 2026-09-27 — Phase 10 Batch 2 implementation (T125, T126, T127)
+
+Status: Batch implementation complete and ready for Strong Review. Compose now has a disposable
+PostgreSQL migration service, readiness-gated API/UI dependencies, unauthenticated readiness
+healthchecks, restart and bounded stop behavior, named persistence volume, and migration/image
+file coverage. CI now separates lock/lint/type/unit evidence, required PostgreSQL migration and
+race evidence, and an explicitly opt-in heavier Compose end-to-end job with artifacts. Added a
+deterministic PostgreSQL HTTP smoke proving two same-organization sessions, tenant isolation,
+concurrent task creation/listing, and one-active-run start contention.
+
+Files changed: `compose.yaml`, `docker/Dockerfile.service`, `.github/workflows/test.yml`,
+`tests/service/test_task_api_postgres.py`, and this log.
+
+Validation: `docker compose config` PASS; disposable Compose startup/migration/readiness/UI
+health/restart/stop PASS; migration image build PASS; Ruff check and Pyrefly PASS; the
+T127 HTTP smoke and approval race each PASS against disposable PostgreSQL. The broader
+PostgreSQL suite remains environment-gated when `TASKPILOT_TEST_DATABASE_URL` is absent.
+
+Learner notes: read `compose.yaml`, `.github/workflows/test.yml`, and the T127 test. The key
+concept is making readiness and migration completion explicit deployment dependencies while
+keeping database row locks as concurrency authority. Exercise: inspect `docker compose config`
+and identify the dependency chain postgres → migrate → API → UI. Do not worry about load testing,
+workers, or distributed locks in this phase.
+
+Suggested next task: Phase 10 Batch 2 Strong Review.
+
+### 2026-09-27 — Phase 10 Batch 2 T126 CI artifact blocker fix
+
+Status: Ready for focused Batch 2 re-review. The Docker CI job now collects Docker, Buildx,
+Compose, service-container, and app-container diagnostics with `if: always()`, uploads them with
+`if: always()`, and performs unconditional container cleanup only afterward. Existing CI tiers and
+opt-in Compose E2E behavior are unchanged.
+
+Validation: workflow YAML parsed successfully; Docker job ordering is diagnostics → artifact upload
+→ cleanup on success and failure paths.
+
+### 2026-09-27 — Phase 10 Batch 2 focused Strong Re-review
+
+Status: APPROVED. The T126 blocker fix adds unconditional Docker diagnostics collection,
+artifact upload, and post-upload container cleanup. Workflow YAML parsing and effective step
+ordering were independently verified; required CI tiers and opt-in Compose E2E behavior remain
+unchanged.
+
+Validation: workflow YAML parse PASS; Docker job ordering PASS (collect → upload → cleanup),
+all three steps use `if: always()`.
+
+Suggested next task: T128 Phase 10 Final Audit.

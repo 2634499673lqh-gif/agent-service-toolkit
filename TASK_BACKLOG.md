@@ -336,10 +336,10 @@ APPROVED. The next executable batch is T121 + T123 + T124. Canonical DAG:
 | T122 | Background worker integration | — | — | — | DEFERRED |
 | T123 | In-process rate limiting/backpressure | STANDARD | Strong Review | T120, T121 | NOT STARTED |
 | T124 | Liveness/readiness endpoints | STANDARD | Strong Review | T120, T121 | NOT STARTED |
-| T125 | Docker Compose hardening | STANDARD | Strong Review | T123, T124 | NOT STARTED |
-| T126 | CI evidence tiers | STANDARD | Strong Review | T125 | NOT STARTED |
-| T127 | Deterministic multi-user concurrency smoke | STANDARD | Strong Review | T121, T123–T126 | NOT STARTED |
-| T128 | Phase 10 Final Audit | STRONG read-only | Phase Final Audit | T120–T127 except T122 | NOT STARTED |
+| T125 | Docker Compose hardening | STANDARD | Strong Review | T123, T124 | COMPLETE / APPROVED |
+| T126 | CI evidence tiers | STANDARD | Strong Review | T125 | COMPLETE / APPROVED |
+| T127 | Deterministic multi-user concurrency smoke | STANDARD | Strong Review | T121, T123–T126 | COMPLETE / APPROVED |
+| T128 | Phase 10 Final Audit | STRONG read-only | Phase Final Audit | T120–T127 except T122 | NEXT |
 
 No production feature is implemented by this planning update.
 
