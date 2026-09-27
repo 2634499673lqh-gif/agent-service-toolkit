@@ -5087,3 +5087,15 @@ Status: Planning Freeze complete and ready for `Phase11 Planning Freeze Strong R
 Frozen DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 remains conditional remediation only. Phase 11 implementation has not begun; next executable work is Batch 1: T130 + T131 + T132.
 
 Validation: changed-file inspection, ID/dependency/cycle checks, historical review evidence check, Markdown lint on supported changed documentation, and `git diff --check`. No production, tests, migrations, CI, Compose, or guide implementation content was changed.
+
+### 2026-09-27 — Phase 11 Batch 1 implementation (T130, T131, T132)
+
+Status: Batch 1 implementation complete and ready for independent Strong Review. T130 reconciles the User Guide with the authenticated Streamlit Product UI, organization selection, task/TaskRun lifecycle reads, approval inspection/decision, sanitized bounded trace, logout/session expiry, role visibility, and explicit deferred runtime boundaries. T131 reconciles local uv setup, environment/database configuration, explicit Alembic/bootstrap steps, FastAPI and Streamlit startup, Compose topology, health endpoints, validation commands, PostgreSQL/Docker prerequisites, CI tiers, and troubleshooting references. T132 replaces the early-project reading order with the current identity, persistence, lifecycle, runtime, approval, observability, evaluation, UI, deployment, and test sequence using verified paths.
+
+Files changed: `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/CODE_READING_ORDER.md`, plus current-state status lines in `TASK_BACKLOG.md`, `ROADMAP.md`, and `process/tasks/INDEX.md`.
+
+Validation: `uv run pymarkdown scan docs/USER_GUIDE.md docs/DEVELOPER_GUIDE.md docs/CODE_READING_ORDER.md` passed; `git diff --check` passed; every path cited by the reading-order guide was checked against the working tree. No production code, tests, migrations, CI, or Compose behavior changed. No T133–T137 work was started.
+
+Learner notes: read the three reconciled guides, `src/taskpilot_ui.py`, `src/client/taskpilot.py`, `src/service/task_api.py`, and `compose.yaml`. The key concept is separating server-authoritative identity/lifecycle/approval state from Streamlit display state and from the legacy chat client. Exercise: trace one Product action from its Streamlit control to the client method, HTTP route, service, and persisted record. Do not worry about public runtime execution, workers, or demo fixtures yet.
+
+Suggested next task: Phase 11 Batch 1 independent Strong Review.

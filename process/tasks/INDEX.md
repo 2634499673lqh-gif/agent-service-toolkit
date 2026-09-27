@@ -148,7 +148,7 @@ Implementation batches: Planning gate **T100**; Batch 1 **T101–T103**; Batch 2
 
 DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + T104 → T106`; `T100–T106 → T107`. T107 is the next conflict-free audit ID after completed T098; no T099 is introduced. The baseline is `deterministic.fixture_baseline` using existing `DeterministicFixtureCapability`; no tabular/sum capability is planned.
 
-\r\n
+\n
 ## Phase 9 Task Cards — Product UI (ADR-011 accepted/frozen)
 
 See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APPROVED as the planning gate; T118/T119 are COMPLETE / APPROVED backend prerequisites; T111/T112 are COMPLETE / APPROVED. T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. T117 is the conflict-free Phase 9 Final Audit and is COMPLETE / APPROVED. Phase 9 is complete; Phase 10 planning is the next gate.
@@ -165,4 +165,4 @@ See `process/ADR-012.md` and cards `T120.md`–`T128.md`.
 
 ## Phase 11 Task Cards — Documentation, Demo, Final Audit [PLANNING APPROVED / FROZEN]
 
-T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 are the next executable Batch 1 and are NOT STARTED. T133 follows all three; T134 is conditional remediation only; T135, T136, and T137 follow the approved path. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.
+T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 Batch 1 are COMPLETE / STRONG REVIEW APPROVED. T133 is next; T134 is conditional remediation only; T135, T136, and T137 follow the approved path. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.

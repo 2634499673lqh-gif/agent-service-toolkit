@@ -219,7 +219,7 @@ Tasks: T129 Planning Gate (COMPLETE / APPROVED); T130 User Guide; T131 Developer
 
 Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 activates only for a qualifying blocker from T133 or T135 and is not a normal DAG dependency.
 
-Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 implementation has not begun; next executable work is Batch 1 (T130 + T131 + T132). T134 remains conditional. See `process/tasks/T129.md`–`T137.md`.
+Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is next and T134 remains conditional. See `process/tasks/T129.md`–`T137.md`.
 
 Exit: documentation matches behavior, deterministic demo is reproducible, executable evidence is recorded, and T137 is approved.
 
@@ -282,7 +282,7 @@ retired T086–T088.
 | T117 | T133 | Architecture audit |
 | T118 | T136 | Final test/evaluation report |
 
-\r\n
+\n
 ## Phase 9 — Product UI [PLANNING APPROVED / FROZEN]
 
 ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. The canonical plan adds explicit T118 AuthService-backed login/session/logout HTTP and T119 tenant-scoped TaskRun discovery before the Streamlit Product UI. The UI remains Streamlit-first and exposes persisted task/run/approval/trace evidence; it does not execute the internal runtime. Canonical cards, DAG and batches are in `process/tasks/T110.md`–`T119.md` and `process/ADR-011.md`.

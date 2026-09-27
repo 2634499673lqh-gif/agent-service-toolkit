@@ -350,9 +350,9 @@ Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence i
 | Task | Purpose | Model | Review | Depends | Status |
 |---|---|---|---|---|---|
 | T129 | Phase 11 Planning Gate | STRONG planning | Planning Strong Review | Phase 10 | COMPLETE / APPROVED |
-| T130 | User Guide audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
-| T131 | Developer Guide audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
-| T132 | Code Reading Order audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
+| T130 | User Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
+| T131 | Developer Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
+| T132 | Code Reading Order audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
 | T133 | Independent Architecture/security verification | STRONG | Independent Strong Review | T130–T132 | NOT STARTED |
 | T134 | Conditional critical/high blocker remediation | STANDARD/STRONG | Focused revalidation | Conditional | CONDITIONAL |
 | T135 | Deterministic existing-behavior demo | LOW_COST/STANDARD | Reproducibility review | T133 and any T134 | NOT STARTED |
@@ -361,9 +361,9 @@ Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence i
 
 Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 is conditional remediation only and is not an unconditional dependency. See `process/tasks/T129.md`–`T137.md`.
 
-Phase 11 implementation has not begun. T130–T132 are the next executable Batch 1; T134 remains conditional.
+Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is the next executable task; T134 remains conditional.
 
-\r\n
+\n
 ## Phase 9 — Product UI (planning APPROVED / frozen, ADR-011 accepted/frozen)
 
 Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the single planning gate. The current repository has protected Task/TaskRun/Approval/trace APIs, the accepted T118/T119 HTTP prerequisites, the approved T111/T112 Product client and task UI, and a legacy chat Streamlit UI. ADR-011 freezes Streamlit-first Product UI, T118 authentication/session/logout HTTP, T119 tenant-scoped run discovery, and truthful persisted-task/evidence inspection scope. Phase 9 does not execute the internal runtime from the UI.
