@@ -353,7 +353,7 @@ Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence i
 | T130 | User Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
 | T131 | Developer Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
 | T132 | Code Reading Order audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
-| T133 | Independent Architecture/security verification | STRONG | Independent Strong Review | T130–T132 | NOT STARTED |
+| T133 | Independent Architecture/security verification | STRONG | Independent Strong Review | T130–T132 | COMPLETE / APPROVED |
 | T134 | Conditional critical/high blocker remediation | STANDARD/STRONG | Focused revalidation | Conditional | CONDITIONAL |
 | T135 | Deterministic existing-behavior demo | LOW_COST/STANDARD | Reproducibility review | T133 and any T134 | NOT STARTED |
 | T136 | Final executable evaluation/evidence report | STANDARD/LOW_COST | Strong Review | T135 | NOT STARTED |
@@ -361,7 +361,7 @@ Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence i
 
 Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 is conditional remediation only and is not an unconditional dependency. See `process/tasks/T129.md`–`T137.md`.
 
-Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is the next executable task; T134 remains conditional.
+Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T135 is the next executable task.
 
 \n
 ## Phase 9 — Product UI (planning APPROVED / frozen, ADR-011 accepted/frozen)

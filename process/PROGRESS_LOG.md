@@ -5099,3 +5099,15 @@ Validation: `uv run pymarkdown scan docs/USER_GUIDE.md docs/DEVELOPER_GUIDE.md d
 Learner notes: read the three reconciled guides, `src/taskpilot_ui.py`, `src/client/taskpilot.py`, `src/service/task_api.py`, and `compose.yaml`. The key concept is separating server-authoritative identity/lifecycle/approval state from Streamlit display state and from the legacy chat client. Exercise: trace one Product action from its Streamlit control to the client method, HTTP route, service, and persisted record. Do not worry about public runtime execution, workers, or demo fixtures yet.
 
 Suggested next task: Phase 11 Batch 1 independent Strong Review.
+
+### 2026-09-27 — T133 final focused Strong Re-review
+
+Status: T133 COMPLETE / APPROVED. NO T134 ACTIVATION REQUIRED; T134 remains conditional and inactive. T135 is the next executable task and has not started.
+
+Review history: initial Strong Review NOT APPROVED for medium stale architecture inventory/current-status wording; the first dedicated T133 fix corrected T036/T037, T038, T081/T082/T083, T084 and the Phase 8 heading. Focused Strong Re-review NOT APPROVED for the residual deferred action claim/effect wording; the second dedicated T133 fix replaced it with generic real external-effect infrastructure. Final focused Strong Re-review APPROVED the latest working-tree correction. Both earlier verdicts remain historical; neither fix activated T134.
+
+Evidence: independently read current docs/ARCHITECTURE.md, searched action claim, effect handling, external-effect, external effect, T084 and deferred, and inspected git status --short and git diff -- docs/ARCHITECTURE.md. uv run pymarkdown scan docs/ARCHITECTURE.md and git diff --check passed. The pre-verdict substantive diff was limited to docs/ARCHITECTURE.md. No application tests were rerun for this documentation-only residual fix; this review does not add PostgreSQL evidence.
+
+Post-verdict mechanical synchronization only: docs/ARCHITECTURE.md current T133 status, TASK_BACKLOG.md T133 row/current next task, ROADMAP.md current next task, process/tasks/INDEX.md current status, and this history entry. No substantive architecture, code, tests, migrations, CI, Compose, ADR decisions, Task Card contracts, or DAG changes were made by the reviewer. No commit or push.
+
+Learner notes: read docs/ARCHITECTURE.md, TASK_BACKLOG.md, and process/tasks/INDEX.md. Distinguish the implemented bounded mock effect from generic external-effect guarantees. Exercise: compare the inventory and deferred-boundaries paragraph. Do not worry about workers or external-provider guarantees yet. Suggested next task: T135 deterministic demo script/data.

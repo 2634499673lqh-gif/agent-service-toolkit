@@ -68,12 +68,12 @@ redaction are deferred to T014.
 
 | Requirement | Existing support / reusable code | Missing work and risk | Phase |
 | --- | --- | --- | --- |
-| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix | T036/T037 Task APIs, T038 TaskRun APIs, T081/T082 Approval persistence and protected decision APIs, and T083 internal approval boundary | 2 (done) / 3 / 6 |
-| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T037 cancellation API, T038 start/inspect integration, and the T040–T050 internal runtime | TaskStep schema, public runtime API, idempotency | 3/4 |
+| Identity/RBAC/tenant isolation | Phase 2 implemented: `taskpilot` schema, opaque sessions, server-derived `CurrentPrincipal`, centralized authorization, tenant-scoped lookups, security matrix; T036/T037 Task APIs, T038 TaskRun APIs, and T081/T082/T083 approval boundaries are implemented and approved | Permission/role tables, organization-switch endpoints, and other future identity features remain out of scope | 2 / 3 / 6 |
+| Task/run/step lifecycle | T031/T032 persistence foundations, T034 tenant-scoped repositories, T035 lifecycle service, T036/T037 task APIs, T038 TaskRun APIs, and the T040–T050 internal runtime are implemented and approved | TaskStep schema, public runtime API, and HTTP idempotency remain deferred | 3/4 |
 | Planner/executor/verifier/recovery | T040–T050 typed AgentState, Planner → Executor → Verifier runtime, bounded retry/replan, and verification | External tools/providers, broader context and recovery capabilities | 4/5 |
 | Checkpoint/resume | T050 LangGraph checkpoint/resume bound to a tenant-validated durable TaskRun | Worker/queue orchestration, HITL resume, and external-effect guarantees | 4/6 |
 | Skills/tools/context | Web/calculator, Chroma, Bedrock examples | Versioned contracts, tenant-safe retrieval, file lifecycle, budgets/provenance | 5 |
-| Human approval | T081 Approval persistence, T082 protected reads/decisions, T083 server-side classification and approval pause/resume; accepted ADR-008 | T084 action claim and bounded mock effect | 6 |
+| Human approval | T081 Approval persistence, T082 protected reads/decisions, T083 server-side classification and approval pause/resume, and T084 bounded action claim/effect behavior are implemented and approved; accepted ADR-008 | Generic external-effect infrastructure remains deferred | 6 |
 | Observability/audit | Logging, run UUID, optional Langfuse/LangSmith | Correlated TaskPilot IDs, sanitized events, metrics and audit truth | 7 |
 | Evaluation | Unit/integration/smoke tests, fake model | Versioned deterministic task evals and safety/workflow metrics | 8 |
 | Product UI | Streamlit chat, threads, voice/feedback | Login, tasks/runs/steps/traces/approvals/files; retain Streamlit first | 9 |
@@ -104,7 +104,7 @@ Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABA
 
 Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, permission or role tables, JWT/refresh tokens, and organization-switch endpoints. T031/T032 provide Task and TaskRun persistence; migration `t034_observability` provides the AgentRun and ToolCall observability tables, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence and protected nested read/decision routes. T097 adds only the tenant-scoped ordered trace projection over those existing rows. `ApprovalService.create_or_reuse` is internal to trusted runtime wiring. T040–T050 provide the committed internal bounded runtime described below. T093 now wires the middleware request ID, validated TaskRun, zero-based step coordinates, AgentRun, and ToolCall through the runtime/capability boundary; T094/T095 normalize timing, errors, provider usage, and metadata, while T096 provides a deterministic in-process cost estimate. These remain observational and are not billing authority. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
 
-## Current TaskPilot implementation status — Phase 8 Batch 1 approved
+## Current TaskPilot implementation status — Phase 11 Batch 1 approved; T133 COMPLETE / APPROVED
 
 The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed; Phase 5 implementation is complete and the Phase 5 Final Audit is approved. The initial audit returned NOT APPROVED solely because canonical status documentation was stale; the focused re-review subsequently approved Phase 5, which is complete.
 
@@ -112,6 +112,8 @@ Phase 6 Planning is approved, frozen, committed, and published. T080 is
 complete and approved; T081 Approval persistence is complete with Strong Review
 approval, committed, and pushed. T082 Approval service and decision APIs are
 complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE. ADR-009 remains Accepted and frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T101–T103 are COMPLETE / APPROVED; Batch 2 starts at T104.
+
+Phase 8 is complete and Phase 9 Product UI is implemented and approved. Phase 10 concurrency and deployment hardening is COMPLETE / FINAL AUDIT APPROVED; T122 remains deferred. Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED after final focused Strong Re-review; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T135 is the next executable task.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
@@ -126,11 +128,10 @@ The implemented runtime is an internal, deterministic LangGraph topology:
   business persistence and LangGraph checkpoint ownership remain separate.
 
 The following boundaries remain deferred: persistent TaskStep, a public runtime
-HTTP API, worker/queue execution, action claim/effect handling, real external
-tools or providers, and any production
+HTTP API, worker/queue execution, generic real external-effect infrastructure,
+real external tools or providers, and any production
 deployment claim. Checkpoint or graph progress never grants authorization,
 and Phase 4 makes no exactly-once execution guarantee.
-
 
 ### Phase 5 implementation boundary
 
