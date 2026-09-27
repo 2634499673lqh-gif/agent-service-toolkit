@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import logging
@@ -20,18 +21,20 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig
-from langfuse import Langfuse  # type: ignore[import-untyped]
 from langfuse.langchain import (
     CallbackHandler,  # type: ignore[import-untyped]
 )
 from langgraph.types import Command, Interrupt
 from langsmith import Client as LangsmithClient
 from langsmith import uuid7
+from sqlalchemy import text
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from starlette.responses import Response
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
 from memory import initialize_database, initialize_store
+from persistence.engine import dispose_business_engine, get_business_session_factory
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -48,6 +51,7 @@ from service.agui import router as agui_router
 from service.approval_api import approval_router
 from service.auth_api import auth_router
 from service.logging import configure_logging, reset_request_id, set_request_id
+from service.runtime_capacity import RuntimeCapacityFull, runtime_capacity
 from service.task_api import task_router
 from service.threads import list_user_threads
 from service.utils import (
@@ -89,6 +93,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     and agents with async loading - for example for starting up MCP clients.
     """
     configure_logging(settings)
+    app.state.startup_complete = False
+    database_type = getattr(settings.DATABASE_TYPE, "value", settings.DATABASE_TYPE)
+    app.state.langgraph_persistence_configured = database_type == "postgres"
+    app.state.langgraph_persistence = None
     try:
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
@@ -98,6 +106,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Only setup store for Postgres as InMemoryStore doesn't need setup
             if hasattr(store, "setup"):  # ignore: union-attr
                 await store.setup()
+            if app.state.langgraph_persistence_configured:
+                app.state.langgraph_persistence = (saver, store)
 
             if not settings.AUTH_SECRET:
                 logger.warning(
@@ -120,13 +130,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
+            app.state.startup_complete = True
             yield
     except Exception as e:
         logger.error(f"Error during database/store/agents initialization: {e}")
         raise
+    finally:
+        app.state.startup_complete = False
+        app.state.langgraph_persistence = None
+        await dispose_business_engine()
 
 
 app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_unique_id)
+
+
+@app.exception_handler(SQLAlchemyTimeoutError)
+async def sqlalchemy_timeout_handler(request: Request, exc: SQLAlchemyTimeoutError) -> Response:
+    """Turn bounded pool checkout exhaustion into the public 503 contract."""
+    del exc
+    return Response(
+        content='{"detail":"Database capacity is temporarily exhausted"}',
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        media_type="application/json",
+        headers={"Retry-After": "1", "Cache-Control": "no-store"},
+    )
 
 
 @app.middleware("http")
@@ -265,27 +292,30 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
     # in interrupt-agent, or a tool step in research-assistant), it's omitted. Arguably,
     # you'd want to include it. You could update the API to return a list of ChatMessages
     # in that case.
-    agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent, agent_id)
-
     try:
-        response_events: list[tuple[str, Any]] = await agent.ainvoke(**kwargs, stream_mode=["updates", "values"])  # type: ignore # fmt: skip
-        response_type, response = response_events[-1]
-        # A run that stops on an interrupt reports it on the final event of either stream
-        # mode, so check for the interrupt before falling back to the last message.
-        if "__interrupt__" in response:
-            # Return the value of the first interrupt as an AIMessage
-            output = langchain_to_chat_message(
-                AIMessage(content=response["__interrupt__"][0].value)
-            )
-        elif response_type == "values":
-            # Normal response, the agent completed successfully
-            output = langchain_to_chat_message(response["messages"][-1])
-        else:
-            raise ValueError(f"Unexpected response type: {response_type}")
-
-        output.run_id = str(run_id)
-        return output
+        async with runtime_capacity.slot():
+            agent: AgentGraph = get_agent(agent_id)
+            kwargs, run_id = await _handle_input(user_input, agent, agent_id)
+            response_events: list[tuple[str, Any]] = await agent.ainvoke(**kwargs, stream_mode=["updates", "values"])  # type: ignore # fmt: skip
+            response_type, response = response_events[-1]
+            if "__interrupt__" in response:
+                output = langchain_to_chat_message(
+                    AIMessage(content=response["__interrupt__"][0].value)
+                )
+            elif response_type == "values":
+                output = langchain_to_chat_message(response["messages"][-1])
+            else:
+                raise ValueError(f"Unexpected response type: {response_type}")
+            output.run_id = str(run_id)
+            return output
+    except RuntimeCapacityFull:
+        raise HTTPException(
+            status_code=429,
+            detail="Runtime capacity is temporarily full",
+            headers={"Retry-After": "1"},
+        ) from None
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error")
@@ -443,10 +473,21 @@ async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> Stre
 
     Set `stream_tokens=false` to return intermediate messages but not token-by-token.
     """
-    return StreamingResponse(
-        message_generator(user_input, agent_id),
-        media_type="text/event-stream",
-    )
+    if not runtime_capacity.try_acquire():
+        raise HTTPException(
+            status_code=429,
+            detail="Runtime capacity is temporarily full",
+            headers={"Retry-After": "1"},
+        )
+
+    async def bounded_generator() -> AsyncGenerator[str, None]:
+        try:
+            async for event in message_generator(user_input, agent_id):
+                yield event
+        finally:
+            runtime_capacity.release()
+
+    return StreamingResponse(bounded_generator(), media_type="text/event-stream")
 
 
 @router.post("/feedback")
@@ -527,19 +568,48 @@ async def threads(
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Compatibility alias for dependency-free liveness."""
+    return {"status": "ok"}
 
-    health_status = {"status": "ok"}
 
-    if settings.LANGFUSE_TRACING:
-        try:
-            langfuse = Langfuse()
-            health_status["langfuse"] = "connected" if langfuse.auth_check() else "disconnected"
-        except Exception as e:
-            logger.error(f"Langfuse connection error: {e}")
-            health_status["langfuse"] = "disconnected"
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    return {"status": "ok"}
 
-    return health_status
+
+@app.get("/health/ready")
+async def health_ready() -> dict[str, str]:
+    if not getattr(app.state, "startup_complete", False):
+        raise HTTPException(status_code=503, detail="Service startup incomplete")
+
+    async def check_business_database() -> None:
+        if settings.TASKPILOT_DATABASE_URL is None:
+            return
+        factory = get_business_session_factory()
+        async with factory() as session:
+            await session.execute(text("SELECT 1"))
+
+    async def check_langgraph_persistence() -> None:
+        resources = getattr(app.state, "langgraph_persistence", None)
+        if not getattr(app.state, "langgraph_persistence_configured", False):
+            return
+        if resources is None:
+            raise RuntimeError("LangGraph persistence is not initialized")
+        for resource in resources:
+            pool = getattr(resource, "conn", None)
+            if pool is None:
+                raise RuntimeError("LangGraph persistence pool is unavailable")
+            async with pool.connection() as connection:
+                await connection.execute("SELECT 1")
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(check_business_database(), check_langgraph_persistence()),
+            settings.READINESS_DATABASE_TIMEOUT,
+        )
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database is not ready") from None
+    return {"status": "ok"}
 
 
 app.include_router(router)

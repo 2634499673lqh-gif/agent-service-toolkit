@@ -59,6 +59,8 @@ async def get_postgres_saver():
         get_postgres_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
+        timeout=settings.POSTGRES_POOL_CHECKOUT_TIMEOUT,
+        max_lifetime=float(settings.POSTGRES_POOL_RECYCLE_SECONDS),
         # Langgraph requires autocommmit=true and row_factory to be set to dict_row.
         # Application_name is passed so you can identify the connection in your Postgres database connection manager.
         kwargs={"autocommit": True, "row_factory": dict_row, "application_name": application_name},
@@ -88,6 +90,8 @@ async def get_postgres_store():
         get_postgres_connection_string(),
         min_size=settings.POSTGRES_MIN_CONNECTIONS_PER_POOL,
         max_size=settings.POSTGRES_MAX_CONNECTIONS_PER_POOL,
+        timeout=settings.POSTGRES_POOL_CHECKOUT_TIMEOUT,
+        max_lifetime=float(settings.POSTGRES_POOL_RECYCLE_SECONDS),
         # Langgraph requires autocommmit=true and row_factory to be set to dict_row
         # Application_name is passed so you can identify the connection in your Postgres database connection manager.
         kwargs={"autocommit": True, "row_factory": dict_row, "application_name": application_name},

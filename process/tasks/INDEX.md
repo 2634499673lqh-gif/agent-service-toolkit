@@ -155,8 +155,9 @@ See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APP
 
 ## Phase 10 Task Cards — Concurrency & Deployment Hardening (ADR-012 proposed)
 
-Planning status: APPROVED / frozen; T120 is COMPLETE / APPROVED. The next executable batch is
-T121 + T123 + T124. Canonical DAG is
+Planning status: APPROVED / frozen; T120 is COMPLETE / APPROVED. T121, T123, and T124 are
+COMPLETE / APPROVED. Phase 10 Batch 1 is COMPLETE / STRONG REVIEW APPROVED. The next
+executable batch is T125 + T126 + T127. Canonical DAG is
 `T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is explicitly deferred.
 Batch 1 is T121/T123/T124; Batch 2 is T125–T127; T128 is the independent Final Audit.
 See `process/ADR-012.md` and cards `T120.md`–`T128.md`.

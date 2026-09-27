@@ -4934,3 +4934,77 @@ T120 is COMPLETE / APPROVED. The next executable batch is T121 + T123 + T124.
 
 Validation: repository/source inspection, contract and dependency cross-check, and `git diff --check`.
 No production code, tests, migrations, dependencies, or runtime behavior changed.
+### 2026-09-26 — Phase 10 Batch 1 implementation (T121, T123, T124)
+
+Status: Batch implementation complete and ready for Strong Review. T121 now uses explicit
+PostgreSQL pool sizing, bounded checkout timeout, recycle, application names, and process-owned
+engine disposal. Runtime terminal transitions carry a fresh expected TaskRun identity check.
+T123 adds a per-process non-waiting runtime capacity bound for invoke and stream; slots release
+on success, failure, and client cancellation. T124 adds unauthenticated dependency-free
+`/health/live`, bounded PostgreSQL `SELECT 1` `/health/ready`, and keeps `/health` as liveness.
+
+Files changed: `src/core/settings.py`, `src/persistence/engine.py`, `src/memory/postgres.py`,
+`src/service/auth_dependency.py`, `src/service/runtime_capacity.py`, `src/service/service.py`,
+`src/service/task_lifecycle.py`, `src/service/task_runtime.py`.
+
+Validation: compileall; focused settings, lifecycle, runtime, service, and logging tests (76
+passed), plus six real PostgreSQL lifecycle/concurrency tests against a disposable database (6
+passed). The first PostgreSQL run exposed that a one-connection default could not support two
+independent sessions; the conservative default maximum was corrected to four while retaining
+bounded checkout behavior. No worker, Redis, distributed lock, or durable queue was added.
+
+Learner notes: read `src/persistence/engine.py`, `src/service/runtime_capacity.py`,
+`src/service/service.py`, and `src/service/task_lifecycle.py`. The key concept is keeping database
+transactions short while independently bounding expensive in-process work and dependency health.
+Exercise: simulate two concurrent runtime requests with a limit of one and observe the second 429,
+then verify the slot is reusable after cancellation. Do not worry about distributed throttling or
+workers yet.
+
+Suggested next task: Strong Review of Phase 10 Batch 1.
+
+### 2026-09-26 — Phase 10 Batch 1 minimum blocker fix (T121, T123, T124)
+
+Status: blocker fixes complete and ready for focused batch re-review. SQLAlchemy pool checkout
+timeouts now become bounded HTTP 503 responses with `Retry-After`; engine and session-factory
+caches are cleared together during shutdown so the next lifecycle creates a fresh engine/factory.
+Real PostgreSQL evidence covers a one-connection timeout and post-disposal recreation. Endpoint
+evidence covers invoke saturation, fixed 429 responses, failure and stream-cancellation release,
+and health/auth/CRUD requests remaining outside the runtime semaphore. Readiness now checks the
+business PostgreSQL URL when configured and probes both LangGraph PostgreSQL pools when
+`DATABASE_TYPE=postgres`; SQLite/unconfigured persistence skips those probes. Liveness remains
+dependency-free.
+
+Compose `/info` health-check wiring remains owned by T125; this fix only proves the unauthenticated
+readiness endpoint that T125 will wire into Compose. No Compose files were changed.
+
+Files changed: `src/persistence/engine.py`, `src/service/auth_dependency.py`,
+`src/service/service.py`, `tests/service/test_phase10_batch1_blocker.py`,
+`tests/service/test_phase10_batch1_postgres.py`, and this log. Existing Batch 1 files and tests
+remain part of the reviewed working tree; no Compose file was changed.
+
+Validation: affected and blocker regression **99 passed**; real PostgreSQL pool timeout/disposal,
+business readiness failure/recovery, configured LangGraph pool readiness, and existing lifecycle
+concurrency evidence passed; Ruff and diff checks passed.
+
+Learner notes: read `src/persistence/engine.py`, `src/service/service.py`,
+`src/service/runtime_capacity.py`, and `tests/service/test_phase10_batch1_blocker.py`. The key
+concept is keeping bounded failure responses and readiness probes at the application boundary while
+preserving independent capacity domains. Exercise: hold one database connection open, confirm a
+second checkout returns the mapped 503, then release it and confirm recovery. Do not worry about
+Compose changes until T125.
+
+### 2026-09-27 — Phase 10 Batch 1 final evidence fix
+
+Status: T121, T123, and T124 are COMPLETE / APPROVED. Phase 10 Batch 1 is COMPLETE / STRONG
+REVIEW APPROVED. T125 + T126 + T127 are the next executable batch; T122 remains deferred. The real
+PostgreSQL readiness test now derives its failure endpoint with SQLAlchemy URL parsing, verifies
+the HTTP 503 safe response, then restores the configured database URL and verifies HTTP 200
+recovery. The test uses same-loop ASGI transport so the real async engine is exercised without
+cross-loop false failures. Ruff formatting was applied only to touched Batch 1 files that failed
+the format check. Pyrefly, Ruff, and diff checks pass; focused PostgreSQL evidence completed with
+zero relevant skips.
+
+Learner notes: read `tests/service/test_phase10_batch1_postgres.py` and compare the configured,
+unavailable, and recovered URLs. The key concept is testing failure and recovery through the same
+HTTP boundary used by deployment health checks. Exercise: change only the parsed port and observe
+the bounded 503 before restoring the original URL. Do not modify Compose ownership in T124.

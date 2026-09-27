@@ -1133,6 +1133,7 @@ class TaskRuntimeService:
                 observations=observations,
             )
             lifecycle = TaskLifecycleService(session)
+            lifecycle.expected_task_run_id = task_run_id
             if outcome == "SUCCEEDED":
                 await lifecycle.succeed_run(task_id, organization_id)
                 expected_status = TaskRunStatus.SUCCEEDED
