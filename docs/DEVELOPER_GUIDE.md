@@ -103,6 +103,8 @@ CI separates lock validation, evaluation smoke, Ruff, Pyrefly, ordinary pytest, 
 
 ## Troubleshooting references
 
+- `docs/DEMO_GUIDE.md` — deterministic existing-behavior Product walkthrough.
+
 - `docs/TROUBLESHOOTING.md` — common local, provider, database, and Docker failures.
 - `docs/DEPLOYMENT_RUNBOOK.md` — deployment and readiness operations.
 - `docs/DATABASE_DESIGN.md` — schema and migration ownership.

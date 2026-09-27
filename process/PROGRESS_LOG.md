@@ -5111,3 +5111,21 @@ Evidence: independently read current docs/ARCHITECTURE.md, searched action claim
 Post-verdict mechanical synchronization only: docs/ARCHITECTURE.md current T133 status, TASK_BACKLOG.md T133 row/current next task, ROADMAP.md current next task, process/tasks/INDEX.md current status, and this history entry. No substantive architecture, code, tests, migrations, CI, Compose, ADR decisions, Task Card contracts, or DAG changes were made by the reviewer. No commit or push.
 
 Learner notes: read docs/ARCHITECTURE.md, TASK_BACKLOG.md, and process/tasks/INDEX.md. Distinguish the implemented bounded mock effect from generic external-effect guarantees. Exercise: compare the inventory and deferred-boundaries paragraph. Do not worry about workers or external-provider guarantees yet. Suggested next task: T135 deterministic demo script/data.
+
+### 2026-09-27 — T135 deterministic demo implementation
+
+Status: T135 implementation complete and ready for Strong Review. Added a bounded script that reuses the public TaskPilot API to create/reuse one deterministic task, create/reuse one persisted run, read it back, and log out. Added docs/DEMO_GUIDE.md and linked it from the Developer Guide. No public runtime execution, fake evidence, or new infrastructure was added.
+
+Validation: script compilation, Ruff, Markdown lint, and diff checks are recorded in the implementation report. T134 remains inactive; T136/T137 were not started.
+
+### 2026-09-28 — T135 focused reproducibility blocker fix
+
+Status: Initial T135 Strong Review NOT APPROVED blockers corrected. Demo task selection now enforces 0/1/>1 exact-title semantics and focused tests cover all three cases. Real Compose PostgreSQL evidence completed: migration and /health/ready passed; supported hidden-prompt bootstrap created organization e42a82a2-b362-42ad-b6a2-6fff888f3f04; first execution created Task 34e2909d-a412-4987-b36f-4a300e0155b1 and TaskRun cd5b959b-1377-458d-bdf7-41fa8df9439a; second execution reused both; final PostgreSQL counts were one matching Task and one TaskRun. No secrets recorded.
+
+Validation: focused tests 3 passed; Ruff, py_compile, Markdown lint, and git diff checks passed. T134 remains inactive; T136/T137 were not started. T135 remains pending focused Strong Re-review.
+
+### 2026-09-28 — T135 focused Strong Re-review
+
+Status: T135 COMPLETE / APPROVED. NO T134 ACTIVATION REQUIRED; T134 remains conditional and inactive. T136 is the next executable task.
+
+Evidence: independently verified 0/1/>1 exact-title behavior and tenant-scoped public API discovery. Focused tests passed. Compose PostgreSQL migration and readiness passed; hidden-prompt bootstrap succeeded and was idempotent; two demo executions created then reused one Task and one pending TaskRun; public read-back confirmed one matching Task and one TaskRun; logout completed and sessions were revoked. Static checks, Markdown lint, and diff checks passed. No substantive files were changed by review; only current-state status records were synchronized after approval. No commit or push.
