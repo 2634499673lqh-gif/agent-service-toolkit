@@ -343,28 +343,25 @@ APPROVED except deferred T122. Canonical DAG:
 
 Phase 10 is COMPLETE / FINAL AUDIT APPROVED. T122 remains DEFERRED.
 
-## Phase 11 — finalization
+## Phase 11 — documentation, demo, final audit [PLANNING APPROVED / FROZEN]
 
-### T130 — User Guide audit [C]
-Docs-only, verify UI behavior.
+Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence is preserved in `process/tasks/T129.md` and `process/PROGRESS_LOG.md`.
 
-### T131 — Developer Guide audit [C]
-Docs-only, execute commands.
+| Task | Purpose | Model | Review | Depends | Status |
+|---|---|---|---|---|---|
+| T129 | Phase 11 Planning Gate | STRONG planning | Planning Strong Review | Phase 10 | COMPLETE / APPROVED |
+| T130 | User Guide audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
+| T131 | Developer Guide audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
+| T132 | Code Reading Order audit / reconciliation | LOW_COST | Strong Review | T129 | NEXT / NOT STARTED |
+| T133 | Independent Architecture/security verification | STRONG | Independent Strong Review | T130–T132 | NOT STARTED |
+| T134 | Conditional critical/high blocker remediation | STANDARD/STRONG | Focused revalidation | Conditional | CONDITIONAL |
+| T135 | Deterministic existing-behavior demo | LOW_COST/STANDARD | Reproducibility review | T133 and any T134 | NOT STARTED |
+| T136 | Final executable evaluation/evidence report | STANDARD/LOW_COST | Strong Review | T135 | NOT STARTED |
+| T137 | Independent Phase 11 Final Audit | STRONG read-only | Phase Final Audit | T129–T136 as applicable | NOT STARTED |
 
-### T132 — Code Reading Order audit [C]
-All paths valid.
+Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 is conditional remediation only and is not an unconditional dependency. See `process/tasks/T129.md`–`T137.md`.
 
-### T133 — Architecture/security audit [A]
-Severity-ranked findings only first.
-
-### T134 — Critical/high fixes [A/B]
-Each finding becomes a separate task.
-
-### T135 — Demo script/data [C]
-No production code unless needed for demo fixtures.
-
-### T136 — Final eval/test report [B/C]
-Run actual commands and record outputs.
+Phase 11 implementation has not begun. T130–T132 are the next executable Batch 1; T134 remains conditional.
 
 \r\n
 ## Phase 9 — Product UI (planning APPROVED / frozen, ADR-011 accepted/frozen)

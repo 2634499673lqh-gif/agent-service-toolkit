@@ -162,3 +162,7 @@ COMPLETE / APPROVED and Phase 10 is COMPLETE / FINAL AUDIT APPROVED. Canonical D
 `T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is explicitly deferred.
 Batch 1 is T121/T123/T124; Batch 2 is T125–T127; T128 is the independent Final Audit.
 See `process/ADR-012.md` and cards `T120.md`–`T128.md`.
+
+## Phase 11 Task Cards — Documentation, Demo, Final Audit [PLANNING APPROVED / FROZEN]
+
+T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 are the next executable Batch 1 and are NOT STARTED. T133 follows all three; T134 is conditional remediation only; T135, T136, and T137 follow the approved path. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.
