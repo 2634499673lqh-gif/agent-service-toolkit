@@ -324,24 +324,24 @@ The original T110–T116 sketch is retained as history only. The implementation-
 
 ## Phase 10 — deployment/concurrency
 
-Phase 10 planning is APPROVED / frozen. ADR-012 is Accepted / frozen and T120 is COMPLETE /
-APPROVED. The next executable batch is T121 + T123 + T124. Canonical DAG:
+Phase 10 planning is APPROVED / frozen. ADR-012 is Accepted / frozen and T120–T128 are COMPLETE /
+APPROVED except deferred T122. Canonical DAG:
 `T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is explicitly DEFERRED. See
 `process/tasks/T120.md`–`T128.md`.
 
 | Task | Purpose | Model | Review | Depends | Status |
 |---|---|---|---|---|---|
 | T120 | Concurrency/deployment architecture gate / ADR-012 | STRONG planning | Planning Strong Review | Phase 9 | COMPLETE / APPROVED |
-| T121 | PostgreSQL pool and transaction hardening | STANDARD/STRONG | Strong Review | T120 | NOT STARTED |
+| T121 | PostgreSQL pool and transaction hardening | STANDARD/STRONG | Strong Review | T120 | COMPLETE / APPROVED |
 | T122 | Background worker integration | — | — | — | DEFERRED |
-| T123 | In-process rate limiting/backpressure | STANDARD | Strong Review | T120, T121 | NOT STARTED |
-| T124 | Liveness/readiness endpoints | STANDARD | Strong Review | T120, T121 | NOT STARTED |
+| T123 | In-process rate limiting/backpressure | STANDARD | Strong Review | T120, T121 | COMPLETE / APPROVED |
+| T124 | Liveness/readiness endpoints | STANDARD | Strong Review | T120, T121 | COMPLETE / APPROVED |
 | T125 | Docker Compose hardening | STANDARD | Strong Review | T123, T124 | COMPLETE / APPROVED |
 | T126 | CI evidence tiers | STANDARD | Strong Review | T125 | COMPLETE / APPROVED |
 | T127 | Deterministic multi-user concurrency smoke | STANDARD | Strong Review | T121, T123–T126 | COMPLETE / APPROVED |
-| T128 | Phase 10 Final Audit | STRONG read-only | Phase Final Audit | T120–T127 except T122 | NEXT |
+| T128 | Phase 10 Final Audit | STRONG read-only | Phase Final Audit | T120–T127 except T122 | COMPLETE / APPROVED |
 
-No production feature is implemented by this planning update.
+Phase 10 is COMPLETE / FINAL AUDIT APPROVED. T122 remains DEFERRED.
 
 ## Phase 11 — finalization
 

@@ -153,12 +153,12 @@ DAG: `T100 → T101 → T102 → T103 → T104 → T105`; `T101 + T102 + T103 + 
 
 See `process/ADR-011.md` and cards `T110.md`–`T119.md`. T110 is COMPLETE / APPROVED as the planning gate; T118/T119 are COMPLETE / APPROVED backend prerequisites; T111/T112 are COMPLETE / APPROVED. T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. T117 is the conflict-free Phase 9 Final Audit and is COMPLETE / APPROVED. Phase 9 is complete; Phase 10 planning is the next gate.
 
-## Phase 10 Task Cards — Concurrency & Deployment Hardening (ADR-012 proposed)
+## Phase 10 Task Cards — Concurrency & Deployment Hardening (ADR-012 accepted / frozen)
 
 Planning status: APPROVED / frozen; T120 is COMPLETE / APPROVED. T121, T123, and T124 are
-COMPLETE / APPROVED. Phase 10 Batch 1 is COMPLETE / STRONG REVIEW APPROVED. The next
-executable work is T128 Phase 10 Final Audit. T125, T126, and T127 are COMPLETE / APPROVED;
-Phase 10 Batch 2 is COMPLETE / STRONG REVIEW APPROVED. Canonical DAG is
+COMPLETE / APPROVED. Phase 10 Batch 1 is COMPLETE / STRONG REVIEW APPROVED. T125, T126, and
+T127 are COMPLETE / APPROVED; Phase 10 Batch 2 is COMPLETE / STRONG REVIEW APPROVED. T128 is
+COMPLETE / APPROVED and Phase 10 is COMPLETE / FINAL AUDIT APPROVED. Canonical DAG is
 `T120 → T121 → (T123, T124) → T125 → T126 → T127 → T128`; T122 is explicitly deferred.
 Batch 1 is T121/T123/T124; Batch 2 is T125–T127; T128 is the independent Final Audit.
 See `process/ADR-012.md` and cards `T120.md`–`T128.md`.

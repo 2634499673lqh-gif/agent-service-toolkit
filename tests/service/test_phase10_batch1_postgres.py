@@ -8,6 +8,7 @@ from sqlalchemy import make_url, text
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from memory.postgres import to_psycopg_pool_url
 from persistence.engine import create_async_engine
 from service import service
 
@@ -111,8 +112,12 @@ async def test_real_postgres_readiness_failure_and_recovery(monkeypatch) -> None
 async def test_real_postgres_configured_langgraph_readiness(monkeypatch) -> None:
     url = _database_url()
     async with (
-        AsyncConnectionPool(url, min_size=1, max_size=1, timeout=0.5) as checkpoint_pool,
-        AsyncConnectionPool(url, min_size=1, max_size=1, timeout=0.5) as store_pool,
+        AsyncConnectionPool(
+            to_psycopg_pool_url(url), min_size=1, max_size=1, timeout=0.5
+        ) as checkpoint_pool,
+        AsyncConnectionPool(
+            to_psycopg_pool_url(url), min_size=1, max_size=1, timeout=0.5
+        ) as store_pool,
     ):
         monkeypatch.setattr(service.app.state, "startup_complete", True, raising=False)
         monkeypatch.setattr(

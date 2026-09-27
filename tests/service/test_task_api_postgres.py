@@ -328,6 +328,7 @@ async def test_t118_login_commit_failure_rolls_back_real_postgres_session(api_co
         )
         assert after == before
 
+
 @pytest.mark.asyncio
 async def test_t127_two_users_tenant_isolation_and_single_start(api_context) -> None:
     factory, tokens = api_context

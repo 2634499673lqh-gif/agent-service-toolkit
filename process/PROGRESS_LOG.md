@@ -5056,3 +5056,25 @@ Validation: workflow YAML parse PASS; Docker job ordering PASS (collect → uplo
 all three steps use `if: always()`.
 
 Suggested next task: T128 Phase 10 Final Audit.
+
+### 2026-09-27 — Phase 10 Final Audit blocker fix
+
+Status: T128 Final Audit remains NOT APPROVED pending focused re-review. The LangGraph
+PostgreSQL adapter now keeps the canonical `postgresql+psycopg://` URL at the configuration
+boundary and converts it only for `psycopg_pool`, which consumes libpq `postgresql://` syntax.
+The stale Phase 10 task statuses were corrected in `TASK_BACKLOG.md`; T122 remains deferred
+and Phase 10 is not complete.
+
+Validation: PostgreSQL readiness evidence, affected regression, Ruff, Pyrefly, and `git diff
+--check` are recorded with this blocker-fix result.
+
+### 2026-09-27 — Phase 10 focused Final Audit re-review
+
+Status: APPROVED. T128 is COMPLETE / APPROVED and Phase 10 is COMPLETE / FINAL AUDIT APPROVED.
+T122 remains DEFERRED. Historical blocker and re-review records remain unchanged.
+
+Validation: required PostgreSQL readiness, failure/recovery, pool, tenant, start-race, and
+approval-race evidence passed (14 passed, 0 skipped); directly affected Phase 10 regression
+passed (56 passed); Ruff format/check, Pyrefly, and `git diff --check` passed. The canonical
+`postgresql+psycopg://` URL is converted to libpq `postgresql://` only at the psycopg pool
+boundary for LangGraph saver/store ownership.
