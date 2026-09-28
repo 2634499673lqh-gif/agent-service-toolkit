@@ -213,13 +213,13 @@ Implementation batches are Batch 1 (T121, T123, T124) and Batch 2 (T125–T127),
 independent Final Audit T128. No worker, distributed limiter, Redis, Kubernetes, or exactly-once
 provider guarantee is planned.
 
-## Phase 11 — Documentation, Demo, Final Audit [PLANNING APPROVED / FROZEN]
+## Phase 11 — Documentation, Demo, Final Audit [COMPLETE / FINAL AUDIT APPROVED]
 
 Tasks: T129 Planning Gate (COMPLETE / APPROVED); T130 User Guide; T131 Developer Guide; T132 Code Reading Order; T133 independent architecture/security verification; T134 conditional remediation; T135 deterministic demo; T136 final evidence; T137 independent Final Audit.
 
 Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 activates only for a qualifying blocker from T133 or T135 and is not a normal DAG dependency.
 
-Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T137 is the next executable task. See `process/tasks/T129.md`–`T137.md`.
+Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; T137 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive. See `process/tasks/T129.md`–`T137.md`.
 
 Exit: documentation matches behavior, deterministic demo is reproducible, executable evidence is recorded, and T137 is approved.
 
