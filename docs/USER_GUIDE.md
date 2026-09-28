@@ -1,53 +1,57 @@
-# User Guide
+# TaskPilot User Guide
 
-> Codex must keep this synchronized with implemented behavior.
+> This guide describes the behavior implemented by the current repository.
 
-## Status (2026-09-23)
+## Open the Product UI
 
-Everything below describes the target V1 workflow beyond the currently implemented surface. There is no login endpoint, step view, or approval UI; T036/T037 provide protected Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence with protected nested read/decision routes under `/api/v1/tasks`. T083 implements the internal runtime approval boundary; T084 bounded action handling is implemented; the public runtime workflow remains outside the current scope. Phase 2 delivered opaque revocable sessions, the server-derived `CurrentPrincipal`, and the authorization boundary. See `docs/ARCHITECTURE.md` for the implemented inventory and `docs/DEVELOPER_GUIDE.md` for the available commands.
+The Product UI is the Streamlit view served by `src/streamlit_app.py`. Start the API first, then open `http://localhost:8501` for a local client or the Compose URL when using Docker. The sidebar switches between **TaskPilot Product** and the retained **Legacy chat** view.
 
-## What TaskPilot does
+## Sign in and organization selection
 
-TaskPilot accepts a concrete work task, plans steps, uses approved tools/skills, verifies results, and shows the execution trace.
+1. Enter the email and password on the TaskPilot sign-in form.
+2. If the account has more than one eligible organization, select one and submit the password again.
+3. The API returns an opaque session token. The browser session keeps the token in its own Streamlit session state; it is not a caller-supplied user or organization identity.
+4. The sidebar shows the selected organization. **Log out** revokes the server session when possible and always clears local Product state.
 
-## Typical workflow
+A session is checked again while the Product view loads. Expiry, revocation, deactivation, or a membership change sends the user back to sign in. The API applies tenant and role checks server-side; the UI is only a display and input client.
 
-1. Log in.
-2. Create a task with:
-   - title
-   - objective
-   - acceptance criteria
-   - optional files/context
-3. Start a run.
-4. Watch task steps.
-5. If an approval is required, inspect the proposed action.
-6. Approve or reject.
-7. Review final result and trace.
-8. Provide feedback.
+## Tasks
 
-## How to write a good task
+After sign-in, the Product view can:
 
-Bad:
-> 帮我看看这些东西。
+- create a task with a required title and optional description;
+- list the current organization's tasks and refresh the list;
+- open a task detail view with its persisted status and timestamps;
+- start a run for a draft task or retry a failed task;
+- list and open the task's persisted TaskRuns.
 
-Better:
-> 比较上传的两份文档，列出预算、时间、负责人三项差异。只使用文档中能直接支持的信息；缺失项标记“未找到”。
+The underlying protected API is `/api/v1/tasks` (`POST`/`GET`), `/api/v1/tasks/{task_id}` (`GET`), and `/api/v1/tasks/{task_id}/runs` plus `/runs/{run_id}` (`POST`/`GET`). A task or run outside the current organization is not exposed as a visible resource.
 
-## Approval safety
+Starting a run creates persisted queued or pending state. The Product UI does not execute the internal Planner/Executor/Verifier runtime, poll live progress, or invent a result. There is no TaskStep view.
 
-Never approve an action you do not understand.
-The UI should show:
+## Approvals
 
-- action
-- target
-- sanitized arguments
-- risk level
-- originating task
+For the selected run, the UI lists persisted approvals and opens an approval detail containing the action name/version, risk, sanitized proposed action, status, membership references, timestamps, reason, replan count, and step position. Owners and admins can approve or reject a pending approval with an optional reason (maximum 500 characters). Members can inspect approvals but cannot decide them.
 
-## Known V1 limitations
+Approval decisions update the database record only. They do not execute an external side effect or resume a public run from the Product UI. The API endpoints are nested under `/api/v1/tasks/{task_id}/runs/{run_id}/approvals` with `GET` and `POST .../approve|reject` operations.
 
-Keep this section factual and update after every major release.
+## Trace
 
-## Phase 9 planning status (2026-09-26)
+The selected run can show a bounded trace timeline (100 or 500 events). The API returns sanitized trace fields, and the UI applies an additional display projection for sensitive keys and bearer values. Events may include status, timing, node/tool, correlation IDs, approval ID, usage, cost estimate, metadata, and safe error fields. An empty trace is reported as “No trace evidence observed”; reaching the bound is labeled as potentially incomplete.
 
-The Product UI is approved as a Streamlit-first, authenticated TaskPilot view. Planning found no public login/session/logout route and no HTTP run-discovery route, so T118 and T119 are explicit prerequisites. The UI will use server-owned identity and lifecycle state, show only selected-run approvals and sanitized trace evidence, and clearly label that starting a run creates persisted pending/queued state without running the internal runtime. No TaskStep, public execution endpoint, React rewrite, live updates, uploads or admin console is included. The next executable implementation batch is T118–T119.
+Trace and approval data are observational evidence. They are not a substitute for database lifecycle state or authorization.
+
+## Current limitations
+
+- No public runtime execution endpoint or background worker is wired to Product run creation.
+- No live progress stream, TaskStep persistence/view, fake progress, or fake result is provided.
+- No uploads, admin console, registration, SSO, refresh-token flow, or external side-effect workflow is exposed by this UI.
+- The legacy chat view remains available for the upstream LangGraph experience and has separate caller-supplied thread behavior; it is not the TaskPilot identity boundary.
+
+## Writing a good task
+
+Prefer a concrete objective and acceptance criteria, for example:
+
+> Compare two supplied documents and list differences in budget, schedule, and owner. Use only directly supported information; mark missing items as “not found”.
+
+Never approve an action you do not understand. Inspect the sanitized proposal, target, risk level, and originating task before deciding.

@@ -1,25 +1,21 @@
-# Code Reading Order — Phase 0 baseline
+# Code Reading Order
 
-Read production code in this order. These paths exist in the assessed repository on 2026-09-10. The early files describe the upstream chat service, not yet TaskPilot's future task domain.
+Use this sequence to learn the current repository. Read the cited tests beside each boundary; this is a navigation guide, not a second architecture specification.
 
-1. `AGENTS.md` — TaskPilot constraints; it explains why plans must not be confused with implemented behavior.
-2. `prompts/00_repo_assessment.md` — the Phase 0 acceptance scope.
-3. `README.md` then `README_UPSTREAM.md` — TaskPilot package guidance followed by retained upstream operating/reference documentation.
-4. `PROJECT_SPEC.md` and `ROADMAP.md` — learn the target and phase boundaries before judging demo graphs.
-5. `pyproject.toml` and `.env.example` — dependencies, Python range, configuration and persistence choices.
-6. `src/run_service.py` — executable FastAPI launch point and Windows event-loop choice.
-7. `src/service/service.py` — app lifespan, shared-secret guard, chat/SSE routes, graph invocation, checkpoint history and feedback.
-8. `src/schema/schema.py` — actual API boundary models. `UserInput.user_id` is not authenticated identity.
-9. `src/agents/agents.py` — every registered graph and the default `research-assistant`; this maps URL `agent_id` to a graph.
-10. `src/agents/research_assistant.py` — best first concrete graph: guard -> model -> optional `ToolNode` loop -> end. Learn state, nodes, edges and tools.
-11. `src/agents/tools.py` — calculator and Chroma retrieval; illustrates why the latter needs tenancy/provenance work.
-12. `src/memory/__init__.py`, `src/memory/sqlite.py`, then `src/memory/postgres.py` — backend selection and what persists.
-13. `src/agents/interrupt_agent.py` and `src/service/agui.py` — technical interrupt/resume and AG-UI after normal requests; neither is an approval flow.
-14. `src/agents/rag_assistant.py` and `docs/RAG_Assistant.md` — Chroma RAG prototype, not a tenant-scoped knowledge service.
-15. `src/agents/knowledge_base_agent.py`, `src/agents/langgraph_supervisor_agent.py`, and `src/agents/langgraph_supervisor_hierarchy_agent.py` — optional Bedrock retrieval/multi-agent examples. Do not adopt them as V1 design yet.
-16. `src/client/client.py` then `src/streamlit_app.py` — existing UI calls, browser-generated user ID, streams and thread history.
-17. `compose.yaml`, `docker/Dockerfile.service`, `docker/Dockerfile.app`, and `.github/workflows/test.yml` — local container topology and CI commands.
-18. Tests alongside production: `tests/service/test_service.py`, `tests/service/test_auth.py`, `tests/service/test_service_real_graphs.py`, `tests/service/test_threads_sqlite.py`, `tests/agents/test_agent_loading.py`, and `tests/smoke/test_persistence.py`.
-19. Phase 2 identity, in dependency order: `src/persistence/` (`models.py`, `repositories.py`, `engine.py`, `identity.py`, `passwords.py`, `tokens.py`) and `migrations/` for the `taskpilot` schema, then `src/service/session.py`, `src/service/auth_dependency.py`, and `src/service/authorization.py` for opaque sessions, the server-derived `CurrentPrincipal`, and the single authorization boundary. Evidence lives in `tests/service/test_auth_session.py`, `tests/service/test_current_principal.py`, `tests/service/test_authorization.py`, `tests/service/test_bootstrap.py`, and the disposable-PostgreSQL suites under `tests/persistence/`.
+1. **Repository rules and entry points** — `AGENTS.md`, `README.md`, `PROJECT_SPEC.md`, `pyproject.toml`, `.env.example`, `src/run_service.py`, and `src/streamlit_app.py`.
+2. **Configuration and persistence choices** — `src/core/settings.py`, `src/persistence/engine.py`, `src/memory/__init__.py`, `src/memory/sqlite.py`, `src/memory/postgres.py`.
+3. **Identity and session boundary** — `src/persistence/models.py`, `src/persistence/repositories.py`, `src/persistence/identity.py`, `src/persistence/passwords.py`, `src/persistence/tokens.py`, `src/service/session.py`, `src/service/auth_dependency.py`, and `src/service/authorization.py`.
+4. **Schema and migrations** — `migrations/env.py` and `migrations/versions/20260914_01_organization.py` through `20260924_01_observability.py`; then `src/schema/auth_api.py`, `src/schema/task_api.py`, `src/schema/task_run_api.py`, `src/schema/approval_api.py`, and `src/schema/trace_api.py`.
+5. **Task and TaskRun lifecycle** — `src/service/task_service.py`, `src/service/task_lifecycle.py`, `src/service/task_run_service.py`, `src/service/task_api.py`, and `src/service/service.py` route registration. The database owns lifecycle truth; the Product UI does not execute a run.
+6. **Planner, Executor, and Verifier runtime** — `src/runtime/state.py`, `src/runtime/graph.py`, `src/runtime/planner.py`, `src/runtime/executor.py`, `src/runtime/verifier.py`, `src/runtime/retry.py`, `src/runtime/replan.py`, and `src/runtime/failure.py`.
+7. **Capability and context boundaries** — `src/runtime/capability.py`, `src/runtime/capabilities.py`, `src/runtime/context.py`, and `src/runtime/risk.py`.
+8. **Human approval boundary** — `src/service/approval_service.py`, `src/service/approval_api.py`, and the approval boundary in `src/runtime/graph.py` and `src/runtime/capability.py`.
+9. **Observability and trace projection** — `src/runtime/observability.py`, `src/service/trace_service.py`, `src/service/logging.py`, and `src/schema/trace_api.py`.
+10. **Evaluation** — `src/evaluation/fixtures.py`, `src/evaluation/runner.py`, `src/evaluation/metrics.py`, `src/evaluation/report.py`, and `scripts/evaluation_smoke.py`.
+11. **Product client and UI** — `src/client/taskpilot.py`, `src/taskpilot_ui.py`, `src/streamlit_app.py`, and `tests/app/test_taskpilot_ui.py` plus `tests/app/test_taskpilot_runs_approvals_trace.py`.
+12. **Deployment, readiness, and concurrency hardening** — `compose.yaml`, `docker/Dockerfile.service`, `docker/Dockerfile.app`, `src/service/service.py` health routes, and `src/service/runtime_capacity.py`; then `tests/test_phase10_batch1.py`, `tests/service/test_task_api_postgres.py`, and `.github/workflows/test.yml`.
+13. **Evidence and regression** — read the focused tests in `tests/service/`, `tests/persistence/`, `tests/runtime/`, `tests/app/`, and `tests/client/`, then the CI workflow. PostgreSQL and Docker tests are explicitly environment-gated.
 
-For every file ask: who calls it, what does it receive, what does it return or persist, and what authorization/trust assumption does it make? Distinguish a LangGraph conversation checkpoint from TaskPilot's `Task`/`TaskRun`/`TaskStep` domain, which does not exist yet. Phase 2 identity does exist: caller-supplied `user_id`, `organization_id`, role, `/threads` query values, and AG-UI forwarded identity are never authorization truth, and only a server-resolved `CurrentPrincipal` selects a tenant.
+While reading, ask who calls each module, what it receives, what it returns or persists, and which trust boundary applies. Keep these concepts separate: legacy LangGraph conversation checkpoints, authenticated TaskPilot identity, persisted Task/TaskRun state, approval records, runtime evidence, and Product UI snapshots.
+
+Deferred or deliberately absent systems include a public runtime execution API, TaskStep persistence/view, background worker, Redis/distributed lock, and generic exactly-once guarantee. Do not infer them from the runtime modules or from the legacy chat UI.

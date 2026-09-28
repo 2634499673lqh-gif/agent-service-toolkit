@@ -609,3 +609,10 @@ schema, migration, dependency, security, or DAG changes were made.
 ## Phase 9 planning decision — ADR-011 (2026-09-26)
 
 Planning inspected the current Streamlit/AgentClient and protected Task, TaskRun, Approval and trace surfaces. The minimum truthful Product UI is Streamlit-first with a thin separate TaskPilot client. The repository lacks public login/session/logout HTTP and run-discovery HTTP, so T118 and T119 are explicit backend prerequisites. Caller-supplied user IDs and legacy AUTH_SECRET remain non-identity compatibility inputs. No TaskStep persistence or public runtime execution is introduced. ADR-011 is accepted/frozen after independent Planning Strong Review; T110 is COMPLETE / APPROVED. T117 is the Phase 9 Final Audit; no branch, code, tests, migrations, dependencies or CI were changed. Next executable batch: T118–T119.
+
+
+## Phase 11 planning freeze — T129–T137 (2026-09-27)
+
+The Phase 11 Planning Gate completed independent review: the initial Planning Strong Review was **NOT APPROVED** for a canonical-ID blocker; the minimum planning correction was completed; focused Planning Strong Re-review was **APPROVED**. The approved plan is frozen without beginning implementation.
+
+Canonical ownership is T129 Planning Gate; T130–T132 documentation reconciliation; T133 independent architecture/security verification; T134 conditional critical/high remediation; T135 deterministic existing-behavior demo; T136 final executable evidence; and T137 independent Phase Final Audit. The static DAG is `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`; T134 is activated only by a qualifying blocker and never inserted as an unconditional dependency. Phase 10 remains complete, T129 is complete/approved, and Batch 1 is next.

@@ -5078,3 +5078,80 @@ approval-race evidence passed (14 passed, 0 skipped); directly affected Phase 10
 passed (56 passed); Ruff format/check, Pyrefly, and `git diff --check` passed. The canonical
 `postgresql+psycopg://` URL is converted to libpq `postgresql://` only at the psycopg pool
 boundary for LangGraph saver/store ownership.
+
+
+### 2026-09-27 — Phase 11 Planning Freeze (T129–T137)
+
+Status: Planning Freeze complete and ready for `Phase11 Planning Freeze Strong Review`. T129 is COMPLETE / APPROVED after an initial Planning Strong Review **NOT APPROVED** for a canonical-ID blocker, minimum correction, and focused re-review **APPROVED**. Created canonical cards T129–T137 and synchronized TASK_BACKLOG.md, ROADMAP.md, process/tasks/INDEX.md, and process/DECISION_LOG.md.
+
+Frozen DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 remains conditional remediation only. Phase 11 implementation has not begun; next executable work is Batch 1: T130 + T131 + T132.
+
+Validation: changed-file inspection, ID/dependency/cycle checks, historical review evidence check, Markdown lint on supported changed documentation, and `git diff --check`. No production, tests, migrations, CI, Compose, or guide implementation content was changed.
+
+### 2026-09-27 — Phase 11 Batch 1 implementation (T130, T131, T132)
+
+Status: Batch 1 implementation complete and ready for independent Strong Review. T130 reconciles the User Guide with the authenticated Streamlit Product UI, organization selection, task/TaskRun lifecycle reads, approval inspection/decision, sanitized bounded trace, logout/session expiry, role visibility, and explicit deferred runtime boundaries. T131 reconciles local uv setup, environment/database configuration, explicit Alembic/bootstrap steps, FastAPI and Streamlit startup, Compose topology, health endpoints, validation commands, PostgreSQL/Docker prerequisites, CI tiers, and troubleshooting references. T132 replaces the early-project reading order with the current identity, persistence, lifecycle, runtime, approval, observability, evaluation, UI, deployment, and test sequence using verified paths.
+
+Files changed: `docs/USER_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/CODE_READING_ORDER.md`, plus current-state status lines in `TASK_BACKLOG.md`, `ROADMAP.md`, and `process/tasks/INDEX.md`.
+
+Validation: `uv run pymarkdown scan docs/USER_GUIDE.md docs/DEVELOPER_GUIDE.md docs/CODE_READING_ORDER.md` passed; `git diff --check` passed; every path cited by the reading-order guide was checked against the working tree. No production code, tests, migrations, CI, or Compose behavior changed. No T133–T137 work was started.
+
+Learner notes: read the three reconciled guides, `src/taskpilot_ui.py`, `src/client/taskpilot.py`, `src/service/task_api.py`, and `compose.yaml`. The key concept is separating server-authoritative identity/lifecycle/approval state from Streamlit display state and from the legacy chat client. Exercise: trace one Product action from its Streamlit control to the client method, HTTP route, service, and persisted record. Do not worry about public runtime execution, workers, or demo fixtures yet.
+
+Suggested next task: Phase 11 Batch 1 independent Strong Review.
+
+### 2026-09-27 — T133 final focused Strong Re-review
+
+Status: T133 COMPLETE / APPROVED. NO T134 ACTIVATION REQUIRED; T134 remains conditional and inactive. T135 is the next executable task and has not started.
+
+Review history: initial Strong Review NOT APPROVED for medium stale architecture inventory/current-status wording; the first dedicated T133 fix corrected T036/T037, T038, T081/T082/T083, T084 and the Phase 8 heading. Focused Strong Re-review NOT APPROVED for the residual deferred action claim/effect wording; the second dedicated T133 fix replaced it with generic real external-effect infrastructure. Final focused Strong Re-review APPROVED the latest working-tree correction. Both earlier verdicts remain historical; neither fix activated T134.
+
+Evidence: independently read current docs/ARCHITECTURE.md, searched action claim, effect handling, external-effect, external effect, T084 and deferred, and inspected git status --short and git diff -- docs/ARCHITECTURE.md. uv run pymarkdown scan docs/ARCHITECTURE.md and git diff --check passed. The pre-verdict substantive diff was limited to docs/ARCHITECTURE.md. No application tests were rerun for this documentation-only residual fix; this review does not add PostgreSQL evidence.
+
+Post-verdict mechanical synchronization only: docs/ARCHITECTURE.md current T133 status, TASK_BACKLOG.md T133 row/current next task, ROADMAP.md current next task, process/tasks/INDEX.md current status, and this history entry. No substantive architecture, code, tests, migrations, CI, Compose, ADR decisions, Task Card contracts, or DAG changes were made by the reviewer. No commit or push.
+
+Learner notes: read docs/ARCHITECTURE.md, TASK_BACKLOG.md, and process/tasks/INDEX.md. Distinguish the implemented bounded mock effect from generic external-effect guarantees. Exercise: compare the inventory and deferred-boundaries paragraph. Do not worry about workers or external-provider guarantees yet. Suggested next task: T135 deterministic demo script/data.
+
+### 2026-09-27 — T135 deterministic demo implementation
+
+Status: T135 implementation complete and ready for Strong Review. Added a bounded script that reuses the public TaskPilot API to create/reuse one deterministic task, create/reuse one persisted run, read it back, and log out. Added docs/DEMO_GUIDE.md and linked it from the Developer Guide. No public runtime execution, fake evidence, or new infrastructure was added.
+
+Validation: script compilation, Ruff, Markdown lint, and diff checks are recorded in the implementation report. T134 remains inactive; T136/T137 were not started.
+
+### 2026-09-28 — T135 focused reproducibility blocker fix
+
+Status: Initial T135 Strong Review NOT APPROVED blockers corrected. Demo task selection now enforces 0/1/>1 exact-title semantics and focused tests cover all three cases. Real Compose PostgreSQL evidence completed: migration and /health/ready passed; supported hidden-prompt bootstrap created organization e42a82a2-b362-42ad-b6a2-6fff888f3f04; first execution created Task 34e2909d-a412-4987-b36f-4a300e0155b1 and TaskRun cd5b959b-1377-458d-bdf7-41fa8df9439a; second execution reused both; final PostgreSQL counts were one matching Task and one TaskRun. No secrets recorded.
+
+Validation: focused tests 3 passed; Ruff, py_compile, Markdown lint, and git diff checks passed. T134 remains inactive; T136/T137 were not started. T135 remains pending focused Strong Re-review.
+
+### 2026-09-28 — T135 focused Strong Re-review
+
+Status: T135 COMPLETE / APPROVED. NO T134 ACTIVATION REQUIRED; T134 remains conditional and inactive. T136 is the next executable task.
+
+Evidence: independently verified 0/1/>1 exact-title behavior and tenant-scoped public API discovery. Focused tests passed. Compose PostgreSQL migration and readiness passed; hidden-prompt bootstrap succeeded and was idempotent; two demo executions created then reused one Task and one pending TaskRun; public read-back confirmed one matching Task and one TaskRun; logout completed and sessions were revoked. Static checks, Markdown lint, and diff checks passed. No substantive files were changed by review; only current-state status records were synchronized after approval. No commit or push.
+
+### 2026-09-28 — T136 final executable evidence
+
+Status: T136 implementation/evidence complete and ready for independent Strong Review. Created `process/T136_EVIDENCE_REPORT.md` with the baseline, exact commands, counts, tier classifications, PostgreSQL zero-skip evidence, migration evidence, Compose health/restart evidence, deterministic T135 demo evidence, non-PASS explanations, and Strong Review handoff. T134 remains conditional/inactive; T137 remains not started.
+
+Validation: `uv lock --check` passed; Ruff lint, Pyrefly, evaluation smoke, full regression (`692 passed, 133 skipped`), Compose config/build/startup/health/restart/migration, PostgreSQL required suites (`167 passed, 0 skipped`), Alembic upgrade/check, deterministic demo, and `git diff --check` were executed. Ruff format and repository-wide Markdown lint retain pre-existing failures; the opt-in Docker integration suite is blocked on its Windows/Linux host-network assumptions. No credentials or tokens were recorded. No production behavior, tests, migrations, CI, or Compose definitions were changed.
+
+Learner notes: read `process/T136_EVIDENCE_REPORT.md`, `docs/DEVELOPER_GUIDE.md`, `docs/DEMO_GUIDE.md`, `compose.yaml`, and `.github/workflows/test.yml`. The key concept is separating general green tests from required PostgreSQL and environment-gated Docker evidence, then classifying every result without hiding skips or failures. Exercise: reproduce the PostgreSQL command with `TASKPILOT_TEST_DATABASE_URL` and compare its zero-skip result with plain `uv run pytest`. Do not worry about T137 approval or new runtime infrastructure yet.
+
+Suggested next task: T136 independent Strong Review; after approval, T137 Phase 11 Final Audit.
+
+### 2026-09-28 — T136 full-regression evidence correction
+
+Status: The initial T136 Strong Review returned NOT APPROVED solely because the evidence report omitted a conflicting full-suite result. This correction preserves the history: original T136 `692 passed, 133 skipped, 18 warnings`; independent Strong Review `1 failed, 691 passed, 133 skipped, 18 warnings` at `tests/app/test_streamlit_app.py::test_app_simple_non_streaming` with a Streamlit `AppTest` timeout; Strong Review focused rerun passed.
+
+Correction evidence: a new `uv run pytest` passed `692 passed, 133 skipped, 18 warnings` in `144.42s`; `uv run pytest tests/app/test_streamlit_app.py::test_app_simple_non_streaming -q` passed `1 passed in 1.67s`. Current evidence supports an intermittent Windows test-harness timeout observed once; no product regression was demonstrated. T134 remains inactive, T136 remains unapproved and ready for focused Strong Re-review, and T137 remains not started.
+
+### 2026-09-28 — T136 focused Strong Re-review
+
+Status: T136 COMPLETE / APPROVED after focused Strong Re-review. The evidence correction fully discloses the original full-suite pass, the independent one-test timeout, the focused rerun, and the corrective full-suite pass. T134 remains conditional/inactive; T137 is the next executable task.
+
+Validation: `uv run pymarkdown scan process/T136_EVIDENCE_REPORT.md` passed; `git diff --check` passed; current evidence confirms `692 passed, 0 failed, 133 skipped` for the corrective full suite, `167 passed, 0 skipped` for the required PostgreSQL tier, and the previously accepted migration, Compose, demo, security, and evaluation evidence. No substantive files were changed during review; only current-state status records were synchronized after approval. No commit or push.
+### 2026-09-28 — T137 Independent Phase 11 Final Audit
+
+Status: T137 COMPLETE / APPROVED. Fresh-eyes audit independently verified the learner startup/documentation path, frozen architecture and security boundaries, deterministic evaluation and demo evidence, PostgreSQL zero-skip evidence, migration and Compose evidence recorded by T136, and deferred-scope compliance. Current focused evaluation and security/demo tests passed. Docker was unavailable during this audit; the accepted T136 Compose and Windows Docker-test limitation remains disclosed. NO T134 ACTIVATION REQUIRED; Phase 11 is COMPLETE / FINAL AUDIT APPROVED.
+

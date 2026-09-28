@@ -213,19 +213,16 @@ Implementation batches are Batch 1 (T121, T123, T124) and Batch 2 (T125–T127),
 independent Final Audit T128. No worker, distributed limiter, Redis, Kubernetes, or exactly-once
 provider guarantee is planned.
 
-## Phase 11 — Documentation, Demo, Final Audit [STRONG REVIEW + ECONOMY DOC WORK]
+## Phase 11 — Documentation, Demo, Final Audit [COMPLETE / FINAL AUDIT APPROVED]
 
-Tasks:
-- T130 User Guide audit
-- T131 Developer Guide audit
-- T132 Code Reading Order audit
-- T133 Architecture/security audit
-- T134 Critical/high fixes
-- T135 Demo script/data
-- T136 Final eval/test report
+Tasks: T129 Planning Gate (COMPLETE / APPROVED); T130 User Guide; T131 Developer Guide; T132 Code Reading Order; T133 independent architecture/security verification; T134 conditional remediation; T135 deterministic demo; T136 final evidence; T137 independent Final Audit.
 
-Exit:
-- a new learner can clone, start, understand, and demo the project from docs alone
+Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 activates only for a qualifying blocker from T133 or T135 and is not a normal DAG dependency.
+
+Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; T137 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive. See `process/tasks/T129.md`–`T137.md`.
+
+Exit: documentation matches behavior, deterministic demo is reproducible, executable evidence is recorded, and T137 is approved.
+
 
 ## Historical compact-roadmap mapping (not live task assignments)
 
@@ -285,7 +282,7 @@ retired T086–T088.
 | T117 | T133 | Architecture audit |
 | T118 | T136 | Final test/evaluation report |
 
-\r\n
+\n
 ## Phase 9 — Product UI [PLANNING APPROVED / FROZEN]
 
 ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. The canonical plan adds explicit T118 AuthService-backed login/session/logout HTTP and T119 tenant-scoped TaskRun discovery before the Streamlit Product UI. The UI remains Streamlit-first and exposes persisted task/run/approval/trace evidence; it does not execute the internal runtime. Canonical cards, DAG and batches are in `process/tasks/T110.md`–`T119.md` and `process/ADR-011.md`.
@@ -295,3 +292,4 @@ DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 �
 
 T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW
 APPROVED. T117 Phase 9 Final Audit is the next executable work.
+

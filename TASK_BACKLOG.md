@@ -343,30 +343,27 @@ APPROVED except deferred T122. Canonical DAG:
 
 Phase 10 is COMPLETE / FINAL AUDIT APPROVED. T122 remains DEFERRED.
 
-## Phase 11 — finalization
+## Phase 11 — documentation, demo, final audit [PLANNING APPROVED / FROZEN]
 
-### T130 — User Guide audit [C]
-Docs-only, verify UI behavior.
+Planning Gate T129 is COMPLETE / APPROVED. Historical planning review evidence is preserved in `process/tasks/T129.md` and `process/PROGRESS_LOG.md`.
 
-### T131 — Developer Guide audit [C]
-Docs-only, execute commands.
+| Task | Purpose | Model | Review | Depends | Status |
+|---|---|---|---|---|---|
+| T129 | Phase 11 Planning Gate | STRONG planning | Planning Strong Review | Phase 10 | COMPLETE / APPROVED |
+| T130 | User Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
+| T131 | Developer Guide audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
+| T132 | Code Reading Order audit / reconciliation | LOW_COST | Strong Review | T129 | COMPLETE / APPROVED |
+| T133 | Independent Architecture/security verification | STRONG | Independent Strong Review | T130–T132 | COMPLETE / APPROVED |
+| T134 | Conditional critical/high blocker remediation | STANDARD/STRONG | Focused revalidation | Conditional | CONDITIONAL |
+| T135 | Deterministic existing-behavior demo | LOW_COST/STANDARD | Reproducibility review | T133 and any T134 | COMPLETE / APPROVED |
+| T136 | Final executable evaluation/evidence report | STANDARD/LOW_COST | Strong Review | T135 | COMPLETE / APPROVED |
+| T137 | Independent Phase 11 Final Audit | STRONG read-only | Phase Final Audit | T129–T136 as applicable | COMPLETE / APPROVED |
 
-### T132 — Code Reading Order audit [C]
-All paths valid.
+Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 is conditional remediation only and is not an unconditional dependency. See `process/tasks/T129.md`–`T137.md`.
 
-### T133 — Architecture/security audit [A]
-Severity-ranked findings only first.
+Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; T137 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive.
 
-### T134 — Critical/high fixes [A/B]
-Each finding becomes a separate task.
-
-### T135 — Demo script/data [C]
-No production code unless needed for demo fixtures.
-
-### T136 — Final eval/test report [B/C]
-Run actual commands and record outputs.
-
-\r\n
+\n
 ## Phase 9 — Product UI (planning APPROVED / frozen, ADR-011 accepted/frozen)
 
 Phase 9 planning is APPROVED / frozen. T110 is COMPLETE / APPROVED and was the single planning gate. The current repository has protected Task/TaskRun/Approval/trace APIs, the accepted T118/T119 HTTP prerequisites, the approved T111/T112 Product client and task UI, and a legacy chat Streamlit UI. ADR-011 freezes Streamlit-first Product UI, T118 authentication/session/logout HTTP, T119 tenant-scoped run discovery, and truthful persisted-task/evidence inspection scope. Phase 9 does not execute the internal runtime from the UI.
@@ -389,3 +386,4 @@ DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 �
 Batches: planning T110; backend T118–T119; client/task T111–T112; run/approval/trace/error T113–T116; independent Final Audit T117. React/Next.js, TaskStep persistence, public runtime execution, websocket/live updates, uploads, eval dashboard, admin/org management, worker UI, deployment, update/cancel UI, registration/SSO/refresh tokens and external effects remain deferred. See `process/ADR-011.md` and cards T110–T119.
 
 Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Phase 9 Final Audit T117 is complete; Phase 10 planning is the next gate.
+
