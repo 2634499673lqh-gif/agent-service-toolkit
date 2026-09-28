@@ -219,7 +219,7 @@ Tasks: T129 Planning Gate (COMPLETE / APPROVED); T130 User Guide; T131 Developer
 
 Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. T134 activates only for a qualifying blocker from T133 or T135 and is not a normal DAG dependency.
 
-Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T136 is the next executable task. See `process/tasks/T129.md`–`T137.md`.
+Phase 10 remains COMPLETE / FINAL AUDIT APPROVED. Phase 11 Batch 1 (T130 + T131 + T132) is COMPLETE / STRONG REVIEW APPROVED; T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T137 is the next executable task. See `process/tasks/T129.md`–`T137.md`.
 
 Exit: documentation matches behavior, deterministic demo is reproducible, executable evidence is recorded, and T137 is approved.
 

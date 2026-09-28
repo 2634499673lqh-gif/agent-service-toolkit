@@ -165,5 +165,5 @@ See `process/ADR-012.md` and cards `T120.md`–`T128.md`.
 
 ## Phase 11 Task Cards — Documentation, Demo, Final Audit [PLANNING APPROVED / FROZEN]
 
-T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 Batch 1 are COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T136 is the next executable task, followed by T137. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.
+T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 Batch 1 are COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T137 is the next executable task. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.
 

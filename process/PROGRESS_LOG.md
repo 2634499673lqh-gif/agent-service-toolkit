@@ -5129,3 +5129,25 @@ Validation: focused tests 3 passed; Ruff, py_compile, Markdown lint, and git dif
 Status: T135 COMPLETE / APPROVED. NO T134 ACTIVATION REQUIRED; T134 remains conditional and inactive. T136 is the next executable task.
 
 Evidence: independently verified 0/1/>1 exact-title behavior and tenant-scoped public API discovery. Focused tests passed. Compose PostgreSQL migration and readiness passed; hidden-prompt bootstrap succeeded and was idempotent; two demo executions created then reused one Task and one pending TaskRun; public read-back confirmed one matching Task and one TaskRun; logout completed and sessions were revoked. Static checks, Markdown lint, and diff checks passed. No substantive files were changed by review; only current-state status records were synchronized after approval. No commit or push.
+
+### 2026-09-28 — T136 final executable evidence
+
+Status: T136 implementation/evidence complete and ready for independent Strong Review. Created `process/T136_EVIDENCE_REPORT.md` with the baseline, exact commands, counts, tier classifications, PostgreSQL zero-skip evidence, migration evidence, Compose health/restart evidence, deterministic T135 demo evidence, non-PASS explanations, and Strong Review handoff. T134 remains conditional/inactive; T137 remains not started.
+
+Validation: `uv lock --check` passed; Ruff lint, Pyrefly, evaluation smoke, full regression (`692 passed, 133 skipped`), Compose config/build/startup/health/restart/migration, PostgreSQL required suites (`167 passed, 0 skipped`), Alembic upgrade/check, deterministic demo, and `git diff --check` were executed. Ruff format and repository-wide Markdown lint retain pre-existing failures; the opt-in Docker integration suite is blocked on its Windows/Linux host-network assumptions. No credentials or tokens were recorded. No production behavior, tests, migrations, CI, or Compose definitions were changed.
+
+Learner notes: read `process/T136_EVIDENCE_REPORT.md`, `docs/DEVELOPER_GUIDE.md`, `docs/DEMO_GUIDE.md`, `compose.yaml`, and `.github/workflows/test.yml`. The key concept is separating general green tests from required PostgreSQL and environment-gated Docker evidence, then classifying every result without hiding skips or failures. Exercise: reproduce the PostgreSQL command with `TASKPILOT_TEST_DATABASE_URL` and compare its zero-skip result with plain `uv run pytest`. Do not worry about T137 approval or new runtime infrastructure yet.
+
+Suggested next task: T136 independent Strong Review; after approval, T137 Phase 11 Final Audit.
+
+### 2026-09-28 — T136 full-regression evidence correction
+
+Status: The initial T136 Strong Review returned NOT APPROVED solely because the evidence report omitted a conflicting full-suite result. This correction preserves the history: original T136 `692 passed, 133 skipped, 18 warnings`; independent Strong Review `1 failed, 691 passed, 133 skipped, 18 warnings` at `tests/app/test_streamlit_app.py::test_app_simple_non_streaming` with a Streamlit `AppTest` timeout; Strong Review focused rerun passed.
+
+Correction evidence: a new `uv run pytest` passed `692 passed, 133 skipped, 18 warnings` in `144.42s`; `uv run pytest tests/app/test_streamlit_app.py::test_app_simple_non_streaming -q` passed `1 passed in 1.67s`. Current evidence supports an intermittent Windows test-harness timeout observed once; no product regression was demonstrated. T134 remains inactive, T136 remains unapproved and ready for focused Strong Re-review, and T137 remains not started.
+
+### 2026-09-28 — T136 focused Strong Re-review
+
+Status: T136 COMPLETE / APPROVED after focused Strong Re-review. The evidence correction fully discloses the original full-suite pass, the independent one-test timeout, the focused rerun, and the corrective full-suite pass. T134 remains conditional/inactive; T137 is the next executable task.
+
+Validation: `uv run pymarkdown scan process/T136_EVIDENCE_REPORT.md` passed; `git diff --check` passed; current evidence confirms `692 passed, 0 failed, 133 skipped` for the corrective full suite, `167 passed, 0 skipped` for the required PostgreSQL tier, and the previously accepted migration, Compose, demo, security, and evaluation evidence. No substantive files were changed during review; only current-state status records were synchronized after approval. No commit or push.
