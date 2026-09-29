@@ -1125,6 +1125,13 @@ class TaskRuntimeService:
         if outcome not in {"SUCCEEDED", "FAILED"}:
             state = self._failed_state(state, "runtime_incomplete")
             outcome = "FAILED"
+        result_metadata: dict[str, object] = {
+            "schema_version": "taskpilot.runtime.v1",
+            "summary": "Runtime completed successfully" if outcome == "SUCCEEDED" else "Runtime failed",
+            "metrics": {"plan_steps": len(state.plan.steps) if state.plan is not None else 0},
+            "verifier_status": "passed" if outcome == "SUCCEEDED" else "failed",
+            "execution_mode": "deterministic_fixture",
+        }
         try:
             await self._persist_observations(
                 session,
@@ -1134,6 +1141,7 @@ class TaskRuntimeService:
             )
             lifecycle = TaskLifecycleService(session)
             lifecycle.expected_task_run_id = task_run_id
+            lifecycle.result_metadata = result_metadata
             if outcome == "SUCCEEDED":
                 await lifecycle.succeed_run(task_id, organization_id)
                 expected_status = TaskRunStatus.SUCCEEDED

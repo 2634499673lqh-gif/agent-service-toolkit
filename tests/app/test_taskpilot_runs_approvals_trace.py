@@ -245,7 +245,7 @@ def test_draft_start_is_explicit_and_reconciles_without_replaying_post():
     assert [method for method, url in calls if method == "POST" and url.endswith("/runs")] == [
         "POST"
     ]
-    assert any("public runtime is not executed" in item.value for item in at.caption)
+    assert any("Runs execute in the TaskPilot runtime" in item.value for item in at.caption)
 
 
 def test_start_timeout_reconciles_state_and_never_replays_post():

@@ -163,6 +163,16 @@ async def api_context() -> AsyncIterator[
         async with factory() as session:
             await TaskLifecycleService(session).begin_run(failed_task.id, organization.id)
             await TaskLifecycleService(session).fail_run(failed_task.id, organization.id)
+            persisted = await session.scalar(select(TaskRun).where(TaskRun.id == first_run.id))
+            assert persisted is not None
+            persisted.result_metadata = {
+                "schema_version": "taskpilot.runtime.v1",
+                "summary": "historical result",
+                "metrics": {"plan_steps": 1},
+                "verifier_status": "failed",
+                "execution_mode": "deterministic_fixture",
+            }
+            await session.commit()
 
         async with factory() as session:
             foreign_run = TaskRun(
@@ -222,6 +232,7 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
         assert body["task_id"] == str(ids["draft_task"])
         assert body["run_number"] == 1
         assert body["status"] == "pending"
+        assert body["result_metadata"] is None
         assert set(body) == {
             "id",
             "task_id",
@@ -229,6 +240,7 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
             "status",
             "created_at",
             "updated_at",
+            "result_metadata",
         }
         run_id = body["id"]
 
@@ -238,6 +250,13 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
         )
         assert inspected.status_code == 200
         assert inspected.json() == body
+
+        populated = await client.get(
+            f"/api/v1/tasks/{ids['failed_task']}/runs/{ids['failed_run']}",
+            headers=_headers(tokens["member"]),
+        )
+        assert populated.status_code == 200
+        assert populated.json()["result_metadata"]["schema_version"] == "taskpilot.runtime.v1"
 
         wrong_task = await client.get(
             f"/api/v1/tasks/{ids['failed_task']}/runs/{run_id}",

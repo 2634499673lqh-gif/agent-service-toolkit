@@ -37,6 +37,7 @@ def utc_now() -> datetime:
 
 
 APPROVAL_JSON_MAX_BYTES = 8192
+RESULT_METADATA_MAX_BYTES = 8192
 OBSERVABILITY_JSON_MAX_BYTES = 8192
 PROVIDER_METADATA_MAX_BYTES = 2048
 MAX_DURATION_MS = 86_400_000
@@ -289,6 +290,33 @@ def _validate_approval_json_object(value: object, field_name: str) -> dict[str, 
     if len(canonical_json) > APPROVAL_JSON_MAX_BYTES:
         raise ValueError(f"{field_name} exceeds {APPROVAL_JSON_MAX_BYTES} UTF-8 bytes")
     return value
+
+
+def _validate_result_metadata(value: object) -> dict[str, Any] | None:
+    """Validate the compact, secret-free terminal result projection."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("result_metadata must be a JSON object")
+    allowed = {"schema_version", "summary", "metrics", "verifier_status", "execution_mode"}
+    if set(value) - allowed:
+        raise ValueError("result_metadata contains a non-allowlisted key")
+    if not isinstance(value.get("schema_version"), str) or value["schema_version"] != "taskpilot.runtime.v1":
+        raise ValueError("result_metadata.schema_version is invalid")
+    if not isinstance(value.get("summary"), str) or len(value["summary"]) > 500:
+        raise ValueError("result_metadata.summary is invalid")
+    metrics = value.get("metrics")
+    if not isinstance(metrics, dict) or any(
+        not isinstance(key, str) or not isinstance(item, (int, float, str, bool))
+        for key, item in metrics.items()
+    ):
+        raise ValueError("result_metadata.metrics is invalid")
+    sanitized = _validate_observability_json_object(value, "result_metadata")
+    encoded = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    if len(encoded) > RESULT_METADATA_MAX_BYTES:
+        raise ValueError(f"result_metadata exceeds {RESULT_METADATA_MAX_BYTES} UTF-8 bytes")
+    return sanitized
 
 
 class Role(Enum):
@@ -703,6 +731,11 @@ class TaskRun(Base):
         onupdate=utc_now,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+    result_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+    @validates("result_metadata")
+    def validate_result_metadata(self, _key: str, value: object) -> dict[str, Any] | None:
+        return _validate_result_metadata(value)
 
     def __init__(
         self,

@@ -42,6 +42,7 @@ class TaskLifecycleService:
         self.session = session
         self.before_task_lock = before_task_lock
         self.expected_task_run_id: UUID | None = None
+        self.result_metadata: dict[str, object] | None = None
         self.tasks = TaskRepository(session)
         self.runs = TaskRunRepository(session)
 
@@ -92,17 +93,21 @@ class TaskLifecycleService:
         return run
 
     async def succeed_run(
-        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None
+        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None,
+        result_metadata: dict[str, object] | None = None,
     ) -> Task:
         return await self._finish_public(
-            task_id, organization_id, TaskRunStatus.SUCCEEDED, TaskStatus.SUCCEEDED, task_run_id
+            task_id, organization_id, TaskRunStatus.SUCCEEDED, TaskStatus.SUCCEEDED, task_run_id,
+            result_metadata,
         )
 
     async def fail_run(
-        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None
+        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None,
+        result_metadata: dict[str, object] | None = None,
     ) -> Task:
         return await self._finish_public(
-            task_id, organization_id, TaskRunStatus.FAILED, TaskStatus.FAILED, task_run_id
+            task_id, organization_id, TaskRunStatus.FAILED, TaskStatus.FAILED, task_run_id,
+            result_metadata,
         )
 
     async def _finish_public(
@@ -112,6 +117,7 @@ class TaskLifecycleService:
         run_status: TaskRunStatus,
         task_status: TaskStatus,
         task_run_id: UUID | None = None,
+        result_metadata: dict[str, object] | None = None,
     ) -> Task:
         try:
             task = await self._finish_run(
@@ -120,6 +126,7 @@ class TaskLifecycleService:
                 run_status,
                 task_status,
                 task_run_id if task_run_id is not None else self.expected_task_run_id,
+                result_metadata if result_metadata is not None else self.result_metadata,
             )
             await self.session.commit()
             return task
@@ -134,6 +141,7 @@ class TaskLifecycleService:
         run_status: TaskRunStatus,
         task_status: TaskStatus,
         task_run_id: UUID | None = None,
+        result_metadata: dict[str, object] | None = None,
     ) -> Task:
         task = await self._locked_task(task_id, organization_id)
         if task.status is not TaskStatus.RUNNING:
@@ -143,6 +151,8 @@ class TaskLifecycleService:
             raise TaskLifecycleInconsistentStateError("running task has no running active run")
         if task_run_id is not None and run.id != task_run_id:
             raise TaskLifecycleConflictError("task run identity is stale")
+        if result_metadata is not None:
+            run.result_metadata = result_metadata
         run.status = run_status
         task.status = task_status
         await self.session.flush()

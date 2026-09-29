@@ -52,6 +52,7 @@ from service.approval_api import approval_router
 from service.auth_api import auth_router
 from service.logging import configure_logging, reset_request_id, set_request_id
 from service.runtime_capacity import RuntimeCapacityFull, runtime_capacity
+from service.runtime_dispatch import RuntimeDispatchService
 from service.task_api import task_router
 from service.threads import list_user_threads
 from service.utils import (
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     database_type = getattr(settings.DATABASE_TYPE, "value", settings.DATABASE_TYPE)
     app.state.langgraph_persistence_configured = database_type == "postgres"
     app.state.langgraph_persistence = None
+    app.state.runtime_dispatcher = None
     try:
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
@@ -108,6 +110,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 await store.setup()
             if app.state.langgraph_persistence_configured:
                 app.state.langgraph_persistence = (saver, store)
+            app.state.runtime_dispatcher = RuntimeDispatchService(saver)
 
             if not settings.AUTH_SECRET:
                 logger.warning(
@@ -138,6 +141,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         app.state.startup_complete = False
         app.state.langgraph_persistence = None
+        dispatcher = getattr(app.state, "runtime_dispatcher", None)
+        if dispatcher is not None:
+            await dispatcher.close()
+        app.state.runtime_dispatcher = None
         await dispose_business_engine()
 
 

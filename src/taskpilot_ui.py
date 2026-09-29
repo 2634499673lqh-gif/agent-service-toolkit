@@ -280,9 +280,7 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
                 return
             finally:
                 st.session_state.taskpilot_mutation_in_flight = False
-    st.caption(
-        "Starting a run creates persisted queued/pending state only; the public runtime is not executed from this Product view."
-    )
+    st.caption("Runs execute in the TaskPilot runtime. Refresh to reconcile the persisted state.")
     if st.button("Refresh runs", key="taskpilot_refresh_runs"):
         st.rerun()
 
@@ -342,6 +340,17 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
     st.write(f"Status: {_run_status(run.get('status'))}")
     st.write(f"Created: {_display_value(run.get('created_at'))}")
     st.write(f"Updated: {_display_value(run.get('updated_at'))}")
+    run_status = _run_status(run.get("status"))
+    if run_status == "RUNNING":
+        st.info("Runtime is executing. Refresh to see the terminal result.")
+    elif run_status == "SUCCEEDED":
+        st.success("Run completed.")
+    elif run_status == "FAILED":
+        st.error("Run failed. See the trace for bounded failure evidence.")
+    result_metadata = run.get("result_metadata")
+    if isinstance(result_metadata, dict):
+        st.markdown("#### Result metadata")
+        st.json(_safe_object(result_metadata))
     _render_approvals(client, task_id, run_id)
     _render_trace(client, task_id, run_id)
 

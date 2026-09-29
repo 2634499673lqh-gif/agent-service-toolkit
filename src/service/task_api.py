@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
@@ -134,6 +134,7 @@ async def start_task_run(
     task_id: UUID,
     principal: PrincipalDependency,
     session: TaskSessionDependency,
+    request: Request,
 ) -> TaskRunResponse:
     try:
         task_run = await TaskRunService(session).start_task(principal, task_id)
@@ -147,6 +148,13 @@ async def start_task_run(
             status_code=status.HTTP_409_CONFLICT,
             detail=TASK_LIFECYCLE_CONFLICT_DETAIL,
         ) from None
+    dispatcher = getattr(request.app.state, "runtime_dispatcher", None)
+    if dispatcher is not None:
+        dispatcher.dispatch(
+            organization_id=principal.organization_id,
+            task_id=task_id,
+            task_run_id=task_run.id,
+        )
     return TaskRunResponse.model_validate(task_run)
 
 

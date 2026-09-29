@@ -19,6 +19,7 @@ class TaskRunResponse(BaseModel):
     status: TaskRunStatus
     created_at: datetime
     updated_at: datetime
+    result_metadata: dict[str, object] | None = None
 
 
 __all__ = ["TaskRunResponse"]
