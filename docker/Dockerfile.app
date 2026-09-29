@@ -17,6 +17,7 @@ RUN uv sync --frozen --only-group client
 COPY src/client/ ./client/
 COPY src/schema/ ./schema/
 COPY src/voice/ ./voice/
+COPY src/taskpilot_ui.py .
 COPY src/streamlit_app.py .
 
 CMD ["streamlit", "run", "streamlit_app.py"]
