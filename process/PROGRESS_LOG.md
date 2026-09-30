@@ -5195,7 +5195,7 @@ Focused evidence correction: after tightening PNG/evidence validation and removi
 
 ### 2026-09-30 — Phase 12 A/B status synchronization
 
-Current status: Phase 12 Batch A is COMPLETE / APPROVED and Batch B is COMPLETE / APPROVED after their focused Strong Re-reviews; both batches were subsequently committed and pushed. Batch C is COMPLETE / APPROVED. Phase 12 overall remains IN PROGRESS / FINAL AUDIT PENDING. All earlier NOT APPROVED, corrective-fix, and focused re-review records above remain historical records.
+Current status: Phase 12 Batch A is COMPLETE / APPROVED and Batch B is COMPLETE / APPROVED after their focused Strong Re-reviews; both batches were subsequently committed and pushed. Batch C is COMPLETE / APPROVED. Phase 12 is COMPLETE / FINAL AUDIT APPROVED. All earlier NOT APPROVED, corrective-fix, focused re-review, and Final Audit records above remain historical records.
 
 Changed only this canonical current-state entry. No source code, tests, runtime, configuration, architecture, or Batch C work was changed.
 
@@ -5226,3 +5226,11 @@ GeoChange evaluation passed 8/8; affected GeoChange/evaluation/AppTest regressio
 Status: Batch C COMPLETE / APPROVED following the user-reported focused Strong Re-review APPROVED. The earlier NOT APPROVED review, implementation, and corrective validation remain historical records. Phase 12 is IN PROGRESS / FINAL AUDIT PENDING; Final Audit may begin after commit/push by the owner.
 
 Changed only the canonical current-state sentence and this administrative status record in `process/PROGRESS_LOG.md`. Validation: `git diff --check`, `git status --short`, and `git diff --stat`. No source, test, runtime, evaluation, UI, architecture, or configuration changes; no commit or push.
+
+### 2026-09-30 — Phase 12 Final Audit status synchronization
+
+Status: Phase 12 COMPLETE / FINAL AUDIT APPROVED following the authoritative Final Audit APPROVED result. Batch A, Batch B, and Batch C remain COMPLETE / APPROVED. Historical implementation, NOT APPROVED, corrective, focused re-review, and Final Audit evidence remain preserved.
+
+Accepted non-blocking LOW follow-up: `tests/persistence/test_postgres_integration.py:87` retains a legacy expectation for `t034_observability`; the valid current migration head is `t035_task_run_result`. This finding is recorded without modifying the test.
+
+Changed only canonical status documentation. No source, tests, runtime, evaluation, UI, architecture, or configuration changes; no commit or push.
