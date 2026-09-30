@@ -177,6 +177,7 @@ cython_debug/
 # Data
 *.docx
 *.pdf
+data/geochange-artifacts/
 
 # Chroma db
 *.db

@@ -336,10 +336,13 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         _handle_error(error)
         return
 
-    st.write(f"Run number: {_display_value(run.get('run_number'))}")
-    st.write(f"Status: {_run_status(run.get('status'))}")
-    st.write(f"Created: {_display_value(run.get('created_at'))}")
-    st.write(f"Updated: {_display_value(run.get('updated_at'))}")
+    st.markdown("### Run overview")
+    overview = st.columns(4)
+    overview[0].metric("Task", _run_status(task.get("status")))
+    overview[1].metric("TaskRun", _run_status(run.get("status")))
+    overview[2].metric("Run", _display_value(run.get("run_number")))
+    overview[3].metric("Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0)))
+    st.caption(f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}")
     run_status = _run_status(run.get("status"))
     if run_status == "RUNNING":
         st.info("Runtime is executing. Refresh to see the terminal result.")
@@ -349,23 +352,44 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         st.error("Run failed. See the trace for bounded failure evidence.")
     result_metadata = run.get("result_metadata")
     if isinstance(result_metadata, dict):
-        st.markdown("#### Result metadata")
-        st.json(_safe_object(result_metadata))
+        st.markdown("### GeoChange result")
         if result_metadata.get("analysis_type") == "vegetation_change":
             metrics = result_metadata.get("metrics", {})
-            st.write(f"Execution mode: {_display_value(result_metadata.get('execution_mode'))}")
-            st.write(f"Verifier: {_display_value(result_metadata.get('verifier_status'))}")
-            for key in (
-                "mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi",
-                "significant_decline_area_m2", "decline_percentage",
-            ):
+            mode = str(result_metadata.get("execution_mode") or "unknown")
+            provenance_label = (
+                "Live Sentinel-2 metadata + controlled local raster fixture"
+                if mode == "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE"
+                else "Controlled local metadata/raster fixture"
+                if mode in {"REAL_STAC_LOCAL_FIXTURE", "CACHED_REAL_METADATA"}
+                else "Execution provenance is unavailable"
+            )
+            st.info(f"Data mode: {provenance_label}")
+            st.caption(f"Execution: {_display_value(result_metadata.get('execution_mode'))} · Verifier: {_display_value(result_metadata.get('verifier_status'))}")
+            labels = {"mean_ndvi_period_a": "Mean NDVI A", "mean_ndvi_period_b": "Mean NDVI B", "mean_delta_ndvi": "Mean delta", "significant_decline_area_m2": "Decline area (m²)", "decline_percentage": "Decline percentage", "valid_analysis_area_m2": "Valid area (m²)", "decline_threshold": "Decline threshold"}
+            cards = st.columns(3)
+            for index, (key, label) in enumerate(labels.items()):
                 if key in metrics:
-                    st.metric(key.replace("_", " "), metrics[key])
-            for name, label in (("ndvi_before", "NDVI before"), ("ndvi_after", "NDVI after"), ("ndvi_change", "NDVI change")):
+                    cards[index % 3].metric(label, metrics[key])
+            with st.expander("Bounded result metadata"):
+                st.json(_safe_object(result_metadata))
+            st.markdown("#### NDVI comparison")
+            image_columns = st.columns(3)
+            for column, (name, label) in zip(image_columns, (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")), strict=True):
                 try:
-                    st.image(client.get_artifact(task_id, run_id, name), caption=label)
+                    column.image(client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}")
                 except TaskPilotClientError:
-                    st.info(f"{label} artifact is unavailable.")
+                    column.info(f"NDVI {label} artifact unavailable.")
+            if result_metadata.get("summary"):
+                st.markdown("#### AI analysis")
+                st.write(_safe_text(result_metadata.get("summary")))
+        else:
+            st.json(_safe_object(result_metadata))
+    elif run_status in {"PENDING", "QUEUED"}:
+        st.info("No run result yet. Refresh to inspect persisted evidence.")
+    elif run_status == "FAILED":
+        st.error("The run failed. Persisted trace evidence may explain the bounded failure.")
+    else:
+        st.info("No GeoChange result metadata is available for this historical run.")
     _render_approvals(client, task_id, run_id)
     _render_trace(client, task_id, run_id)
 
@@ -645,7 +669,14 @@ def render_product() -> None:
     """Render Product view and keep all state session-local."""
 
     client = _client()
-    st.title("TaskPilot")
+    st.markdown("""
+    <style>
+    .block-container { max-width: 1180px; padding-top: 2rem; }
+    [data-testid="stMetric"] { background: #f6f8fa; border: 1px solid #e5e7eb; padding: .7rem; border-radius: .5rem; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.title("TaskPilot · GeoChange Agent")
+    st.caption("Bounded vegetation-change analysis with traceable execution and deterministic verification")
     if st.session_state.get("taskpilot_identity") is None:
         if st.session_state.get("taskpilot_org_ids"):
             _organization_login()

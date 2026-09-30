@@ -1,19 +1,75 @@
-# TaskPilot
+# TaskPilot / GeoChange Agent
 
-TaskPilot is a production-oriented task-execution platform for knowledge work. This repository is at the end of Phase 2 (identity, organizations, memberships, authorization): it retains an upstream LangGraph, FastAPI, and Streamlit runtime while the TaskPilot product is built incrementally and with explicit domain boundaries.
+TaskPilot is a multi-tenant task execution product that turns a bounded natural-language geospatial request into a traceable, verified result. The current vertical is **Wuhan East Lake multi-temporal vegetation-change analysis**: July 2023 versus July 2024, with NDVI metrics and three PNG artifacts.
 
-## Current scope
+## What it does
 
-The current checkout provides the retained upstream runtime plus Phase 2 TaskPilot identity and tenancy, the T031/T032/T034 persistence boundary, the T035 lifecycle service, and the T036/T037/T038 tenant-safe Task and TaskRun APIs. The PostgreSQL-only `taskpilot` schema contains (`organizations`, `users`, `memberships`, `auth_sessions`, `tasks`, `task_runs`), with opaque revocable sessions, a server-derived request principal, centralized 401/403/404 authorization semantics, and `/api/v1/tasks` protected by the TaskPilot bearer credential. TaskStep records and runtime planner/executor/verifier behavior remain absent from production; Phase 4 is planned/frozen by proposed ADR-006/T040 and is not an implementation claim. See [the architecture baseline](docs/ARCHITECTURE.md) for the implemented-runtime inventory and phase boundary.
+A user creates a Product Task, starts a run, and receives period evidence, NDVI-before/after/change images, decline statistics, a final explanation, and a persisted execution trace.
 
-## Getting started
+## Why an Agent here
 
-Read [AGENTS.md](AGENTS.md), then follow the verified local commands in [the Developer Guide](docs/DEVELOPER_GUIDE.md). For the ordered Phase 2 work, use [the task backlog](TASK_BACKLOG.md) and the individual task cards under `process/tasks/`.
+A fixed script can compute NDVI. The Agent adds value at the boundary: it interprets a natural-language goal, emits a bounded structured plan, selects the four approved capabilities, and can request one evidence-dependent replan. Server-side deterministic code remains authoritative for authorization, lifecycle, AOI and STAC validation, raster mathematics, verification, and artifact access. This is a bounded workflow, not unlimited autonomy.
 
-For deterministic local verification, use `USE_FAKE_MODEL=true`; do not put real credentials in version control.
+## Demo flow
 
-## Upstream attribution and license
+```mermaid
+flowchart LR
+  UI[Streamlit Product UI] --> API[FastAPI authenticated API]
+  API --> DB[(PostgreSQL Task / TaskRun)]
+  API --> RT[TaskRuntimeService]
+  RT --> LLM[DeepSeek structured planning]
+  RT --> DISPATCH[Capability dispatcher]
+  DISPATCH --> GEO[resolve_aoi → search_sentinel2 → compute_vegetation_change → summarize_change]
+  GEO --> V[Deterministic verifier]
+  V --> OUT[result_metadata + tenant artifacts + trace]
+  STAC[Earth Search STAC metadata] --> GEO
+  LLM -. bounded plan/explanation .-> RT
+```
 
-TaskPilot is being developed from [Joshua Carroll's agent-service-toolkit](https://github.com/JoshuaC215/agent-service-toolkit). The upstream project documentation is retained unchanged in [README_UPSTREAM.md](README_UPSTREAM.md), and this repository retains its [MIT License](LICENSE), including the upstream copyright notice.
+## LLM versus deterministic authority
 
-The retained upstream runtime is a starting point, not a claim that its chat, checkpoint, RAG, interrupt, or tracing examples already implement TaskPilot product domains. Changes for TaskPilot are tracked in the repository's planning and progress documents.
+The LLM handles natural-language interpretation, bounded structured planning, and the final explanation. Deterministic/server code handles authentication, tenant isolation, task/run lifecycle, the Wuhan East Lake AOI catalog, STAC evidence validation, NDVI/statistics, the verifier, and persisted-reference artifact authorization. Numerical results are never model-authoritative.
+
+## GeoChange workflow
+
+The four capabilities are `resolve_aoi`, `search_sentinel2`, `compute_vegetation_change`, and `summarize_change`. A quality failure can trigger one bounded replan; the existing budget is then exhausted and the run becomes terminally failed.
+
+## Evaluation
+
+Batch C provides **MVP deterministic evaluation evidence** through:
+
+```powershell
+uv run python scripts/evaluation_geochange.py
+```
+
+The suite uses controlled arrays and no live provider or internet. It is not a production benchmark or scientific accuracy study. See [docs/EVALUATION.md](docs/EVALUATION.md).
+
+## Current data mode
+
+The supported demo mode is `REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE`: Sentinel-2 metadata may be queried live, while raster pixels are controlled local fixture data. The MVP does not download or process live remote Sentinel raster/COG pixels.
+
+## Security and multi-tenancy
+
+Task and TaskRun reads are organization-scoped through a server-derived principal. Result metadata is bounded, and artifacts are served only from persisted tenant/run-scoped references. Paths, URLs, and model payloads do not grant authorization.
+
+## Local demo
+
+Follow [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for setup, then use [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md). Keep credentials in `.env` or hidden prompts; never copy tokens into documentation.
+
+## Tests
+
+```powershell
+uv run pytest tests/geochange tests/evaluation tests/app -q
+uv run ruff check src scripts
+uv run pyrefly check
+```
+
+## Limitations
+
+The current portfolio path uses process-local runtime dispatch, has no distributed worker or production exactly-once guarantee, supports one controlled AOI/use case, uses a local raster fixture, does not require remote COG processing, and is not production-scale geospatial infrastructure.
+
+## Deferred roadmap
+
+Future work may add durable worker execution, broader validated AOI coverage, and live raster pipelines after their contracts and security boundaries are designed.
+
+The upstream reference README remains available as [README_UPSTREAM.md](README_UPSTREAM.md).

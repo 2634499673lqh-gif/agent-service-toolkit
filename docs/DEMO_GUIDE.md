@@ -1,27 +1,27 @@
-# Deterministic Product demo (T135)
+# GeoChange portfolio demo
 
-Use the existing bootstrap, API, and Streamlit Product UI with a disposable
-local organization. This path does not execute the internal runtime.
+Use the Docker/local path in [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md), then run the deterministic evaluation and the existing authenticated Product flow. The Product view preserves login, organization selection, task creation, Start Run, persisted TaskRun reads, result metadata, authorized artifacts, trace, and logout.
 
-Follow [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) for environment, PostgreSQL,
-migrations, and startup, then run:
+## Screenshot checklist
 
-```powershell
-uv run python scripts/bootstrap_owner.py --organization-name "T135 Demo" --email demo-owner@example.com
-uv run python src/run_service.py
-uv run streamlit run src/streamlit_app.py
-uv run python scripts/demo_product_flow.py --email demo-owner@example.com
-```
+Capture manually from the actual running UI under `docs/assets/` only when needed:
 
-The script reads passwords only from hidden prompts, reuses the exact demo-title
-task on rerun, creates at most one persisted run, and reads the server state
-back. If duplicate exact-title tasks exist, it fails explicitly; remove/reset
-the disposable demo database using the supported Compose path before retrying.
-Sign in at `http://localhost:8501` to inspect the organization, task,
-TaskRun, and logout/session behavior. Use `--base-url http://localhost:8080`
-with Compose.
+- authenticated organization and task view;
+- TaskRun status and execution mode;
+- NDVI before/after/change comparison;
+- metric cards and final explanation;
+- trace timeline, including a visible replan event when the controlled fixture is enabled.
 
-Approvals and trace appear only when naturally persisted by existing behavior.
-The demo does not insert TaskStep, ToolCall, approval, trace, progress, result,
-or external-effect rows. Run creation currently remains queued/pending because
-there is no public runtime execution endpoint or worker.
+Do not fabricate screenshots or commit files from `data/geochange-artifacts/`.
+
+## 60–120 second recording checklist
+
+1. Log in and select the organization.
+2. Open the Wuhan East Lake vegetation-change task.
+3. Start one run and show the persisted TaskRun status.
+4. Show Period A/Period B, verifier status, metrics, and the three NDVI images.
+5. Read the final explanation.
+6. Open the trace and point out Planner → tools → verifier → success.
+7. If enabled, show the single bounded replan.
+8. Explain that Sentinel-2 metadata may be live but raster pixels are a controlled local fixture.
+9. Mention tenant-scoped artifact authorization and current MVP limitations.

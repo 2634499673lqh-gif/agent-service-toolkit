@@ -140,3 +140,9 @@ The implemented Phase 5 package (T060–T064, following approved T051) adds one 
 ## Phase 9 planning boundary (accepted/frozen ADR-011, 2026-09-26)
 
 The current Product UI plan keeps Streamlit and the legacy AgentClient/chat path separate. Product UI requires an explicit AuthService-backed login/session/logout HTTP surface (T118) and a tenant-scoped TaskRun discovery route (T119), because neither exists today. The thin Product client uses server-derived CurrentPrincipal and does not treat caller user IDs or `AUTH_SECRET` as TaskPilot identity. V1 covers persisted task management plus run, approval and sanitized trace inspection; starting a run does not execute the internal runtime and no TaskStep or public runtime endpoint is introduced. See `process/ADR-011.md` and T110–T119.
+
+## Phase 12 Product / GeoChange boundary
+
+The approved Product path persists a Task and TaskRun, dispatches the existing runtime, and exposes bounded GeoChange result metadata, tenant-authorized PNG references, and trace events. The current vertical is the Wuhan East Lake vegetation-change workflow with four capabilities: `resolve_aoi`, `search_sentinel2`, `compute_vegetation_change`, and `summarize_change`. The LLM may interpret the request, produce bounded structured planning, and write an explanation; deterministic server code remains authoritative for tenant authorization, lifecycle, AOI/STAC validation, NDVI/statistics, verification, and artifact access.
+
+The supported portfolio mode is `REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE`: Sentinel-2 metadata may be live, while raster pixels are controlled local fixture arrays. Batch C adds only evaluation and presentation. It does not add worker infrastructure, live remote COG processing, or broader GIS capabilities. A quality failure can consume the existing single replan budget; exhaustion is terminal.

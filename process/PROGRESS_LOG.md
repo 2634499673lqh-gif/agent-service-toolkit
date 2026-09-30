@@ -5193,3 +5193,36 @@ Learner notes: read `src/geochange/verifier.py`, `src/runtime/state.py`, `src/ru
 
 Focused evidence correction: after tightening PNG/evidence validation and removing process-global replan attempt state, PostgreSQL rerun passed `38 passed, 0 skipped`; the final rebuilt live Product E2E persisted Task `ac295c1c-33f6-4513-bd44-fc76fc161faf` and TaskRun `9c65c540-49cc-4b13-a9a4-3bf643116ac2` as `SUCCEEDED`, with `REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE`, verifier passed, eight trace events, independent July 2023/July 2024 scenes, and all three artifact GETs returning 200. One earlier live attempt failed because the model selected an unsupported data mode before the bounded mode gate was relaxed to the existing validated enum; no data was lost and the final explicit local-fixture request passed.
 
+### 2026-09-30 — Phase 12 A/B status synchronization
+
+Current status: Phase 12 Batch A is COMPLETE / APPROVED and Batch B is COMPLETE / APPROVED after their focused Strong Re-reviews; both batches were subsequently committed and pushed. Batch C is COMPLETE / APPROVED. Phase 12 overall remains IN PROGRESS / FINAL AUDIT PENDING. All earlier NOT APPROVED, corrective-fix, and focused re-review records above remain historical records.
+
+Changed only this canonical current-state entry. No source code, tests, runtime, configuration, architecture, or Batch C work was changed.
+
+
+### 2026-09-30 — Phase 12 Batch C implementation
+
+Status: Batch C implementation is complete and awaiting Strong Review. Added a provider-free eight-case GeoChange MVP evaluation command and report, polished the existing Streamlit Product result view with status cards, provenance wording, metric hierarchy, image comparison, bounded metadata, and explicit empty/error states, upgraded the root README and demo guide, and added runtime-artifact Git hygiene for `data/geochange-artifacts/`. No Batch A/B runtime architecture was changed.
+
+Files changed: `src/evaluation/geochange.py`, `scripts/evaluation_geochange.py`, `src/taskpilot_ui.py`, `README.md`, `docs/EVALUATION.md`, `docs/DEMO_GUIDE.md`, `.gitignore`, and this progress log.
+
+Validation: deterministic evaluation passed `8/8`; GeoChange/evaluation/AppTest regression passed `104 passed`; Ruff and Pyrefly passed; Python compilation passed. PostgreSQL/Docker/live-provider smoke were not run in this session. No dependencies, migrations, credentials, screenshots, or runtime PNGs were added.
+
+Learner notes: read `src/evaluation/geochange.py`, `src/taskpilot_ui.py`, `README.md`, and `docs/EVALUATION.md`. The main concept is separating model/planning responsibility from deterministic numerical and authorization evidence. Exercise: run `uv run python scripts/evaluation_geochange.py`, then change one fixture array and observe the verifier-backed result. Do not worry about distributed workers or live raster processing yet.
+
+### 2026-09-30 — Phase 12 Batch C evaluation correction
+
+The initial Batch C evaluation helper was replaced with an existing-runtime GeoChange suite. The final command executes the real bounded planner, capability dispatcher, verifier, artifact path, and single-replan budget with deterministic settings. It measures 8/8 passing scenarios, including parameter propagation, unsupported/invalid input rejection, successful replan, budget exhaustion, verifier rejection, and result/artifact completeness.
+
+
+### 2026-09-30 — Phase 12 Batch C focused corrective validation
+
+Status: Corrected the canonical current-state sentence so Batch C is IMPLEMENTED / AWAITING STRONG REVIEW while preserving the historical NOT STARTED record. Required PostgreSQL suites executed against isolated disposable container `taskpilot-batchc-postgres` on host port 55432: the four Strong Review suites passed `15 passed, 0 failed, 0 skipped`; additional runtime/dispatch PostgreSQL coverage passed `37 passed, 0 failed, 0 skipped`. A broader persistence migration scenario exposed one pre-existing assertion expecting `t034_observability` after the repository's current `t035_task_run_result` migration; no Batch C code caused or changed that condition, so no unrelated fix was made.
+
+GeoChange evaluation passed 8/8; affected GeoChange/evaluation/AppTest regression previously passed 104 tests; Ruff and Pyrefly passed. The disposable container was isolated from normal development databases and was removed after validation. No commit or push.
+
+### 2026-09-30 — Phase 12 Batch C approval status synchronization
+
+Status: Batch C COMPLETE / APPROVED following the user-reported focused Strong Re-review APPROVED. The earlier NOT APPROVED review, implementation, and corrective validation remain historical records. Phase 12 is IN PROGRESS / FINAL AUDIT PENDING; Final Audit may begin after commit/push by the owner.
+
+Changed only the canonical current-state sentence and this administrative status record in `process/PROGRESS_LOG.md`. Validation: `git diff --check`, `git status --short`, and `git diff --stat`. No source, test, runtime, evaluation, UI, architecture, or configuration changes; no commit or push.
