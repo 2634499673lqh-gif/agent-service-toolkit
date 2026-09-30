@@ -13,6 +13,7 @@ _REPLAN_CODES = frozenset(
     {
         "recoverable_plan_inadequacy",
         "recoverable_verifier_inadequacy",
+        "geochange_quality_failed",
     }
 )
 

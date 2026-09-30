@@ -12,6 +12,7 @@ from pydantic import (
     model_validator,
 )
 
+from geochange.models import GeoChangeTask
 from schema.planner import PlanStep
 
 from .planner import PlannerTaskInput
@@ -56,6 +57,12 @@ class ContextEnvelope(BaseModel):
 
     task_input: PlannerTaskInput
     current_step: PlanStep
+    runtime_task_id: str | None = Field(default=None, exclude=True)
+    runtime_task_run_id: str | None = Field(default=None, exclude=True)
+    runtime_replan_count: int = Field(default=0, ge=0, le=1, exclude=True)
+    geochange_task: GeoChangeTask | None = Field(default=None, exclude=True)
+    geochange_aoi_evidence: dict[str, str] = Field(default_factory=dict, exclude=True)
+    geochange_evidence: dict[str, str] = Field(default_factory=dict, exclude=True)
     sources: tuple[ContextSource, ...] = Field(
         default_factory=tuple,
         max_length=MAX_CONTEXT_SOURCES,
@@ -89,6 +96,12 @@ class ContextBuilder:
         task_input: PlannerTaskInput | Mapping[str, object],
         current_step: PlanStep | Mapping[str, object],
         sources: Sequence[ContextSource | Mapping[str, object]] = (),
+        runtime_task_id: str | None = None,
+        runtime_task_run_id: str | None = None,
+        runtime_replan_count: int = 0,
+        geochange_task: GeoChangeTask | None = None,
+        geochange_aoi_evidence: Mapping[str, str] | None = None,
+        geochange_evidence: Mapping[str, str] | None = None,
     ) -> ContextEnvelope:
         if isinstance(sources, (str, bytes, bytearray)) or not isinstance(sources, Sequence):
             raise ValueError("sources must be an ordered sequence")
@@ -103,6 +116,12 @@ class ContextBuilder:
             {
                 "task_input": validated_task_input.model_dump(mode="json"),
                 "current_step": validated_current_step.model_dump(mode="json"),
+                "runtime_task_id": runtime_task_id,
+                "runtime_task_run_id": runtime_task_run_id,
+                "runtime_replan_count": runtime_replan_count,
+                "geochange_task": None if geochange_task is None else geochange_task.model_dump(mode="json"),
+                "geochange_aoi_evidence": dict(geochange_aoi_evidence or {}),
+                "geochange_evidence": dict(geochange_evidence or {}),
                 "sources": [source.model_dump(mode="json") for source in validated_sources],
             }
         )

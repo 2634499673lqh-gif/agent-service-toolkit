@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
+from geochange.models import GeoChangeTask
 from schema.planner import Plan
 
 from .context import ContextEnvelope
@@ -39,6 +40,9 @@ class AgentState(BaseModel):
     task_id: str
     task_run_id: str
     task_input: PlannerTaskInput
+    geochange_task: GeoChangeTask | None = None
+    geochange_aoi_evidence: dict[str, str] = Field(default_factory=dict, max_length=16)
+    geochange_evidence: dict[str, str] = Field(default_factory=dict, max_length=32)
     plan: Plan | None = None
     plan_position: int = Field(default=0, ge=0)
     capability_context: ContextEnvelope | None = None

@@ -351,6 +351,21 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
     if isinstance(result_metadata, dict):
         st.markdown("#### Result metadata")
         st.json(_safe_object(result_metadata))
+        if result_metadata.get("analysis_type") == "vegetation_change":
+            metrics = result_metadata.get("metrics", {})
+            st.write(f"Execution mode: {_display_value(result_metadata.get('execution_mode'))}")
+            st.write(f"Verifier: {_display_value(result_metadata.get('verifier_status'))}")
+            for key in (
+                "mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi",
+                "significant_decline_area_m2", "decline_percentage",
+            ):
+                if key in metrics:
+                    st.metric(key.replace("_", " "), metrics[key])
+            for name, label in (("ndvi_before", "NDVI before"), ("ndvi_after", "NDVI after"), ("ndvi_change", "NDVI change")):
+                try:
+                    st.image(client.get_artifact(task_id, run_id, name), caption=label)
+                except TaskPilotClientError:
+                    st.info(f"{label} artifact is unavailable.")
     _render_approvals(client, task_id, run_id)
     _render_trace(client, task_id, run_id)
 

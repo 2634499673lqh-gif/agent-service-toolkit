@@ -1,6 +1,7 @@
 """Internal TaskPilot runtime service and checkpoint boundary for T050."""
 
 import inspect
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -1132,6 +1133,24 @@ class TaskRuntimeService:
             "verifier_status": "passed" if outcome == "SUCCEEDED" else "failed",
             "execution_mode": "deterministic_fixture",
         }
+        if state.execution_result is not None and state.execution_result.output:
+            try:
+                candidate = json.loads(state.execution_result.output)
+            except (TypeError, ValueError):
+                candidate = None
+            if isinstance(candidate, dict) and isinstance(candidate.get("metrics"), dict):
+                result_metadata.update(
+                    {
+                        "analysis_type": "vegetation_change",
+                        "summary": candidate.get("summary", result_metadata["summary"]),
+                        "execution_mode": candidate.get("execution_mode", "REAL_STAC_LOCAL_RASTER"),
+                        "metrics": candidate["metrics"],
+                        "verifier_status": candidate.get("verifier_status", "passed"),
+                        "artifact_references": candidate.get("artifacts", {}),
+                        "selected_scene_evidence": candidate.get("selected_scene_evidence", {}),
+                        "replan_count": state.replan_count,
+                    }
+                )
         try:
             await self._persist_observations(
                 session,

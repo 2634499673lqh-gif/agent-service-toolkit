@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str | None = None
     OLLAMA_BASE_URL: Annotated[str | None, BeforeValidator(validate_optional_http_preserve)] = None
     USE_FAKE_MODEL: bool = False
+    GEOCHANGE_LIVE_LLM: bool = False
+    GEOCHANGE_LIVE_STAC: bool = False
+    GEOCHANGE_TEST_REPLAN: bool = False
     OPENROUTER_API_KEY: SecretStr | None = None
 
     # If DEFAULT_MODEL is None, it will be set in model_post_init.  Custom

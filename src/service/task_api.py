@@ -5,8 +5,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from geochange.artifacts import artifact_path
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
 from schema.task_run_api import TaskRunResponse
 from schema.trace_api import TraceEventResponse
@@ -212,6 +215,37 @@ async def get_task_trace(
             detail=RESOURCE_NOT_FOUND_DETAIL,
         )
     return trace
+
+
+@task_router.get("/{task_id}/runs/{run_id}/artifacts/{artifact_name}")
+async def get_task_artifact(
+    task_id: UUID,
+    run_id: UUID,
+    artifact_name: str,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> FileResponse:
+    run = await TaskRunService(session).get_run(principal, task_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
+    metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
+    references = metadata.get("artifact_references")
+    if not isinstance(references, dict) or references.get(artifact_name) != artifact_name:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
+    try:
+        path = artifact_path(str(task_id), str(run_id), artifact_name)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL) from None
+    if not path.is_file() or not 0 < path.stat().st_size <= 2_000_000:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
+    try:
+        with Image.open(path) as image:
+            if image.format != "PNG":
+                raise ValueError("artifact is not PNG")
+            image.verify()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL) from None
+    return FileResponse(path, media_type="image/png", filename=path.name)
 
 
 __all__ = ["TASK_LIFECYCLE_CONFLICT_DETAIL", "get_task_session", "task_router"]

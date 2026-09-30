@@ -299,7 +299,10 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         return None
     if not isinstance(value, dict):
         raise ValueError("result_metadata must be a JSON object")
-    allowed = {"schema_version", "summary", "metrics", "verifier_status", "execution_mode"}
+    allowed = {
+        "schema_version", "summary", "metrics", "verifier_status", "execution_mode",
+        "analysis_type", "selected_scene_evidence", "artifact_references", "replan_count",
+    }
     if set(value) - allowed:
         raise ValueError("result_metadata contains a non-allowlisted key")
     if not isinstance(value.get("schema_version"), str) or value["schema_version"] != "taskpilot.runtime.v1":
@@ -312,6 +315,16 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         for key, item in metrics.items()
     ):
         raise ValueError("result_metadata.metrics is invalid")
+    if "analysis_type" in value and value["analysis_type"] != "vegetation_change":
+        raise ValueError("result_metadata.analysis_type is invalid")
+    if "replan_count" in value and not isinstance(value["replan_count"], int):
+        raise ValueError("result_metadata.replan_count is invalid")
+    for key in ("selected_scene_evidence", "artifact_references"):
+        if key in value and (
+            not isinstance(value[key], dict)
+            or any(not isinstance(k, str) or not isinstance(v, str) for k, v in value[key].items())
+        ):
+            raise ValueError(f"result_metadata.{key} is invalid")
     sanitized = _validate_observability_json_object(value, "result_metadata")
     encoded = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
     if len(encoded) > RESULT_METADATA_MAX_BYTES:

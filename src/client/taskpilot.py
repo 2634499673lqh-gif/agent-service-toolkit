@@ -264,5 +264,20 @@ class TaskPilotClient:
             )
         return [item for item in data if isinstance(item, dict)]
 
+    def artifact_url(self, task_id: str | UUID, run_id: str | UUID, artifact_name: str) -> str:
+        if artifact_name not in {"ndvi_before", "ndvi_after", "ndvi_change"}:
+            raise ValueError("unsupported artifact")
+        return f"{self.base_url}{self._resource_path(task_id, f'/runs/{run_id}/artifacts/{artifact_name}')}"
+
+    def get_artifact(self, task_id: str | UUID, run_id: str | UUID, artifact_name: str) -> bytes:
+        if artifact_name not in {"ndvi_before", "ndvi_after", "ndvi_change"}:
+            raise ValueError("unsupported artifact")
+        response = self._request(
+            "GET", self._resource_path(task_id, f"/runs/{run_id}/artifacts/{artifact_name}")
+        )
+        if response.headers.get("content-type", "").split(";", 1)[0] != "image/png":
+            raise TaskPilotClientError("The service returned an invalid artifact.", kind="malformed_response")
+        return response.content
+
 
 __all__ = ["LoginResult", "TaskPilotClient", "TaskPilotClientError"]

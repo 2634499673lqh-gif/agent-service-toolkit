@@ -1,5 +1,6 @@
 """The small static Planner → Capability → Verifier TaskPilot graph."""
 
+import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -9,6 +10,10 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from core.llm import get_model
+from core.settings import settings
+from geochange.llm import GeoChangeLLM
+from geochange.models import GeoChangeTask
 from schema.planner import PlanStep
 
 from .capabilities import DeterministicFixtureCapability
@@ -147,6 +152,14 @@ class RuntimeGraphContext(BaseModel):
 
 class _DefaultPlannerModel:
     async def __call__(self, request: Any) -> object:
+        text = f"{request.task_input.title} {request.task_input.description or ''}".casefold()
+        if any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖")):
+            return {"steps": [
+                {"position": 1, "instruction": "resolve_aoi"},
+                {"position": 2, "instruction": "search_sentinel2"},
+                {"position": 3, "instruction": "compute_vegetation_change"},
+                {"position": 4, "instruction": "summarize_change"},
+            ]}
         return {
             "steps": [
                 {
@@ -206,13 +219,16 @@ def build_runtime_graph(
     """
 
     planner_node = planner or PlannerNode(_DefaultPlannerModel())
+    from geochange.runtime_caps import runtime_capabilities
     if capability_dispatcher is not None and executor is not None:
         raise ValueError("executor and capability_dispatcher are mutually exclusive")
     if capability_dispatcher is None:
         if executor is None:
             capability_name = _DEFAULT_CAPABILITY_NAME
+            capabilities: dict[str, Any] = {capability_name: DeterministicFixtureCapability()}
+            capabilities.update(runtime_capabilities())
             capability_dispatcher = CapabilityDispatcher(
-                {capability_name: DeterministicFixtureCapability()},
+                capabilities,
                 classifier=classifier,
             )
         else:
@@ -230,13 +246,29 @@ def build_runtime_graph(
     async def plan_initial(state: AgentState) -> dict[str, object]:
         if state.plan is not None:
             return {"failure": None}
+        geochange_task = state.geochange_task
         try:
             plan = await planner_node(state.task_input)
+            if _is_geochange_request(state.task_input):
+                if geochange_task is None:
+                    if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
+                        geochange_task = await GeoChangeLLM(get_model(settings.DEFAULT_MODEL)).parse_task(
+                            state.task_input.description or state.task_input.title
+                        )
+                    else:
+                        geochange_task = _default_geochange_task()
+                if geochange_task.analysis_type != "vegetation_change":
+                    raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
             return {"failure": _failure(failure_classifier, error.code)}
         except Exception:
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
-        return {"plan": plan.model_dump(mode="json"), "failure": None}
+        geochange_task_data = None if geochange_task is None else geochange_task.model_dump(mode="json")
+        return {
+            "plan": plan.model_dump(mode="json"),
+            "geochange_task": geochange_task_data,
+            "failure": None,
+        }
 
     async def execute_step(
         state: AgentState,
@@ -295,6 +327,12 @@ def build_runtime_graph(
             context = context_builder.build(
                 task_input=state.task_input,
                 current_step=step,
+                runtime_task_id=state.task_id,
+                runtime_task_run_id=state.task_run_id,
+                runtime_replan_count=state.replan_count,
+                geochange_task=state.geochange_task,
+                geochange_aoi_evidence=state.geochange_aoi_evidence,
+                geochange_evidence=state.geochange_evidence,
             )
         except Exception:
             await observe(
@@ -302,14 +340,19 @@ def build_runtime_graph(
                 error=_failure(failure_classifier, "capability_context_invalid"),
             )
             return {"failure": _failure(failure_classifier, "capability_context_invalid")}
-        metadata = capability_dispatcher.metadata_for(capability_name)
+        selected_capability = capability_name
+        instruction_name = step.instruction.strip().split()[0]
+        if instruction_name in {"resolve_aoi", "search_sentinel2", "compute_vegetation_change", "summarize_change"}:
+            if not isinstance(capability_dispatcher.metadata_for(instruction_name), RuntimeFailure):
+                selected_capability = instruction_name
+        metadata = capability_dispatcher.metadata_for(selected_capability)
         if isinstance(metadata, RuntimeFailure):
             await observe(agent_status="failed", context=context, error=metadata)
             return {
                 "capability_context": context.model_dump(mode="json"),
                 "failure": failure_classifier.classify(metadata.code).model_dump(mode="json"),
             }
-        risk_route = classify_action(metadata, context, expected_name=capability_name)
+        risk_route = classify_action(metadata, context, expected_name=selected_capability)
         if risk_route is RiskRoute.INVALID:
             failure = _failure(failure_classifier, "risk_classifier_invalid")
             await observe(agent_status="failed", context=context, error=failure)
@@ -366,7 +409,7 @@ def build_runtime_graph(
                 "failure": None,
             }
         try:
-            raw_result = await capability_dispatcher.dispatch(capability_name, step, context)
+            raw_result = await capability_dispatcher.dispatch(selected_capability, step, context)
         except Exception:
             failure = _failure(failure_classifier, "capability_execution_failed")
             await observe(
@@ -374,7 +417,7 @@ def build_runtime_graph(
                 context=context,
                 tool_status="failed",
                 error=failure,
-                tool_name=capability_name,
+                tool_name=selected_capability,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -390,7 +433,7 @@ def build_runtime_graph(
                 context=context,
                 tool_status="failed",
                 error=failure,
-                tool_name=capability_name,
+                tool_name=selected_capability,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -405,7 +448,7 @@ def build_runtime_graph(
                 context=context,
                 tool_status="failed",
                 error=failure,
-                tool_name=capability_name,
+                tool_name=selected_capability,
             )
             return {
                 "capability_context": context.model_dump(mode="json"),
@@ -419,7 +462,7 @@ def build_runtime_graph(
                 tool_status="failed",
                 result=result.model_dump(mode="json"),
                 error=failure,
-                tool_name=capability_name,
+                tool_name=selected_capability,
                 usage=result.usage,
                 provider_metadata=result.provider_metadata,
             )
@@ -452,16 +495,23 @@ def build_runtime_graph(
             context=context,
             tool_status="succeeded",
             result=result.model_dump(mode="json"),
-            tool_name=capability_name,
+            tool_name=selected_capability,
             usage=result.usage,
             provider_metadata=result.provider_metadata,
         )
-        return {
+        state_update: dict[str, object] = {
             "capability_context": context.model_dump(mode="json"),
             "execution_result": result.model_dump(mode="json"),
             "pending_approval": None,
             "failure": None,
         }
+        parsed_output = _bounded_json_object(result.output)
+        if parsed_output is not None:
+            if selected_capability == "resolve_aoi":
+                state_update["geochange_aoi_evidence"] = _bounded_string_map(parsed_output)
+            elif selected_capability == "search_sentinel2":
+                state_update["geochange_evidence"] = _bounded_string_map(parsed_output)
+        return state_update
 
     async def approval_wait(state: AgentState) -> dict[str, object]:
         """End this graph invocation with a durable pending reference."""
@@ -528,6 +578,9 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
         return {
             "capability_context": None,
+            "geochange_task": state.geochange_task.model_dump(mode="json") if state.geochange_task else None,
+            "geochange_aoi_evidence": state.geochange_aoi_evidence,
+            "geochange_evidence": state.geochange_evidence,
             **replacement.model_dump(mode="json"),
         }
 
@@ -635,6 +688,36 @@ def build_runtime_graph(
 
 def _failure(classifier: FailureClassifier, code: str) -> RuntimeFailure:
     return classifier.classify(code)
+
+
+def _is_geochange_request(task_input: Any) -> bool:
+    text = f"{task_input.title} {task_input.description or ''}".casefold()
+    return any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖"))
+
+
+def _default_geochange_task() -> GeoChangeTask:
+    return GeoChangeTask(
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+    )
+
+
+def _bounded_json_object(output: str | None) -> dict[str, Any] | None:
+    if not output or len(output) > 2000:
+        return None
+    try:
+        value = json.loads(output)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _bounded_string_map(value: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(key): item
+        for key, item in value.items()
+        if isinstance(key, str) and isinstance(item, str) and len(key) <= 64 and len(item) <= 256
+    }
 
 
 __all__ = [
