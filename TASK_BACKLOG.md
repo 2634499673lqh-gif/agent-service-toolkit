@@ -396,8 +396,8 @@ Phase 12 is COMPLETE / FINAL AUDIT APPROVED. Phase 13 is not the final project p
 | Task | Purpose | Review | Depends On | Status |
 |---|---|---|---|---|
 | T138 | Planning gate / ADR-013 | Planning Strong Review | Phase 12 | COMPLETE / APPROVED |
-| T139 | LLM parameter authority | Strong Review | T138 | NOT STARTED |
-| T140 | Runtime reliability and observability | Strong Review | T139 | NOT STARTED |
+| T139 | LLM parameter authority | Strong Review | T138 | COMPLETE / APPROVED |
+| T140 | Runtime reliability and observability | Strong Review | T139 | COMPLETE / APPROVED |
 | T141 | Real Sentinel-2 fixture and provenance | Strong Review | T138 | NOT STARTED |
 | T142 | Real raster runtime integration | Strong Review | T141 | NOT STARTED |
 | T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | NOT STARTED |
@@ -405,4 +405,4 @@ Phase 12 is COMPLETE / FINAL AUDIT APPROVED. Phase 13 is not the final project p
 | T145 | Phase 13 Final Audit | Phase Final Audit | T144 | NOT STARTED |
 
 DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`. Batches:
-A=`T139+T140` (next executable), B=`T141+T142`, C=`T143+T144`.
+A=`T139+T140` (COMPLETE / APPROVED), B=`T141+T142` (next executable), C=`T143+T144`.

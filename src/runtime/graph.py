@@ -243,10 +243,17 @@ def build_runtime_graph(
     verifier_node = verifier or VerifierNode(_DefaultVerifierModel())
     failure_classifier = classifier or FailureClassifier()
 
-    async def plan_initial(state: AgentState) -> dict[str, object]:
+    async def plan_initial(
+        state: AgentState,
+        runtime: Runtime[RuntimeGraphContext],
+    ) -> dict[str, object]:
         if state.plan is not None:
             return {"failure": None}
         geochange_task = state.geochange_task
+        started_at = datetime.now(UTC)
+        runtime_context = getattr(runtime, "context", None)
+        observation_sink = getattr(runtime_context, "observation_sink", None)
+        request_id = getattr(runtime_context, "request_id", None)
         try:
             plan = await planner_node(state.task_input)
             if _is_geochange_request(state.task_input):
@@ -260,9 +267,15 @@ def build_runtime_graph(
                 if geochange_task.analysis_type != "vegetation_change":
                     raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
-            return {"failure": _failure(failure_classifier, error.code)}
+            failure = _failure(failure_classifier, error.code)
+            if observation_sink is not None:
+                await observation_sink.record(_planner_observation(state, request_id, started_at, failure))
+            return {"failure": failure}
         except Exception:
-            return {"failure": _failure(failure_classifier, "planner_execution_failed")}
+            failure = _failure(failure_classifier, "planner_execution_failed")
+            if observation_sink is not None:
+                await observation_sink.record(_planner_observation(state, request_id, started_at, failure))
+            return {"failure": failure}
         geochange_task_data = None if geochange_task is None else geochange_task.model_dump(mode="json")
         return {
             "plan": plan.model_dump(mode="json"),
@@ -688,6 +701,28 @@ def build_runtime_graph(
 
 def _failure(classifier: FailureClassifier, code: str) -> RuntimeFailure:
     return classifier.classify(code)
+
+
+def _planner_observation(
+    state: AgentState,
+    request_id: UUID | None,
+    started_at: datetime,
+    failure: RuntimeFailure,
+) -> RuntimeObservation:
+    return RuntimeObservation(
+        request_id=request_id,
+        task_run_id=state.task_run_id,
+        replan_count=state.replan_count,
+        step_position=0,
+        retry_count=state.retry_count,
+        agent_name="planner",
+        agent_status="failed",
+        error_class=failure.classification,
+        error_code=failure.code,
+        error_message=failure.sanitized_message,
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+    )
 
 
 def _is_geochange_request(task_input: Any) -> bool:

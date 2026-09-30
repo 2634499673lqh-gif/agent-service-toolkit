@@ -5265,3 +5265,85 @@ APPROVED / FROZEN. The focused independent re-review closed the three original
 planning blockers. Batch A (`T139 → T140`) is the next executable work. This is
 documentation-only status synchronization; no production code, tests,
 migrations, dependencies, runtime, Docker, or UI behavior changed.
+### 2026-09-30 — Phase 13 Batch A implementation: T139 → T140
+
+Status: T139 and T140 implemented / awaiting independent Strong Review. Added
+deterministic original-text authority for cloud and NDVI thresholds, fixed
+server defaults and source markers, server-owned data mode, truthful terminal
+planner/execution/verifier stage metadata, planner failure observations, and
+bounded STAC failure normalization for retry/replan/terminal routing. Added
+focused authority and stage-status tests.
+
+Files changed: `src/geochange/{llm,models,runtime_caps}.py`,
+`src/runtime/{failure,graph}.py`, `src/service/task_runtime.py`,
+`src/persistence/models.py`, `tests/geochange/test_llm_authority.py`,
+`tests/runtime/test_stage_status.py`, and this task index/log.
+
+Validation: `uv run pytest tests/geochange/test_llm_authority.py
+tests/runtime/test_stage_status.py tests/geochange tests/runtime/test_planner_node.py
+tests/runtime/test_task_runtime.py tests/runtime/test_failure_classifier.py -q`
+(75 passed); `uv run pyrefly check ...` (0 errors); `uv run ruff check ...`
+(passed); `python -m compileall -q src`; `git diff --check` (passed).
+PostgreSQL-backed runtime tests were invoked (`34 skipped`) because no
+disposable PostgreSQL service was configured; the PostgreSQL API tests were
+also invoked (`3 skipped`).
+The full repository suite then passed: 733 passed, 133 skipped.
+
+Learner focus: server-side parsing is the authority boundary; terminal stage
+metadata is derived from durable runtime state; provider errors are normalized
+into bounded classifications before routing. Next task is independent Batch A
+Strong Review; T141 and later Phase 13 work remain deferred.
+### 2026-09-30 — Phase 13 Batch A focused corrective implementation
+
+Fixed the four Batch A Strong Review blockers: strict suffix-aware explicit
+number parsing, structured `GeoChangeTask` model-instance support,
+fail-closed model `data_mode` conflicts, and separation of malformed STAC
+responses from retryable provider connectivity failures. Added regression
+coverage for all reproduced malformed suffixes, model instances, unsupported
+data modes, and STAC error classes.
+
+Focused correction tests passed (77); affected runtime/GeoChange/persistence/
+trace/UI tests passed (234, 37 skipped). PostgreSQL tier was invoked but could
+not run: `TASKPILOT_TEST_DATABASE_URL` and `TASKPILOT_DATABASE_URL` are unset,
+and `docker info` reports that the Docker Desktop Linux Engine pipe is absent.
+No PostgreSQL evidence is claimed. Static checks and compilation remain part of
+the focused re-review validation.
+### 2026-09-30 — Phase 13 Batch A PostgreSQL evidence
+
+Docker Desktop Engine was reachable and the repository PostgreSQL 16 container
+was healthy. Using the established isolated workflow with
+`TASKPILOT_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test`,
+the runtime/API tier `tests/runtime/test_task_runtime_postgres.py`
+plus `tests/service/test_task_run_api_postgres.py` passed 37 tests. The focused
+AgentRun/ToolCall persistence and redaction tier passed 2 tests:
+`test_observability_persistence_is_bounded_tenant_scoped_and_restrictive` and
+`test_observability_postgres_checks_and_persisted_redaction`.
+
+The broader `tests/persistence/test_postgres_integration.py` run had one
+unrelated historical migration assertion failure: the test expects
+`t034_observability`, while current repository head is `t035_task_run_result`.
+No Batch A defect was exposed; no implementation changes were made in this
+evidence-only session.
+
+### 2026-09-30 — Phase 13 Batch A final focused parser correction
+
+The latest focused Strong Re-review found spaced unsupported decline units.
+Changed only the decline numeric suffix assertion in `src/geochange/llm.py`
+to reject whitespace followed by `%` or `percent`. Added spaced-unit and
+trailing-junk regressions in `tests/geochange/test_llm_authority.py`; existing
+valid forms, numeric-prefix rejection, and server authority tests remain passing.
+Validation: `uv run pytest tests/geochange/test_llm_authority.py -q` (17 passed),
+focused Ruff (passed), focused Pyrefly (0 errors), `git diff --check` (passed).
+PostgreSQL evidence was not rerun for this parser-only correction. T139/T140
+remain awaiting independent Strong Review; ready for final focused re-review.
+Learner focus: a numeric match must validate its suffix, including whitespace
+before a unit. Exercise: try a tab before `percent` and confirm rejection.
+
+### 2026-09-30 — Phase 13 Batch A final focused Strong Review approval
+
+Status: T139 and T140 are COMPLETE / APPROVED; Batch A is COMPLETE / APPROVED.
+The final parser blocker is closed: spaced unsupported `%`/`percent` units and
+numeric-prefix trailing junk fail closed while valid decline syntax and server
+authority remain intact. Focused parser tests passed (17), with Ruff, Pyrefly,
+and diff checks passing. Batch B (`T141 → T142`) may begin. No production,
+test, migration, dependency, or Git state changes were made by review.

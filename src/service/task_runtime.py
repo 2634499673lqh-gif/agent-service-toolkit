@@ -1126,12 +1126,14 @@ class TaskRuntimeService:
         if outcome not in {"SUCCEEDED", "FAILED"}:
             state = self._failed_state(state, "runtime_incomplete")
             outcome = "FAILED"
+        stage_status = _terminal_stage_status(state)
         result_metadata: dict[str, object] = {
             "schema_version": "taskpilot.runtime.v1",
             "summary": "Runtime completed successfully" if outcome == "SUCCEEDED" else "Runtime failed",
             "metrics": {"plan_steps": len(state.plan.steps) if state.plan is not None else 0},
             "verifier_status": "passed" if outcome == "SUCCEEDED" else "failed",
             "execution_mode": "deterministic_fixture",
+            "stage_status": stage_status,
         }
         if state.execution_result is not None and state.execution_result.output:
             try:
@@ -1151,6 +1153,9 @@ class TaskRuntimeService:
                         "replan_count": state.replan_count,
                     }
                 )
+        # Candidate capability output cannot override the runtime's terminal
+        # stage truth (especially after verifier rejection).
+        result_metadata["verifier_status"] = stage_status["verifier"]
         try:
             await self._persist_observations(
                 session,
@@ -1188,6 +1193,26 @@ class TaskRuntimeService:
             task_run_status=expected_status,
             state=state,
         )
+
+
+def _terminal_stage_status(state: AgentState) -> dict[str, str]:
+    """Project checkpoint state into the fixed terminal stage vocabulary."""
+    if state.plan is None:
+        return {"planner": "failed", "execution": "not_run", "verifier": "not_run"}
+    planner = "passed"
+    execution_result = state.execution_result
+    if execution_result is None or not execution_result.success:
+        execution = "failed"
+        verifier = "not_run"
+    else:
+        execution = "passed"
+        if state.verification is not None:
+            verifier = "passed" if state.verification.verdict == "PASS" else "failed"
+        elif state.failure is not None and state.failure.code.startswith("verifier_"):
+            verifier = "failed"
+        else:
+            verifier = "not_run"
+    return {"planner": planner, "execution": execution, "verifier": verifier}
 
 
 __all__ = [

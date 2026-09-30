@@ -365,6 +365,14 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
             )
             st.info(f"Data mode: {provenance_label}")
             st.caption(f"Execution: {_display_value(result_metadata.get('execution_mode'))} · Verifier: {_display_value(result_metadata.get('verifier_status'))}")
+            stage_status = result_metadata.get("stage_status")
+            if isinstance(stage_status, dict):
+                st.caption(
+                    "Stages: " + " · ".join(
+                        f"{name}: {_display_value(stage_status.get(name))}"
+                        for name in ("planner", "execution", "verifier")
+                    )
+                )
             labels = {"mean_ndvi_period_a": "Mean NDVI A", "mean_ndvi_period_b": "Mean NDVI B", "mean_delta_ndvi": "Mean delta", "significant_decline_area_m2": "Decline area (m²)", "decline_percentage": "Decline percentage", "valid_analysis_area_m2": "Valid area (m²)", "decline_threshold": "Decline threshold"}
             cards = st.columns(3)
             for index, (key, label) in enumerate(labels.items()):

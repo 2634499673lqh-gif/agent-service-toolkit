@@ -302,6 +302,7 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
     allowed = {
         "schema_version", "summary", "metrics", "verifier_status", "execution_mode",
         "analysis_type", "selected_scene_evidence", "artifact_references", "replan_count",
+        "stage_status",
     }
     if set(value) - allowed:
         raise ValueError("result_metadata contains a non-allowlisted key")
@@ -319,6 +320,15 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.analysis_type is invalid")
     if "replan_count" in value and not isinstance(value["replan_count"], int):
         raise ValueError("result_metadata.replan_count is invalid")
+    if "stage_status" in value:
+        stage_status = value["stage_status"]
+        statuses = {"not_started", "running", "passed", "failed", "not_run"}
+        if (
+            not isinstance(stage_status, dict)
+            or set(stage_status) != {"planner", "execution", "verifier"}
+            or any(status not in statuses for status in stage_status.values())
+        ):
+            raise ValueError("result_metadata.stage_status is invalid")
     for key in ("selected_scene_evidence", "artifact_references"):
         if key in value and (
             not isinstance(value[key], dict)

@@ -86,10 +86,21 @@ class SearchSentinel2RuntimeCapability(_Base):
             aoi = resolve_aoi(task.aoi_key)
             # Earth Search ranks by provider order; query the bounded maximum
             # cloud range, then apply the validated task threshold to evidence.
-            item_a = search_sentinel2(aoi, task.period_a, 100.0)
-            item_b = search_sentinel2(aoi, task.period_b, 100.0)
+            try:
+                item_a = search_sentinel2(aoi, task.period_a, 100.0)
+                item_b = search_sentinel2(aoi, task.period_b, 100.0)
+            except ConnectionError:
+                return ExecutionResult(step_position=step.position, success=False, error_code="stac_provider_unavailable", error_message="Sentinel-2 provider is unavailable")
+            except ValueError as error:
+                code = "stac_no_suitable_imagery" if "no Sentinel-2 item" in str(error) else "stac_response_malformed"
+                return ExecutionResult(step_position=step.position, success=False, error_code=code, error_message="Sentinel-2 metadata is unavailable")
             if item_a.cloud_cover > task.cloud_threshold or item_b.cloud_cover > task.cloud_threshold:
-                raise ValueError("selected Sentinel-2 item exceeds the validated cloud threshold")
+                code = (
+                    "stac_explicit_quality_violation"
+                    if task.cloud_threshold_source == "user_text"
+                    else "stac_default_quality_violation"
+                )
+                return ExecutionResult(step_position=step.position, success=False, error_code=code, error_message="selected imagery exceeds the validated cloud threshold")
             evidence = {
                 "period_a_item_id": item_a.item_id, "period_a_date": item_a.acquisition_date.isoformat(),
                 "period_a_cloud_cover": str(item_a.cloud_cover), "period_a_collection": item_a.collection,

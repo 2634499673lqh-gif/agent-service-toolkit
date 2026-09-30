@@ -87,9 +87,12 @@ def search_sentinel2(
     try:
         response = http.get(STAC_ENDPOINT, params=params)
         response.raise_for_status()
-        payload = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
+    except httpx.HTTPError as exc:
         raise ConnectionError("Sentinel-2 metadata search failed") from exc
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ValueError("malformed STAC response") from exc
     finally:
         if own_client:
             http.close()
