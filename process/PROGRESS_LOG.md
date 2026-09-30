@@ -5234,3 +5234,34 @@ Status: Phase 12 COMPLETE / FINAL AUDIT APPROVED following the authoritative Fin
 Accepted non-blocking LOW follow-up: `tests/persistence/test_postgres_integration.py:87` retains a legacy expectation for `t034_observability`; the valid current migration head is `t035_task_run_result`. This finding is recorded without modifying the test.
 
 Changed only canonical status documentation. No source, tests, runtime, evaluation, UI, architecture, or configuration changes; no commit or push.
+### 2026-09-30 — T138 Phase 13 Planning Gate
+
+Status: planning artifacts are complete and READY FOR INDEPENDENT PLANNING
+STRONG REVIEW. Verified branch `phase-13-portfolio-hardening-demo`, HEAD
+`c5183f14cbaca44234db98329e1176776ff36115`, synchronized origin, clean working
+tree, and Phase 12 COMPLETE / FINAL AUDIT APPROVED baseline. Added ADR-013 and
+cards T138–T145; updated backlog, roadmap, task index, decision log, and this
+log. No production code, tests, migrations, dependencies, runtime, Docker, or
+UI behavior changed. Validation: repository inspection, path verification, and
+`git diff --check`. Next task: independent Planning Strong Review of T138.
+
+### 2026-09-30 — T138 focused planning correction after Strong Review NOT APPROVED
+
+Status: T138 remains PLANNING IN PROGRESS / STRONG REVIEW NOT APPROVED; the
+original review history is preserved. Corrected only the three identified
+blockers: deterministic server extraction of explicit `cloud_threshold` and
+`decline_threshold` values from original text; fixed terminal
+`result_metadata.stage_status` with planner/execution/verifier keys and truthful
+`not_run` semantics; and one canonical dependency graph. The technical DAG is
+`T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 →
+T145`; execution remains sequential review batches A, B, C, then T145. No
+production code, tests, migrations, dependencies, runtime, Docker, or UI
+behavior changed. Ready for focused Planning Strong Re-review after validation.
+
+### 2026-09-30 — T138 focused Planning Strong Re-review approval
+
+Status: T138 COMPLETE / APPROVED; ADR-013 Accepted / frozen; Phase 13 Planning
+APPROVED / FROZEN. The focused independent re-review closed the three original
+planning blockers. Batch A (`T139 → T140`) is the next executable work. This is
+documentation-only status synchronization; no production code, tests,
+migrations, dependencies, runtime, Docker, or UI behavior changed.

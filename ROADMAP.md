@@ -293,3 +293,12 @@ DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 �
 T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW
 APPROVED. T117 Phase 9 Final Audit is the next executable work.
 
+## Phase 13 — Portfolio Hardening & Demo Experience [PLANNING APPROVED / FROZEN]
+
+T138 is COMPLETE / APPROVED after focused Planning Strong Re-review. ADR-013 is
+Accepted / frozen. Phase 13 Planning is APPROVED / FROZEN. Canonical DAG:
+`T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.
+The phase targets deterministic parameter authority, accurate runtime evidence,
+provenance-bound real cached Sentinel-2 pixels, and a portfolio-first Streamlit
+flow. It does not declare the overall project finished. See ADR-013 and cards
+T138–T145.
