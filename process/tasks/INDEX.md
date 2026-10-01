@@ -172,8 +172,9 @@ T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED an
 T138 is COMPLETE / APPROVED after focused Planning Strong Re-review. ADR-013 is
 Accepted / frozen and Phase 13 Planning is APPROVED / FROZEN.
 T139 and T140 are COMPLETE / APPROVED after Batch A Strong Review. T141 and
-T142 are COMPLETE / APPROVED after focused Batch B Strong Re-review. Batch B is
-COMPLETE / APPROVED; Batch C (`T143 → T144`) may begin.
+T142 are COMPLETE / APPROVED after focused Batch B Strong Re-review. T143 is
+COMPLETE / APPROVED after focused Strong Re-review. Batch C is in progress;
+T144 is the next task.
 
 | Task | Purpose | Review | Depends On | Status |
 |---|---|---|---|---|
@@ -182,7 +183,7 @@ COMPLETE / APPROVED; Batch C (`T143 → T144`) may begin.
 | T140 | Runtime reliability/observability | Strong Review | T139 | COMPLETE / APPROVED |
 | T141 | Real raster fixture/provenance | Strong Review | T138 | COMPLETE / APPROVED |
 | T142 | Real raster integration | Strong Review | T141 | COMPLETE / APPROVED |
-| T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | NOT STARTED |
+| T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | COMPLETE / APPROVED |
 | T144 | Evaluation/evidence/docs | Strong Review | T143 | NOT STARTED |
 | T145 | Phase 13 Final Audit | Phase Final Audit | T144 | NOT STARTED |
 

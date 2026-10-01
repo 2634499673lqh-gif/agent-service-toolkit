@@ -426,6 +426,9 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
         metadata = run.result_metadata
         assert metadata is not None
         assert metadata["execution_mode"] == EXECUTION_MODE
+        assert metadata["runtime_profile"]["live_provider"] is False
+        assert metadata["runtime_profile"]["provider"] == "fake"
+        assert metadata["runtime_profile"]["model"] == "fake"
         assert metadata["selected_scene_evidence"]["fixture_manifest"] == MANIFEST_SHA256
         assert metadata["stage_status"] == {"planner": "passed", "execution": "passed", "verifier": "passed"}
         assert len(json.dumps(metadata).encode()) < 4096

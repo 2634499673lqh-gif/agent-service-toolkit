@@ -5417,3 +5417,90 @@ roles and rejects unrelated valid replacements. Focused evidence passed: GeoChan
 evaluation 8/8; PostgreSQL runtime/API 43 passed; Ruff, Pyrefly, and diff checks
 passed. No production or test changes were made by review. Batch C (`T143 →
 T144`) may begin.
+
+### 2026-10-01 — T143 Product UI hardening implementation
+
+Reworked the Streamlit Product view so the selected task request and readable
+task/run/stage statuses lead the page. Runtime mode, provider/model flags,
+selected scenes, verification, artifacts, and provenance are presented before
+developer details. Raw result metadata and the trace timeline remain available
+inside an explicit developer section, keeping UUIDs and event identifiers out
+of the primary portfolio view. Active runs use four bounded 0.2-second refresh
+checks and then show a truthful manual-refresh message; no lifecycle state is
+mutated optimistically.
+
+Files changed: `src/taskpilot_ui.py`, `tests/app/test_taskpilot_ui.py`, and
+`process/PROGRESS_LOG.md`. No migration, dependency, authentication, API
+boundary, runtime, or GeoChange computation changes were made. Learners should
+read the UI projection helpers and `_render_run_view` to see how server-owned
+evidence is translated into human-facing labels. Suggested next task: T144
+only after Strong Review approval of T143.
+
+### 2026-10-01 — T143 focused corrective implementation
+
+Closed the focused UI blockers from Strong Review. Provenance now explicitly
+labels `CACHED_REAL_SENTINEL2_RASTER` as cached real Sentinel-2 pixels with
+deterministic local computation and no live raster processing, while retaining
+a distinct live-STAC-metadata label. Scene projection supports the persisted
+flat `period_a_item_id`/`period_a_date` and `period_b_item_id`/`period_b_date`
+fields. Runtime profile reads persisted provider/model/live fields, including
+explicit false values and the supported nested profile shape. Polling budgets
+are keyed by selected run ID, remain bounded, and clear on terminal states.
+
+Focused tests cover provenance, scenes, false runtime flags, per-run polling,
+and user-facing status wording. UI tests passed 15; stage/GeoChange regression
+passed 29. Ruff, Pyrefly, compile, and diff checks passed. No API schema,
+authentication, runtime semantics, migration, commit, or push changes were made.
+Ready for focused Strong Re-review.
+
+### 2026-10-01 — T143 runtime profile persistence corrective implementation
+
+Connected the runtime profile to terminal TaskRun persistence. Runtime
+finalization now records a bounded `runtime_profile` containing provider,
+model, and an explicit `live_provider` boolean, using observed provider
+metadata first and the server-owned configured model/policy when available.
+The existing result metadata validator now allowlists and validates exactly
+this compact structure; no table or migration was added. The existing
+Streamlit projection receives these fields through the authenticated run API.
+
+Focused UI/runtime/GeoChange tests passed (44). PostgreSQL runtime/API tests
+were invoked but skipped because `TASKPILOT_TEST_DATABASE_URL` is not
+configured. Ruff, Pyrefly, compile, and diff checks passed. No commit or push.
+Ready for focused Strong Re-review once PostgreSQL evidence is available.
+
+### 2026-10-01 — T143 runtime profile final corrective verification
+
+The terminal runtime profile implementation is complete and type/lint clean.
+The bounded profile is generated before TaskRun lifecycle completion, validated
+by the existing result metadata model, and returned unchanged by the existing
+authenticated TaskRun API. It records observed provider/model metadata when
+present, otherwise server-owned configured/fake model policy, plus an explicit
+`live_provider` boolean. Focused UI/runtime/GeoChange/correlation tests passed
+48. PostgreSQL runtime/API evidence was invoked and remains skipped solely
+because `TASKPILOT_TEST_DATABASE_URL` is not configured. No commit or push.
+This implementation is ready for focused Strong Re-review.
+
+### 2026-10-01 — T143 runtime profile semantic correction
+
+Replaced provider derivation by an explicit model-enum-to-provider map, so
+DeepSeek and every supported configured model resolve deterministically without
+string-type guessing. `live_provider` now means an external provider was
+actually observed during this run: fake and deterministic/local runs persist
+false, while an observation carrying a supported external provider marks true.
+The persisted profile, API response, and existing Streamlit projection retain
+the same provider/model/boolean values.
+
+Semantic profile tests and affected UI/runtime tests passed (47). Targeted
+PostgreSQL runtime/API tests were rerun and skipped because
+`TASKPILOT_TEST_DATABASE_URL` is not configured. Ruff, Pyrefly, compilation,
+and diff checks passed. No commit or push.
+
+### 2026-10-01 — T143 Final Focused Strong Re-review approval
+
+Status: T143 COMPLETE / APPROVED. Independent review verified deterministic
+provider resolution, observation-based `live_provider` semantics, bounded
+result-metadata validation, authenticated TaskRun API propagation, Streamlit
+display, and PostgreSQL runtime/API evidence (`38 passed, 0 skipped`). Focused
+UI/runtime/GeoChange validation passed (`136 passed`), with Ruff, Pyrefly,
+compilation, and diff checks passing. No implementation changes were made by
+review. T144 is the next task in Batch C. No commit or push.

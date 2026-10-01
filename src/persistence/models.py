@@ -302,7 +302,7 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
     allowed = {
         "schema_version", "summary", "metrics", "verifier_status", "execution_mode",
         "analysis_type", "selected_scene_evidence", "artifact_references", "replan_count",
-        "stage_status",
+        "stage_status", "runtime_profile",
     }
     if set(value) - allowed:
         raise ValueError("result_metadata contains a non-allowlisted key")
@@ -329,6 +329,20 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
             or any(status not in statuses for status in stage_status.values())
         ):
             raise ValueError("result_metadata.stage_status is invalid")
+    if "runtime_profile" in value:
+        profile = value["runtime_profile"]
+        if (
+            not isinstance(profile, dict)
+            or set(profile) != {"provider", "model", "live_provider"}
+            or any(
+                key in {"provider", "model"}
+                and item is not None
+                and not isinstance(item, str)
+                for key, item in profile.items()
+            )
+            or not isinstance(profile["live_provider"], bool)
+        ):
+            raise ValueError("result_metadata.runtime_profile is invalid")
     for key in ("selected_scene_evidence", "artifact_references"):
         if key in value and (
             not isinstance(value[key], dict)
