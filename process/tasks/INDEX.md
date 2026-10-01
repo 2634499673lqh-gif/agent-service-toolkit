@@ -174,7 +174,7 @@ Accepted / frozen and Phase 13 Planning is APPROVED / FROZEN.
 T139 and T140 are COMPLETE / APPROVED after Batch A Strong Review. T141 and
 T142 are COMPLETE / APPROVED after focused Batch B Strong Re-review. T143 is
 COMPLETE / APPROVED after focused Strong Re-review. Batch C is in progress;
-T144 is the next task.
+T144 is COMPLETE / APPROVED; T145 remains the next task and is not started.
 
 | Task | Purpose | Review | Depends On | Status |
 |---|---|---|---|---|
@@ -184,7 +184,7 @@ T144 is the next task.
 | T141 | Real raster fixture/provenance | Strong Review | T138 | COMPLETE / APPROVED |
 | T142 | Real raster integration | Strong Review | T141 | COMPLETE / APPROVED |
 | T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | COMPLETE / APPROVED |
-| T144 | Evaluation/evidence/docs | Strong Review | T143 | NOT STARTED |
+| T144 | Evaluation/evidence/docs | Strong Review | T143 | COMPLETE / APPROVED |
 | T145 | Phase 13 Final Audit | Phase Final Audit | T144 | NOT STARTED |
 
 DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.

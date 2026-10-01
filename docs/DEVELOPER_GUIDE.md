@@ -48,6 +48,13 @@ uv run streamlit run src/streamlit_app.py  # Product UI, usually :8501
 
 Run the API and Streamlit commands in separate terminals. The API exposes `GET /health` and `/health/live` for dependency-free liveness, `GET /health/ready` for configured database readiness, `GET /info` for metadata, and `GET /openapi.json` for the API contract. Local API startup does not implicitly migrate the database.
 
+For the portfolio flow, open `http://localhost:8501`, sign in with the owner
+created above, create a task describing the supported Wuhan East Lake July 2023
+versus July 2024 comparison, and choose **Start run**. The API dispatches the
+tenant-scoped TaskRun to the bounded process-local runtime. See
+`docs/DEMO_GUIDE.md` for the result-reading order and the cached-raster/live-
+metadata distinction.
+
 The Windows entrypoint is `src/run_service.py`; it selects the Selector event loop required by psycopg async connections. Do not replace it with an ad-hoc Uvicorn command for the PostgreSQL path.
 
 ## Docker Compose startup

@@ -412,7 +412,10 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
     async with session_factory() as session:
         task = await session.get_one(Task, task_id)
         task.title = "Wuhan East Lake vegetation change"
-        task.description = "July 2023 versus July 2024"
+        task.description = (
+            "July 2023 versus July 2024; use a maximum Sentinel-2 cloud cover "
+            "threshold of 30% and NDVI decline threshold of -0.15."
+        )
         await session.commit()
     run_id = await _start_run(session_factory, task_id, organization_id)
     async with session_factory() as session:
@@ -430,6 +433,7 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
         assert metadata["runtime_profile"]["provider"] == "fake"
         assert metadata["runtime_profile"]["model"] == "fake"
         assert metadata["selected_scene_evidence"]["fixture_manifest"] == MANIFEST_SHA256
+        assert metadata["metrics"]["decline_threshold"] == -0.15
         assert metadata["stage_status"] == {"planner": "passed", "execution": "passed", "verifier": "passed"}
         assert len(json.dumps(metadata).encode()) < 4096
         assert metadata["metrics"]["valid_pixels"] == 914

@@ -5504,3 +5504,62 @@ display, and PostgreSQL runtime/API evidence (`38 passed, 0 skipped`). Focused
 UI/runtime/GeoChange validation passed (`136 passed`), with Ruff, Pyrefly,
 compilation, and diff checks passing. No implementation changes were made by
 review. T144 is the next task in Batch C. No commit or push.
+
+### 2026-10-01 — T144 documentation, evaluation and demo polish
+
+Status: T144 IMPLEMENTED / AWAITING STRONG REVIEW. Updated the portfolio README,
+architecture/evaluation/developer/user/demo guides, and current Phase 13 status
+to describe the implemented LLM planning, bounded runtime, GeoChange workflow,
+cached real Sentinel-2 raster mode, provenance/verifier evidence, and
+observability. Added a reproducible local demo flow and clarified that live STAC
+is metadata-only while pixels remain cached. Corrected stale wording that said
+Product runs did not execute the runtime. No production code, tests, migrations,
+dependencies, authentication, persistence, or runtime behavior changed.
+
+Validation: `uv run python scripts/evaluation_geochange.py` passed 8/8 cases
+(`pass_rate=1.0000`); Markdown lint passed for all changed user-facing guides
+and `docs/ARCHITECTURE.md`; `git diff --check` passed. Repository-wide lint still
+reports pre-existing MD032/MD022/MD012 findings in the historical `ROADMAP.md`
+and `process/PROGRESS_LOG.md` sections. No commit or push.
+
+### 2026-10-01 — T144 focused live Product smoke evidence
+
+Recorded one fresh authenticated Docker Compose Product smoke in
+`process/T144_LIVE_PRODUCT_SMOKE.md`. The rebuilt stack used fake-model mode with
+live LLM/STAC switches disabled. TaskRun `1eab9bd0-f1ae-44ba-89a1-586acd39da57`
+reached `succeeded` with planner, execution, and verifier all `passed`, the
+supported `CACHED_REAL_SENTINEL2_RASTER` mode, fixture-bound July 2023/July 2024
+scene evidence, verifier passed, eight successful capability trace events, and
+all three authenticated PNG artifacts returning HTTP 200. No secret or raw
+provider payload was recorded. Historical
+`REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE` evidence was not used for this result.
+
+### 2026-10-01 — T144 Product-smoke corrective implementation
+
+Focused review reproduced a real defect: fake/offline GeoChange planning called
+`_default_geochange_task()` directly and therefore skipped T139's deterministic
+original-text extraction. The fix in `src/runtime/graph.py` reuses
+`extract_explicit_parameters` for the offline path, applies only trusted
+`cloud_threshold`/`decline_threshold` values, and preserves the frozen defaults
+when values are omitted. Invalid or conflicting explicit values still fail
+through the existing planner error path.
+
+Regression coverage passed: 19 focused authority tests and 15 runtime tests.
+Ruff and Pyrefly passed. A corrected authenticated Docker Product smoke
+(`84bfd841-5a04-4877-a2f2-c12f0d20c85d`) reached `succeeded` with all stages and
+verifier passed, `CACHED_REAL_SENTINEL2_RASTER`, fake provider profile, effective
+decline threshold `-0.15`, decline percentage `68.0525164114`, significant
+decline area `62,200 m²`, eight trace events, and all three authenticated PNGs
+returning HTTP 200. The original failed smoke remains preserved above as
+historical defect evidence. No commit or push.
+
+### 2026-10-01 — T144 focused Strong Re-review approval
+
+Status: T144 COMPLETE / APPROVED after focused re-review of the Product-smoke
+authority correction. The fake/offline path now reuses T139's deterministic
+original-text extractor; explicit thresholds, defaults, and fail-closed invalid
+or conflicting values are covered. The corrected authenticated Product smoke
+persisted `-0.15`, passed all stages and verification, used
+`CACHED_REAL_SENTINEL2_RASTER`, and returned all three authorized artifacts.
+T145 Final Audit may begin. This is documentation-only status synchronization;
+no further implementation changes, commit, or push were made by review.

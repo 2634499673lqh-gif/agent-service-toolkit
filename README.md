@@ -4,7 +4,16 @@ TaskPilot is a multi-tenant task execution product that turns a bounded natural-
 
 ## What it does
 
-A user creates a Product Task, starts a run, and receives period evidence, NDVI-before/after/change images, decline statistics, a final explanation, and a persisted execution trace.
+A user creates a Product Task, starts a run, and receives period evidence, NDVI-before/after/change images, decline statistics, a final explanation, and a persisted execution trace. TaskPilot is a bounded, multi-tenant task-execution product: the Agent interprets the request and plans the work, while server-owned capabilities and the verifier determine the evidence and result.
+
+The current portfolio path demonstrates:
+
+- LLM-based task understanding and bounded structured planning;
+- the Planner → Executor → Verifier runtime with bounded recovery;
+- the GeoChange workflow for Wuhan East Lake vegetation change;
+- deterministic NumPy processing of cached, real Sentinel-2 Red/NIR pixels;
+- manifest/checksum provenance validation and server-authoritative result verification;
+- persisted stage, provider/runtime, artifact, and trace evidence for observability.
 
 ## Why an Agent here
 
@@ -54,7 +63,7 @@ Task and TaskRun reads are organization-scoped through a server-derived principa
 
 ## Local demo
 
-Follow [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for setup, then use [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md). Keep credentials in `.env` or hidden prompts; never copy tokens into documentation.
+Follow [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for setup and startup, then use [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md) to sign in, submit a GeoChange task, start a run, and read its evidence. Keep credentials in `.env` or hidden prompts; never copy tokens into documentation.
 
 ## Tests
 
@@ -66,7 +75,7 @@ uv run pyrefly check
 
 ## Limitations
 
-The current portfolio path uses process-local runtime dispatch, has no distributed worker or production exactly-once guarantee, supports one controlled AOI/use case, uses a local raster fixture, does not require remote COG processing, and is not production-scale geospatial infrastructure.
+The current portfolio path uses process-local runtime dispatch, has no distributed worker or production exactly-once guarantee, supports one controlled AOI/use case, and does not provide production-scale GIS features. `CACHED_REAL_SENTINEL2_RASTER` reads the repository's cached real pixels; optional live STAC checks provide metadata only and do not download or process remote raster/COG pixels per run.
 
 ## Deferred roadmap
 

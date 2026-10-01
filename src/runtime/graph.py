@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from core.llm import get_model
 from core.settings import settings
-from geochange.llm import GeoChangeLLM
+from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
 from schema.planner import PlanStep
 
@@ -263,7 +263,7 @@ def build_runtime_graph(
                             state.task_input.description or state.task_input.title
                         )
                     else:
-                        geochange_task = _default_geochange_task()
+                        geochange_task = _offline_geochange_task(state.task_input)
                 if geochange_task.analysis_type != "vegetation_change":
                     raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
@@ -735,6 +735,22 @@ def _default_geochange_task() -> GeoChangeTask:
         period_a={"start": "2023-07-01", "end": "2023-07-31"},
         period_b={"start": "2024-07-01", "end": "2024-07-31"},
     )
+
+
+def _offline_geochange_task(task_input: Any) -> GeoChangeTask:
+    """Build the fake/offline task while preserving T139 text authority."""
+
+    source_text = f"{task_input.title} {task_input.description or ''}"
+    explicit = extract_explicit_parameters(source_text)
+    updates: dict[str, object] = {}
+    if explicit.cloud_threshold is not None:
+        updates.update(cloud_threshold=explicit.cloud_threshold, cloud_threshold_source="user_text")
+    if explicit.decline_threshold is not None:
+        updates.update(
+            decline_threshold=explicit.decline_threshold,
+            decline_threshold_source="user_text",
+        )
+    return _default_geochange_task().model_copy(update=updates)
 
 
 def _bounded_json_object(output: str | None) -> dict[str, Any] | None:
