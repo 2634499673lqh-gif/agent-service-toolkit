@@ -766,7 +766,7 @@ def _offline_geochange_task(task_input: Any) -> GeoChangeTask:
             decline_threshold=explicit.decline_threshold,
             decline_threshold_source="user_text",
         )
-    return _default_geochange_task().model_copy(update=updates)
+    return GeoChangeTask.model_validate({**_default_geochange_task().model_dump(), **updates})
 
 
 def _bounded_json_object(output: str | None) -> dict[str, Any] | None:

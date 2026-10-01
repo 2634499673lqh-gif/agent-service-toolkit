@@ -31,6 +31,7 @@ from runtime.planner import PlannerNode
 from runtime.risk import RiskRoute, classify_action
 from runtime.state import AgentState, PendingApprovalReference
 from runtime.verifier import VerifierNode
+from schema.confirmed_intent import ConfirmedIntent
 from schema.models import (
     AnthropicModelName,
     AWSModelName,
@@ -300,6 +301,20 @@ class TaskRuntimeService:
 
         task, task_run = pair
         task_snapshot = (task.title, task.description)
+        confirmed_task = None
+        if task.confirmed_intent is not None:
+            try:
+                intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+                confirmed_task = intent.runtime_task()
+                # Planner/capability text is derived from the validated intent,
+                # independently of mutable presentation title/description.
+                task_snapshot = (
+                    "vegetation_change NDVI Wuhan East Lake",
+                    confirmed_task.model_dump_json(),
+                )
+            except ValueError:
+                await session.rollback()
+                raise TaskRuntimeConflictError("confirmed execution intent is invalid") from None
         run_status = task_run.status
         await session.rollback()
 
@@ -357,6 +372,7 @@ class TaskRuntimeService:
                 title=task_snapshot[0],
                 description=task_snapshot[1],
             )
+            initial_state.geochange_task = confirmed_task
             try:
                 raw_state = await invoke_graph(initial_state.checkpoint_data())
             except Exception:
@@ -401,6 +417,12 @@ class TaskRuntimeService:
                 checkpoint_state = self._state_from_checkpoint(
                     checkpoint, thread_id, task_id=task_id, task_run_id=task_run_id
                 )
+                if confirmed_task is not None and (
+                    checkpoint_state.geochange_task != confirmed_task
+                    or checkpoint_state.task_input.title != task_snapshot[0]
+                    or checkpoint_state.task_input.description != task_snapshot[1]
+                ):
+                    raise ValueError("checkpoint does not match confirmed intent")
             except ValueError:
                 failed_state = self._failed_state(
                     AgentState.initial(
@@ -490,6 +512,8 @@ class TaskRuntimeService:
 
         if state.task_id != str(task_id) or state.task_run_id != str(task_run_id):
             state = self._failed_state(state, "runtime_state_identity_mismatch")
+        elif confirmed_task is not None and state.geochange_task != confirmed_task:
+            state = self._failed_state(state, "runtime_confirmed_intent_mismatch")
         elif state.pending_approval is not None:
             return await self._verify_written_approval_checkpoint(
                 session,

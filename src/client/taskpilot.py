@@ -165,6 +165,24 @@ class TaskPilotClient:
             )
         return data
 
+    def converse(self, message: str) -> dict[str, Any]:
+        data = self._json(self._request("POST", "/api/v1/conversation", json={"message": message}))
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def confirm_conversation_task(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        data = self._json(
+            self._request("POST", "/api/v1/conversation/confirm", json={"proposal": proposal})
+        )
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
     @staticmethod
     def _resource_path(task_id: str | UUID, suffix: str = "") -> str:
         return f"/api/v1/tasks/{task_id}{suffix}"

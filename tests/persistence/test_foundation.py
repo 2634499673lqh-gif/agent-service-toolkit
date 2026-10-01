@@ -353,6 +353,7 @@ def test_task_metadata_declares_tenant_creator_and_status_constraints() -> None:
     assert {constraint.name for constraint in table.constraints if constraint.name} == {
         "ck_tasks_task_title_not_blank",
         "ck_tasks_task_status_valid",
+        "ck_tasks_task_confirmed_intent_bounds",
         "pk_tasks",
         "fk_tasks_organization_id_organizations",
         "fk_tasks_created_by_user_id_users",

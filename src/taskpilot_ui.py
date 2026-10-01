@@ -967,6 +967,7 @@ def _render_dashboard_summary(tasks: list[dict[str, Any]]) -> None:
 def _render_tasks(client: TaskPilotClient) -> None:
     st.header("AI 遥感分析工作台")
     st.caption("从分析区域和时间范围出发，查看可解释的 GeoChange 植被变化结果。")
+    _render_conversation(client)
     mutation_in_flight = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     with st.form("taskpilot_create"):
         st.markdown("#### 新建分析任务")
@@ -1055,6 +1056,78 @@ def _render_tasks(client: TaskPilotClient) -> None:
         f"Updated: {_task_value(detail, 'updated_at')}"
     )
     _render_run_view(client, str(task_id), detail)
+
+
+def _render_conversation(client: TaskPilotClient) -> None:
+    """Offer a review-first conversational entry point over the existing API."""
+
+    with st.expander("用自然语言描述分析需求", expanded=True):
+        st.caption("Agent 只生成提案；确认后才会创建草稿任务，执行仍由任务页面控制。")
+        with st.form("taskpilot_conversation"):
+            message = st.text_area(
+                "你想分析什么？",
+                key="taskpilot_conversation_message",
+                placeholder="例如：帮我分析武汉东湖最近几年植被有没有变化。",
+            )
+            submitted = st.form_submit_button("生成任务提案")
+        if submitted and message.strip():
+            try:
+                response = client.converse(message)
+                st.session_state.taskpilot_conversation_response = response
+            except TaskPilotClientError as error:
+                _handle_error(error)
+        response = st.session_state.get("taskpilot_conversation_response")
+        if isinstance(response, dict):
+            kind = response.get("kind")
+            if kind in {"proposal", "clarification"} and isinstance(response.get("proposal"), dict):
+                proposal = response["proposal"]
+                st.info(response.get("message", "请确认任务提案。"))
+                st.json(proposal)
+                st.caption(
+                    "请选择两个明确、先后不重叠的比较时段；年份或‘最近几年’不能代替比较时段。"
+                )
+                dates = [
+                    st.date_input(label, value=None, key=f"taskpilot_intent_date_{index}")
+                    for index, label in enumerate(
+                        ("时段 A 开始", "时段 A 结束", "时段 B 开始", "时段 B 结束")
+                    )
+                ]
+                if st.button("确认并创建草稿任务", key="taskpilot_confirm_proposal"):
+                    if any(value is None for value in dates):
+                        st.error("请完整填写两个比较时段。")
+                        return
+                    proposal = dict(proposal)
+                    proposal["period_a"] = {"start": str(dates[0]), "end": str(dates[1])}
+                    proposal["period_b"] = {"start": str(dates[2]), "end": str(dates[3])}
+                    try:
+                        created = client.confirm_conversation_task(proposal)
+                        st.session_state.taskpilot_conversation_response = None
+                        clear_task_descendants()
+                        st.session_state.taskpilot_selected_task_id = created.get("result", {}).get(
+                            "task_id"
+                        )
+                        st.rerun()
+                    except TaskPilotClientError as error:
+                        _handle_error(error)
+            elif kind == "history":
+                st.info(response.get("message", "历史分析任务"))
+                for item in response.get("tasks", []):
+                    if isinstance(item, dict):
+                        st.write(
+                            f"{item.get('title', '未命名')} · "
+                            f"{_human_status_zh(item.get('status'))} · "
+                            f"{item.get('created_at', '')}"
+                        )
+            elif kind == "result" and isinstance(response.get("result"), dict):
+                result = response["result"]
+                if result.get("task_id"):
+                    st.session_state.taskpilot_selected_task_id = str(result["task_id"])
+                if result.get("task_run_id"):
+                    st.session_state.taskpilot_selected_run_id = str(result["task_run_id"])
+                st.success("已找到历史结果，请在下方任务详情中查看可视化。")
+                st.caption(
+                    f"任务：{result.get('task_title', '')} · Run：{result.get('task_run_id', '')}"
+                )
 
 
 def render_product() -> None:

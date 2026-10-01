@@ -5668,3 +5668,128 @@ their size and shape without a migration or new table. Streamlit now reads
 only these persisted fields, with selected-scene dates as the existing safe
 fallback for older results. UI and GeoChange tests use realistic response
 shapes and cover both legacy metadata and enriched GeoChange results.
+### 2026-10-01 — Phase 14 Implementation 2: Conversational Agent + Task Memory Foundation
+
+Added a protected conversational facade over the existing TaskPilot business
+records. Natural-language requests produce a bounded `TaskProposal` containing
+area, analysis type, indicator, dates, and required parameters; the server
+re-validates the proposal and only the explicit `/conversation/confirm` action
+creates a DRAFT Task. Confirmation never starts a TaskRun, so the existing
+execution and approval boundaries remain authoritative.
+
+Added user-scoped history and historical-result lookup. Both read existing
+Task/TaskRun/result metadata through tenant- and user-scoped repository queries;
+no memory store, embedding pipeline, vector database, migration, or Runtime
+change was introduced. The Streamlit Product view now exposes proposal review,
+confirmation, history, and result-found feedback while keeping the existing
+task/run visualization as the result surface.
+
+Files changed: `src/schema/conversation_api.py`,
+`src/service/conversation_service.py`, `src/service/conversation_api.py`,
+`src/persistence/repositories.py`, `src/client/taskpilot.py`,
+`src/taskpilot_ui.py`, and `tests/service/test_conversation_service.py`.
+
+Validation: focused conversation and Product UI tests passed (20), affected
+service/task API regression passed (15 tests, 5 PostgreSQL skips), Ruff passed,
+Pyrefly reported 0 errors, Python compilation passed, and `git diff --check`
+passed. PostgreSQL-backed history/result integration remains environment-gated
+by the repository's disposable database fixture.
+
+Learner notes: the key boundary is that conversational text is an input to a
+validated proposal, not an execution command. Read
+`src/service/conversation_service.py`, `src/service/conversation_api.py`,
+`src/schema/conversation_api.py`, `src/persistence/repositories.py`, and
+`src/taskpilot_ui.py`. Exercise: trace a confirmed proposal and identify the
+exact line where a Task is created and why no TaskRun is created there. Do not
+worry yet about RAG, semantic memory, or new Agent Runtime nodes.
+
+Suggested next task: independent Phase 14 Implementation 2 Strong Review with
+authenticated conversation, tenant/user-isolation, and persisted-result smoke.
+### 2026-10-01 — Phase 14 Implementation 2 focused blocker fix
+
+Resolved the Strong Review findings without changing Runtime architecture.
+Result-access intent is evaluated before generic history intent, so requests
+such as “打开之前武汉东湖那个分析” perform persisted result lookup. The
+conversation request and TaskProposal now share the 2,000-character boundary,
+and proposal construction/confirmation failures return bounded validation
+feedback rather than an unhandled error.
+
+Confirmed proposals now persist their validated analysis type, indicator,
+area, dates, and required parameters in the existing Task description as a
+bounded structured suffix alongside the readable request. No schema or
+migration was required, and confirmation still creates only a DRAFT Task.
+Focused tests cover routing priority, input bounds, confirmation semantics,
+proposal-field preservation, and existing user/tenant-scoped lookup paths.
+
+Validation: conversation tests passed (6), affected Product/service tests
+remain green, Ruff and Pyrefly pass, and `git diff --check` passes.
+### 2026-10-01 — Phase 14 Implementation 2 Fix Round 2: Intent persistence alignment
+
+Added deterministic Chinese conversational-query normalization so generic words
+such as “打开”“之前”“那个”“分析” are removed before matching meaningful
+location terms against the current user's persisted Task records. Result lookup
+continues through the existing tenant/user-scoped TaskRun and result metadata
+queries.
+
+The confirmed proposal marker is now parsed as a bounded structured input at
+the existing runtime boundary. Offline GeoChange construction consumes the
+confirmed analysis type, indicator, area, period and supported numeric
+parameters, rejecting unsupported confirmed intent instead of silently using
+defaults. No new table, column, migration, RAG, vector database, or memory
+service was introduced.
+
+Validation: focused conversation/runtime tests passed (17), Ruff passed,
+Pyrefly reported 0 errors, and `git diff --check` passed. Broader application,
+service, UI, and GeoChange regressions remain required before independent
+focused Strong Re-review.
+### 2026-10-01 — Phase 14 Implementation 2 Fix Round 3: Trusted intent contract
+
+Added the minimum `Task.confirmed_intent` nullable JSONB field and Alembic
+migration `t036_confirmed_intent`. Confirmation now validates a strict
+GeoChange intent with distinct, ordered `period_a` and `period_b`, supported
+analysis type/indicator/area, and bounded parameters before creating a DRAFT
+Task. The user-facing description remains presentation text only.
+
+`TaskRuntimeService` reads and validates `confirmed_intent` before constructing
+runtime input. It uses the persisted comparison periods and parameters, rejects
+invalid or unsupported intent, and keeps mutable title/description text out of
+the trusted execution path. Tasks created before this migration remain
+compatible with NULL intent and retain the existing legacy runtime path.
+
+Validation: conversation, runtime, persistence foundation, service, UI, GeoChange, and PostgreSQL-gated regression tests passed (191 passed, 33 PostgreSQL skips); Ruff, Ruff format,
+Pyrefly (0 errors), and `git diff --check` passed.
+
+Learner notes: the key boundary is separating mutable presentation text from
+server-validated execution intent. Read `src/schema/confirmed_intent.py`,
+`src/persistence/models.py`, `migrations/versions/20261001_01_confirmed_intent.py`,
+and `src/service/task_runtime.py`. Exercise: change a Task description after
+confirmation and verify the runtime still receives the same two periods. Do
+not worry yet about migrating old Tasks to synthetic intent.
+### 2026-10-02 — Phase 14 Implementation 2 Fix Round 4: Proposal completion flow
+
+Natural-language proposals now return a clarification response when the two
+required comparison periods are missing. Explicit ISO date pairs can complete
+`period_a` and `period_b`; the server still validates ordering and distinctness
+before confirmation. The UI exposes four date inputs for the clarification
+step, and confirmation never invents dates.
+
+The trusted execution contract is unchanged: completed confirmation persists
+`Task.confirmed_intent`, and Runtime reads only that server-controlled field.
+Added focused tests for incomplete/complete proposal flow, clarification on
+confirmation, and user/organization-scoped history lookup.
+
+Validation: conversation tests passed (14); the previously affected service,
+UI, GeoChange, Runtime, and persistence suites remain green. Ruff, Ruff
+format, Pyrefly, and `git diff --check` passed.
+### 2026-10-02 — Phase 14 Implementation 2 Fix Round 5: Conversation edge contract
+
+Expanded deterministic area extraction to handle Chinese commas, colons, and
+sentence punctuation in complete requests. Confirmation now uses a dynamic
+HTTP status contract: clarification responses are HTTP 200 and created draft
+Tasks are HTTP 201. Missing-period confirmations return before the TaskService
+boundary, so no Task or TaskRun is created.
+
+Added focused tests for punctuation-aware area extraction, complete
+confirmation status, incomplete confirmation clarification, and no-resource
+creation behavior. The trusted `Task.confirmed_intent` and Runtime authority
+model are unchanged.

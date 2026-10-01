@@ -686,6 +686,11 @@ class Task(Base):
 
     __tablename__ = "tasks"
     __table_args__ = (
+        CheckConstraint(
+            "confirmed_intent IS NULL OR (jsonb_typeof(confirmed_intent) = 'object' "
+            "AND octet_length(confirmed_intent::text) <= 4096)",
+            name="task_confirmed_intent_bounds",
+        ),
         CheckConstraint("title ~ '[^[:space:]]'", name="task_title_not_blank"),
         CheckConstraint(
             "status IN ('draft', 'queued', 'running', 'succeeded', 'failed', 'cancelled')",
@@ -709,6 +714,18 @@ class Task(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confirmed_intent: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+
+    @validates("confirmed_intent")
+    def validate_confirmed_intent(self, _key: str, value: object) -> dict[str, Any] | None:
+        from schema.confirmed_intent import ConfirmedIntent
+
+        return (
+            None if value is None else ConfirmedIntent.model_validate(value).model_dump(mode="json")
+        )
+
     status: Mapped[TaskStatus] = mapped_column(
         sa.Enum(
             TaskStatus,
