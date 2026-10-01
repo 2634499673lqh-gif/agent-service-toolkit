@@ -27,7 +27,7 @@ After sign-in, the Product view can:
 
 The underlying protected API is `/api/v1/tasks` (`POST`/`GET`), `/api/v1/tasks/{task_id}` (`GET`), and `/api/v1/tasks/{task_id}/runs` plus `/runs/{run_id}` (`POST`/`GET`). A task or run outside the current organization is not exposed as a visible resource.
 
-Starting a run creates persisted queued or pending state. The Product UI does not execute the internal Planner/Executor/Verifier runtime, poll live progress, or invent a result. There is no TaskStep view.
+Starting a run creates a persisted TaskRun and dispatches the bounded internal Planner/Executor/Verifier runtime through the process-local runtime bridge. The UI performs finite refresh checks while the run is active, then reads the persisted terminal result; it does not invent lifecycle state or results. There is no TaskStep view.
 
 ## Approvals
 

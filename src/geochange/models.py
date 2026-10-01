@@ -31,6 +31,8 @@ class GeoChangeTask(BaseModel):
     period_b: Period
     cloud_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
     decline_threshold: float = Field(default=-0.2, ge=-1.0, le=0.0)
+    cloud_threshold_source: Literal["user_text", "server_default"] = "server_default"
+    decline_threshold_source: Literal["user_text", "server_default"] = "server_default"
     data_mode: Literal["real_online", "cached_real_metadata", "local_real_raster_fixture"] = (
         "local_real_raster_fixture"
     )

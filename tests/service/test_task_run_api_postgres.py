@@ -171,6 +171,11 @@ async def api_context() -> AsyncIterator[
                 "metrics": {"plan_steps": 1},
                 "verifier_status": "failed",
                 "execution_mode": "deterministic_fixture",
+                "runtime_profile": {
+                    "provider": "fake",
+                    "model": "fake",
+                    "live_provider": False,
+                },
             }
             await session.commit()
 
@@ -257,6 +262,11 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
         )
         assert populated.status_code == 200
         assert populated.json()["result_metadata"]["schema_version"] == "taskpilot.runtime.v1"
+        assert populated.json()["result_metadata"]["runtime_profile"] == {
+            "provider": "fake",
+            "model": "fake",
+            "live_provider": False,
+        }
 
         wrong_task = await client.get(
             f"/api/v1/tasks/{ids['failed_task']}/runs/{run_id}",

@@ -9,12 +9,28 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from typing import Any
 from uuid import UUID
 
 import streamlit as st
 
 from client.taskpilot import TaskPilotClient, TaskPilotClientError
+
+_ACTIVE_POLL_MAX_ATTEMPTS = 4
+_ACTIVE_POLL_INTERVAL_SECONDS = 0.2
+_STATUS_LABELS = {
+    "DRAFT": "Draft",
+    "PENDING": "Queued",
+    "QUEUED": "Queued",
+    "RUNNING": "In progress",
+    "SUCCEEDED": "Completed",
+    "FAILED": "Failed",
+    "CANCELLED": "Cancelled",
+    "NOT_STARTED": "Not started",
+    "NOT_RUN": "Not run",
+    "PASSED": "Passed",
+}
 
 
 def _clear_product_state() -> None:
@@ -145,6 +161,106 @@ def _task_value(task: dict[str, Any], key: str, fallback: str = "") -> str:
 
 def _run_status(value: object) -> str:
     return str(value or "unknown").upper()
+
+
+def _human_status(value: object) -> str:
+    normalized = _run_status(value)
+    return _STATUS_LABELS.get(normalized, normalized.replace("_", " ").title())
+
+
+def _stage_status(stage_status: object) -> dict[str, str]:
+    if not isinstance(stage_status, dict):
+        return {}
+    return {
+        stage: _human_status(stage_status.get(stage, "not_started"))
+        for stage in ("planner", "execution", "verifier")
+    }
+
+
+def _runtime_profile(metadata: dict[str, Any]) -> dict[str, str]:
+    persisted_profile = metadata.get("runtime_profile")
+    profile = persisted_profile if isinstance(persisted_profile, dict) else {}
+    provider = (
+        metadata.get("provider")
+        if "provider" in metadata
+        else profile.get("provider") or metadata.get("provider_metadata")
+    )
+    if isinstance(provider, dict):
+        provider_name = provider.get("provider")
+        model = provider.get("model")
+    else:
+        provider_name = provider
+        model = metadata.get("model", profile.get("model"))
+    if "live_provider" in metadata:
+        live: object = metadata["live_provider"]
+    elif "live_provider" in profile:
+        live = profile["live_provider"]
+    elif "live" in metadata:
+        live = metadata["live"]
+    elif "live" in profile:
+        live = profile["live"]
+    else:
+        live = None
+    return {
+        "execution_mode": str(metadata.get("execution_mode") or "Unavailable / not observed"),
+        "provider": _display_value(provider_name),
+        "model": _display_value(model),
+        "live": _display_value(live),
+    }
+
+
+def _provenance(metadata: dict[str, Any]) -> dict[str, Any]:
+    value = metadata.get("provenance")
+    return value if isinstance(value, dict) else {}
+
+
+def _scene_labels(metadata: dict[str, Any]) -> list[str]:
+    evidence = metadata.get("selected_scene_evidence")
+    if not isinstance(evidence, dict):
+        return []
+    labels: list[str] = []
+    for period in ("period_a", "period_b"):
+        item_id = evidence.get(f"{period}_item_id")
+        date = evidence.get(f"{period}_date")
+        if item_id is not None or date is not None:
+            labels.append(
+                f"{period}: {_display_value(item_id, 'scene selected')} · "
+                f"{_display_value(date, 'date unavailable')}"
+            )
+    if labels:
+        return labels
+    for key, value in evidence.items():
+        if isinstance(value, dict):
+            scene_id = value.get("id") or value.get("item_id") or value.get("scene_id")
+            date = value.get("date") or value.get("acquisition_date")
+            if scene_id or date:
+                labels.append(
+                    f"{key}: {_display_value(scene_id, 'scene selected')} · "
+                    f"{_display_value(date, 'date unavailable')}"
+                )
+    return labels
+
+
+def _provenance_label(execution_mode: object) -> str:
+    mode = str(execution_mode or "unknown")
+    labels = {
+        "CACHED_REAL_SENTINEL2_RASTER": (
+            "Cached real Sentinel-2 raster · deterministic local computation "
+            "(no live raster processing)"
+        ),
+        "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE": (
+            "Live STAC metadata · cached/local raster · deterministic local computation "
+            "(no live raster processing)"
+        ),
+        "REAL_STAC_LOCAL_FIXTURE": "Local metadata/raster fixture · deterministic local computation",
+        "CACHED_REAL_METADATA": "Cached Sentinel-2 metadata/raster · deterministic local computation",
+        "deterministic_fixture": "Deterministic local fixture computation",
+    }
+    return labels.get(mode, "Execution provenance is unavailable")
+
+
+def _poll_attempt_key(run_id: str) -> str:
+    return f"taskpilot_active_poll_attempts:{run_id}"
 
 
 def _display_value(value: object, unavailable: str = "Unavailable / not observed") -> str:
@@ -336,47 +452,100 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         _handle_error(error)
         return
 
-    st.markdown("### Run overview")
+    st.markdown("### Execution status")
     overview = st.columns(4)
-    overview[0].metric("Task", _run_status(task.get("status")))
-    overview[1].metric("TaskRun", _run_status(run.get("status")))
-    overview[2].metric("Run", _display_value(run.get("run_number")))
-    overview[3].metric("Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0)))
-    st.caption(f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}")
+    overview[0].metric("Task status", _human_status(task.get("status")))
+    overview[1].metric("Run status", _human_status(run.get("status")))
+    overview[2].metric("Attempt", _display_value(run.get("run_number")))
+    overview[3].metric(
+        "Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0))
+    )
+    st.caption(
+        f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}"
+    )
     run_status = _run_status(run.get("status"))
     if run_status == "RUNNING":
-        st.info("Runtime is executing. Refresh to see the terminal result.")
-    elif run_status == "SUCCEEDED":
+        poll_key = _poll_attempt_key(str(run_id))
+        attempts = int(st.session_state.get(poll_key, 0))
+        if attempts < _ACTIVE_POLL_MAX_ATTEMPTS:
+            st.session_state[poll_key] = attempts + 1
+            st.info(
+                f"Runtime is in progress. Checking for an update ({attempts + 1}/{_ACTIVE_POLL_MAX_ATTEMPTS})."
+            )
+            time.sleep(_ACTIVE_POLL_INTERVAL_SECONDS)
+            st.rerun()
+        st.warning(
+            "Automatic refresh stopped after a bounded number of checks. Use Refresh runs to continue."
+        )
+    else:
+        st.session_state.pop(_poll_attempt_key(str(run_id)), None)
+    if run_status == "SUCCEEDED":
         st.success("Run completed.")
     elif run_status == "FAILED":
         st.error("Run failed. See the trace for bounded failure evidence.")
     result_metadata = run.get("result_metadata")
     if isinstance(result_metadata, dict):
-        st.markdown("### GeoChange result")
+        st.markdown("### Analysis result")
         if result_metadata.get("analysis_type") == "vegetation_change":
             metrics = result_metadata.get("metrics", {})
             mode = str(result_metadata.get("execution_mode") or "unknown")
-            provenance_label = (
-                "Live Sentinel-2 metadata + controlled local raster fixture"
-                if mode == "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE"
-                else "Controlled local metadata/raster fixture"
-                if mode in {"REAL_STAC_LOCAL_FIXTURE", "CACHED_REAL_METADATA"}
-                else "Execution provenance is unavailable"
-            )
-            st.info(f"Data mode: {provenance_label}")
-            st.caption(f"Execution: {_display_value(result_metadata.get('execution_mode'))} · Verifier: {_display_value(result_metadata.get('verifier_status'))}")
-            labels = {"mean_ndvi_period_a": "Mean NDVI A", "mean_ndvi_period_b": "Mean NDVI B", "mean_delta_ndvi": "Mean delta", "significant_decline_area_m2": "Decline area (m²)", "decline_percentage": "Decline percentage", "valid_analysis_area_m2": "Valid area (m²)", "decline_threshold": "Decline threshold"}
+            provenance_label = _provenance_label(mode)
+            st.info(f"Data source: {provenance_label}")
+            profile = _runtime_profile(result_metadata)
+            profile_columns = st.columns(4)
+            profile_columns[0].metric("Execution mode", profile["execution_mode"])
+            profile_columns[1].metric("Provider", profile["provider"])
+            profile_columns[2].metric("Model", profile["model"])
+            profile_columns[3].metric("Live provider", profile["live"])
+            stages = _stage_status(result_metadata.get("stage_status"))
+            if stages:
+                st.markdown("#### Pipeline stages")
+                stage_columns = st.columns(3)
+                for column, stage in zip(
+                    stage_columns, ("planner", "execution", "verifier"), strict=True
+                ):
+                    column.metric(stage.title(), stages[stage])
+            st.caption(f"Verification: {_human_status(result_metadata.get('verifier_status'))}")
+            scene_labels = _scene_labels(result_metadata)
+            if scene_labels:
+                st.markdown("#### Selected scenes")
+                for scene in scene_labels:
+                    st.write(f"- {scene}")
+            provenance = _provenance(result_metadata)
+            if provenance:
+                st.markdown("#### Provenance")
+                st.caption(
+                    " · ".join(
+                        f"{key.replace('_', ' ').title()}: {value}"
+                        for key, value in provenance.items()
+                    )
+                )
+            labels = {
+                "mean_ndvi_period_a": "Mean NDVI A",
+                "mean_ndvi_period_b": "Mean NDVI B",
+                "mean_delta_ndvi": "Mean delta",
+                "significant_decline_area_m2": "Decline area (m²)",
+                "decline_percentage": "Decline percentage",
+                "valid_analysis_area_m2": "Valid area (m²)",
+                "decline_threshold": "Decline threshold",
+            }
             cards = st.columns(3)
             for index, (key, label) in enumerate(labels.items()):
                 if key in metrics:
                     cards[index % 3].metric(label, metrics[key])
-            with st.expander("Bounded result metadata"):
+            with st.expander("Developer details", expanded=False):
                 st.json(_safe_object(result_metadata))
             st.markdown("#### NDVI comparison")
             image_columns = st.columns(3)
-            for column, (name, label) in zip(image_columns, (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")), strict=True):
+            for column, (name, label) in zip(
+                image_columns,
+                (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")),
+                strict=True,
+            ):
                 try:
-                    column.image(client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}")
+                    column.image(
+                        client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}"
+                    )
                 except TaskPilotClientError:
                     column.info(f"NDVI {label} artifact unavailable.")
             if result_metadata.get("summary"):
@@ -528,7 +697,14 @@ def _render_approvals(client: TaskPilotClient, task_id: str, run_id: str) -> Non
 
 
 def _render_trace(client: TaskPilotClient, task_id: str, run_id: str) -> None:
-    st.subheader("Trace timeline")
+    with st.expander("Technical trace (developer)", expanded=False):
+        _render_trace_details(client, task_id, run_id)
+
+
+def _render_trace_details(client: TaskPilotClient, task_id: str, run_id: str) -> None:
+    st.caption(
+        "Bounded execution evidence. Internal identifiers are shown here for debugging only."
+    )
     limit = st.selectbox("Trace bound", options=[100, 500], key="taskpilot_trace_limit")
     if st.button("Refresh trace", key="taskpilot_refresh_trace"):
         st.session_state.pop("taskpilot_trace", None)
@@ -589,7 +765,7 @@ def _render_trace(client: TaskPilotClient, task_id: str, run_id: str) -> None:
 
 
 def _render_tasks(client: TaskPilotClient) -> None:
-    st.header("Tasks")
+    st.header("Your analysis tasks")
     mutation_in_flight = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     with st.form("taskpilot_create"):
         title = st.text_input("Title", key="taskpilot_new_title")
@@ -658,9 +834,10 @@ def _render_tasks(client: TaskPilotClient) -> None:
         _handle_error(error)
         return
     st.subheader(_task_value(detail, "title", "Untitled task"))
-    st.write(_task_value(detail, "description"))
+    st.markdown("#### Request")
+    st.write(_task_value(detail, "description", "No request description provided."))
     st.caption(
-        f"Status: {_run_status(detail.get('status'))} · Created: {_task_value(detail, 'created_at')} · Updated: {_task_value(detail, 'updated_at')}"
+        f"Task status: {_human_status(detail.get('status'))} · Created: {_task_value(detail, 'created_at')} · Updated: {_task_value(detail, 'updated_at')}"
     )
     _render_run_view(client, str(task_id), detail)
 
@@ -669,14 +846,19 @@ def render_product() -> None:
     """Render Product view and keep all state session-local."""
 
     client = _client()
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     .block-container { max-width: 1180px; padding-top: 2rem; }
     [data-testid="stMetric"] { background: #f6f8fa; border: 1px solid #e5e7eb; padding: .7rem; border-radius: .5rem; }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
     st.title("TaskPilot · GeoChange Agent")
-    st.caption("Bounded vegetation-change analysis with traceable execution and deterministic verification")
+    st.caption(
+        "Bounded vegetation-change analysis with traceable execution and deterministic verification"
+    )
     if st.session_state.get("taskpilot_identity") is None:
         if st.session_state.get("taskpilot_org_ids"):
             _organization_login()

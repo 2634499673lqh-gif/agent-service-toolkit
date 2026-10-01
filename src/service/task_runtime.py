@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from persistence.models import (
     AgentRun,
     AgentRunStatus,
@@ -30,6 +31,20 @@ from runtime.planner import PlannerNode
 from runtime.risk import RiskRoute, classify_action
 from runtime.state import AgentState, PendingApprovalReference
 from runtime.verifier import VerifierNode
+from schema.models import (
+    AnthropicModelName,
+    AWSModelName,
+    AzureOpenAIModelName,
+    DeepseekModelName,
+    FakeModelName,
+    GoogleModelName,
+    GroqModelName,
+    OllamaModelName,
+    OpenAICompatibleName,
+    OpenAIModelName,
+    OpenRouterModelName,
+    VertexAIModelName,
+)
 from service.approval_service import (
     ApprovalError,
     ApprovalProposal,
@@ -105,6 +120,56 @@ class RuntimeApprovalResult(BaseModel):
 
 
 RuntimeResult = RuntimeExecutionResult | RuntimeApprovalResult
+
+_MODEL_PROVIDER_BY_TYPE: dict[type[Any], str] = {
+    OpenAIModelName: "openai",
+    OpenAICompatibleName: "openai_compatible",
+    AzureOpenAIModelName: "azure_openai",
+    DeepseekModelName: "deepseek",
+    AnthropicModelName: "anthropic",
+    GoogleModelName: "google",
+    VertexAIModelName: "vertexai",
+    GroqModelName: "groq",
+    AWSModelName: "aws",
+    OllamaModelName: "ollama",
+    OpenRouterModelName: "openrouter",
+    FakeModelName: "fake",
+}
+
+_EXTERNAL_PROVIDERS = frozenset(_MODEL_PROVIDER_BY_TYPE.values()) - {"fake"}
+
+
+def _runtime_profile(observations: Any | None) -> dict[str, object]:
+    """Build the compact runtime profile persisted with the terminal result."""
+
+    provider: str | None = None
+    model: str | None = None
+    external_provider_used = False
+    if observations is not None:
+        for observation in observations.observations:
+            metadata = observation.provider_metadata
+            if not isinstance(metadata, dict):
+                continue
+            provider = metadata.get("provider") or provider
+            model = metadata.get("model") or model
+            if metadata.get("provider") in _EXTERNAL_PROVIDERS:
+                external_provider_used = True
+            if provider is not None and model is not None:
+                break
+
+    configured_model = settings.DEFAULT_MODEL
+    if settings.USE_FAKE_MODEL and provider is None and model is None:
+        provider, model = "fake", "fake"
+    elif model is None and configured_model is not None:
+        model = str(getattr(configured_model, "value", configured_model))
+    if provider is None and configured_model is not None:
+        provider = _MODEL_PROVIDER_BY_TYPE.get(type(configured_model))
+
+    return {
+        "provider": provider,
+        "model": model,
+        "live_provider": external_provider_used,
+    }
 
 
 def _middleware_request_uuid() -> UUID | None:
@@ -1126,12 +1191,17 @@ class TaskRuntimeService:
         if outcome not in {"SUCCEEDED", "FAILED"}:
             state = self._failed_state(state, "runtime_incomplete")
             outcome = "FAILED"
+        stage_status = _terminal_stage_status(state)
         result_metadata: dict[str, object] = {
             "schema_version": "taskpilot.runtime.v1",
-            "summary": "Runtime completed successfully" if outcome == "SUCCEEDED" else "Runtime failed",
+            "summary": "Runtime completed successfully"
+            if outcome == "SUCCEEDED"
+            else "Runtime failed",
             "metrics": {"plan_steps": len(state.plan.steps) if state.plan is not None else 0},
             "verifier_status": "passed" if outcome == "SUCCEEDED" else "failed",
             "execution_mode": "deterministic_fixture",
+            "stage_status": stage_status,
+            "runtime_profile": _runtime_profile(observations),
         }
         if state.execution_result is not None and state.execution_result.output:
             try:
@@ -1151,6 +1221,9 @@ class TaskRuntimeService:
                         "replan_count": state.replan_count,
                     }
                 )
+        # Candidate capability output cannot override the runtime's terminal
+        # stage truth (especially after verifier rejection).
+        result_metadata["verifier_status"] = stage_status["verifier"]
         try:
             await self._persist_observations(
                 session,
@@ -1188,6 +1261,26 @@ class TaskRuntimeService:
             task_run_status=expected_status,
             state=state,
         )
+
+
+def _terminal_stage_status(state: AgentState) -> dict[str, str]:
+    """Project checkpoint state into the fixed terminal stage vocabulary."""
+    if state.plan is None:
+        return {"planner": "failed", "execution": "not_run", "verifier": "not_run"}
+    planner = "passed"
+    execution_result = state.execution_result
+    if execution_result is None or not execution_result.success:
+        execution = "failed"
+        verifier = "not_run"
+    else:
+        execution = "passed"
+        if state.verification is not None:
+            verifier = "passed" if state.verification.verdict == "PASS" else "failed"
+        elif state.failure is not None and state.failure.code.startswith("verifier_"):
+            verifier = "failed"
+        else:
+            verifier = "not_run"
+    return {"planner": planner, "execution": execution, "verifier": verifier}
 
 
 __all__ = [

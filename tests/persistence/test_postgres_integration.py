@@ -85,7 +85,8 @@ T031_REVISION = "t031_task"
 T032_REVISION = "t032_task_run"
 T033_REVISION = "t033_approval"
 T034_REVISION = "t034_observability"
-EXPECTED_REVISION = T034_REVISION
+T035_REVISION = "t035_task_run_result"
+EXPECTED_REVISION = T035_REVISION
 
 
 def _configured_test_url() -> str:
@@ -196,9 +197,9 @@ async def _assert_taskpilot_schema(
     expected_tables: set[str] | None = None,
 ) -> None:
     if approvals_expected is None:
-        approvals_expected = expected_revision in {T033_REVISION, T034_REVISION}
+        approvals_expected = expected_revision in {T033_REVISION, T034_REVISION, T035_REVISION}
     if observability_expected is None:
-        observability_expected = expected_revision == T034_REVISION
+        observability_expected = expected_revision in {T034_REVISION, T035_REVISION}
     async with engine.connect() as connection:
         schemas = set(await connection.run_sync(lambda conn: inspect(conn).get_schema_names()))
         tables = set(
@@ -353,7 +354,7 @@ async def _assert_taskpilot_schema(
         if sessions_expected:
             expected_tables.add("auth_sessions")
         expected_tables.add("tasks")
-        if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION}:
+        if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION, T035_REVISION}:
             expected_tables.add("task_runs")
         if approvals_expected:
             expected_tables.add("approvals")
@@ -488,7 +489,13 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.tasks"},
     )
-    if expected_revision in {T031_REVISION, T032_REVISION, T033_REVISION, T034_REVISION}:
+    if expected_revision in {
+        T031_REVISION,
+        T032_REVISION,
+        T033_REVISION,
+        T034_REVISION,
+        T035_REVISION,
+    }:
         assert tasks_relation == "taskpilot.tasks"
         task_columns = {
             column["name"]: column
@@ -548,7 +555,7 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.task_runs"},
     )
-    if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION}:
+    if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION, T035_REVISION}:
         assert task_runs_relation == "taskpilot.task_runs"
         task_run_columns = {
             column["name"]: column
@@ -556,7 +563,7 @@ async def _assert_taskpilot_schema(
                 lambda conn: inspect(conn).get_columns("task_runs", schema="taskpilot")
             )
         }
-        assert set(task_run_columns) == {
+        expected_task_run_columns = {
             "id",
             "task_id",
             "run_number",
@@ -564,6 +571,9 @@ async def _assert_taskpilot_schema(
             "created_at",
             "updated_at",
         }
+        if expected_revision == T035_REVISION:
+            expected_task_run_columns.add("result_metadata")
+        assert set(task_run_columns) == expected_task_run_columns
         assert str(task_run_columns["id"]["type"]) == "UUID"
         assert str(task_run_columns["task_id"]["type"]) == "UUID"
         assert str(task_run_columns["run_number"]["type"]) == "INTEGER"
@@ -574,10 +584,13 @@ async def _assert_taskpilot_schema(
         task_run_checks = await task_connection.run_sync(
             lambda conn: inspect(conn).get_check_constraints("task_runs", schema="taskpilot")
         )
-        assert {constraint["name"] for constraint in task_run_checks} == {
+        expected_task_run_checks = {
             "ck_task_runs_task_run_number_positive",
             "ck_task_runs_task_run_status_valid",
         }
+        if expected_revision == T035_REVISION:
+            expected_task_run_checks.add("ck_task_runs_task_run_result_metadata_bounds")
+        assert {constraint["name"] for constraint in task_run_checks} == expected_task_run_checks
         task_run_unique_constraints = await task_connection.run_sync(
             lambda conn: inspect(conn).get_unique_constraints("task_runs", schema="taskpilot")
         )

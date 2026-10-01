@@ -300,12 +300,24 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         raise ValueError("result_metadata must be a JSON object")
     allowed = {
-        "schema_version", "summary", "metrics", "verifier_status", "execution_mode",
-        "analysis_type", "selected_scene_evidence", "artifact_references", "replan_count",
+        "schema_version",
+        "summary",
+        "metrics",
+        "verifier_status",
+        "execution_mode",
+        "analysis_type",
+        "selected_scene_evidence",
+        "artifact_references",
+        "replan_count",
+        "stage_status",
+        "runtime_profile",
     }
     if set(value) - allowed:
         raise ValueError("result_metadata contains a non-allowlisted key")
-    if not isinstance(value.get("schema_version"), str) or value["schema_version"] != "taskpilot.runtime.v1":
+    if (
+        not isinstance(value.get("schema_version"), str)
+        or value["schema_version"] != "taskpilot.runtime.v1"
+    ):
         raise ValueError("result_metadata.schema_version is invalid")
     if not isinstance(value.get("summary"), str) or len(value["summary"]) > 500:
         raise ValueError("result_metadata.summary is invalid")
@@ -319,6 +331,27 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.analysis_type is invalid")
     if "replan_count" in value and not isinstance(value["replan_count"], int):
         raise ValueError("result_metadata.replan_count is invalid")
+    if "stage_status" in value:
+        stage_status = value["stage_status"]
+        statuses = {"not_started", "running", "passed", "failed", "not_run"}
+        if (
+            not isinstance(stage_status, dict)
+            or set(stage_status) != {"planner", "execution", "verifier"}
+            or any(status not in statuses for status in stage_status.values())
+        ):
+            raise ValueError("result_metadata.stage_status is invalid")
+    if "runtime_profile" in value:
+        profile = value["runtime_profile"]
+        if (
+            not isinstance(profile, dict)
+            or set(profile) != {"provider", "model", "live_provider"}
+            or any(
+                key in {"provider", "model"} and item is not None and not isinstance(item, str)
+                for key, item in profile.items()
+            )
+            or not isinstance(profile["live_provider"], bool)
+        ):
+            raise ValueError("result_metadata.runtime_profile is invalid")
     for key in ("selected_scene_evidence", "artifact_references"):
         if key in value and (
             not isinstance(value[key], dict)
@@ -326,7 +359,9 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         ):
             raise ValueError(f"result_metadata.{key} is invalid")
     sanitized = _validate_observability_json_object(value, "result_metadata")
-    encoded = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = json.dumps(
+        sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
     if len(encoded) > RESULT_METADATA_MAX_BYTES:
         raise ValueError(f"result_metadata exceeds {RESULT_METADATA_MAX_BYTES} UTF-8 bytes")
     return sanitized

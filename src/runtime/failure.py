@@ -9,11 +9,14 @@ FailureCode = Annotated[str, Field(min_length=1, max_length=64)]
 SanitizedFailureMessage = Annotated[str, Field(max_length=500)]
 
 _RETRYABLE_EXECUTION_CODE = "deterministic_execution_failed"
+_RETRYABLE_CODES = frozenset({_RETRYABLE_EXECUTION_CODE, "stac_provider_unavailable"})
 _REPLAN_CODES = frozenset(
     {
         "recoverable_plan_inadequacy",
         "recoverable_verifier_inadequacy",
         "geochange_quality_failed",
+        "stac_no_suitable_imagery",
+        "stac_default_quality_violation",
     }
 )
 
@@ -41,7 +44,7 @@ class FailureClassifier:
     def classify(self, code: str, sanitized_message: str | None = None) -> RuntimeFailure:
         """Return a bounded failure; unknown codes are terminal by default."""
 
-        if code == _RETRYABLE_EXECUTION_CODE:
+        if code in _RETRYABLE_CODES:
             classification: FailureClassification = "RETRY"
         elif code in _REPLAN_CODES:
             classification = "REPLAN"

@@ -1,9 +1,11 @@
 """Real PostgreSQL/LangGraph evidence for runtime approval boundaries."""
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -19,6 +21,9 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy import func, inspect, make_url, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.settings import settings
+from geochange import runtime_caps
+from geochange.fixture import EXECUTION_MODE, MANIFEST_SHA256
 from persistence.engine import create_async_engine
 from persistence.models import (
     AgentRun,
@@ -55,6 +60,7 @@ from service.approval_service import (
 )
 from service.logging import reset_request_id, set_request_id
 from service.session import CurrentPrincipal
+from service.task_api import get_task_artifact
 from service.task_lifecycle import TaskLifecycleService
 from service.task_runtime import (
     RuntimeApprovalResult,
@@ -391,6 +397,74 @@ async def test_postgres_pending_runtime_creates_checkpoint_and_succeeds(seeded_t
     assert await _run_count(session_factory, task_id) == 1
     checkpoint = await saver.aget_tuple({"configurable": {"thread_id": f"taskpilot-run:{run_id}"}})
     assert checkpoint is not None
+
+
+@pytest.mark.asyncio
+async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_authorization(
+    seeded_task,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    session_factory, saver, organization_id, task_id, user_id = seeded_task
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_STAC", False)
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_LLM", False)
+    monkeypatch.setattr(settings, "USE_FAKE_MODEL", True)
+    monkeypatch.setattr(runtime_caps, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
+    async with session_factory() as session:
+        task = await session.get_one(Task, task_id)
+        task.title = "Wuhan East Lake vegetation change"
+        task.description = (
+            "July 2023 versus July 2024; use a maximum Sentinel-2 cloud cover "
+            "threshold of 30% and NDVI decline threshold of -0.15."
+        )
+        await session.commit()
+    run_id = await _start_run(session_factory, task_id, organization_id)
+    async with session_factory() as session:
+        result = await TaskRuntimeService(saver).execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+    assert result.terminal_outcome == "SUCCEEDED"
+    principal = await _principal_for(session_factory, user_id, organization_id)
+    async with session_factory() as session:
+        run = await session.get_one(TaskRun, run_id)
+        metadata = run.result_metadata
+        assert metadata is not None
+        assert metadata["execution_mode"] == EXECUTION_MODE
+        assert metadata["runtime_profile"]["live_provider"] is False
+        assert metadata["runtime_profile"]["provider"] == "fake"
+        assert metadata["runtime_profile"]["model"] == "fake"
+        assert metadata["selected_scene_evidence"]["fixture_manifest"] == MANIFEST_SHA256
+        assert metadata["metrics"]["decline_threshold"] == -0.15
+        assert metadata["stage_status"] == {
+            "planner": "passed",
+            "execution": "passed",
+            "verifier": "passed",
+        }
+        assert len(json.dumps(metadata).encode()) < 4096
+        assert metadata["metrics"]["valid_pixels"] == 914
+        for artifact in ("ndvi_before", "ndvi_after", "ndvi_change"):
+            response = await get_task_artifact(
+                task_id, run_id, artifact, principal=principal, session=session
+            )
+            assert response.media_type == "image/png"
+        from fastapi import HTTPException
+
+        foreign = replace(principal, organization_id=uuid4())
+        with pytest.raises(HTTPException) as error:
+            await get_task_artifact(
+                task_id, run_id, "ndvi_before", principal=foreign, session=session
+            )
+        assert error.value.status_code == 404
+    checkpoint = await saver.aget_tuple({"configurable": {"thread_id": f"taskpilot-run:{run_id}"}})
+    assert checkpoint is not None
+    assert (
+        checkpoint.checkpoint["channel_values"]["geochange_evidence"]["fixture_manifest"]
+        == MANIFEST_SHA256
+    )
 
 
 @pytest.mark.asyncio

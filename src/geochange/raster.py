@@ -68,7 +68,11 @@ def compute_vegetation_change(
     if artifact_dir is not None:
         root = Path(artifact_dir).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        for name, array in (("ndvi_before.png", ndvi_a), ("ndvi_after.png", ndvi_b), ("ndvi_change.png", delta)):
+        for name, array in (
+            ("ndvi_before.png", ndvi_a),
+            ("ndvi_after.png", ndvi_b),
+            ("ndvi_change.png", delta),
+        ):
             path = root / name
             _write_png(array, path)
             artifacts[name.removesuffix(".png")] = path.name

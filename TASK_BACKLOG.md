@@ -387,3 +387,23 @@ Batches: planning T110; backend T118–T119; client/task T111–T112; run/approv
 
 Phase 9 Batch 3 is COMPLETE / STRONG REVIEW APPROVED. Phase 9 Final Audit T117 is complete; Phase 10 planning is the next gate.
 
+## Phase 13 — Portfolio Hardening & Demo Experience [PLANNING APPROVED / FROZEN]
+
+T138 is COMPLETE / APPROVED after focused Planning Strong Re-review. ADR-013 is
+Accepted / frozen and Phase 13 Planning is APPROVED / FROZEN.
+Phase 12 is COMPLETE / FINAL AUDIT APPROVED. Phase 13 is COMPLETE / FINAL AUDIT
+APPROVED; it is not the final project phase.
+
+| Task | Purpose | Review | Depends On | Status |
+|---|---|---|---|---|
+| T138 | Planning gate / ADR-013 | Planning Strong Review | Phase 12 | COMPLETE / APPROVED |
+| T139 | LLM parameter authority | Strong Review | T138 | COMPLETE / APPROVED |
+| T140 | Runtime reliability and observability | Strong Review | T139 | COMPLETE / APPROVED |
+| T141 | Real Sentinel-2 fixture and provenance | Strong Review | T138 | COMPLETE / APPROVED |
+| T142 | Real raster runtime integration | Strong Review | T141 | COMPLETE / APPROVED |
+| T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | COMPLETE / APPROVED |
+| T144 | Evaluation, evidence, documentation | Strong Review | T143 | COMPLETE / APPROVED |
+| T145 | Phase 13 Final Audit | Phase Final Audit | T144 | COMPLETE / APPROVED |
+
+DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`. Batches:
+A=`T139+T140` (COMPLETE / APPROVED), B=`T141+T142` (COMPLETE / APPROVED), C=`T143+T144` (COMPLETE / APPROVED), T145 (COMPLETE / APPROVED).

@@ -285,7 +285,7 @@ retired T086–T088.
 \n
 ## Phase 9 — Product UI [PLANNING APPROVED / FROZEN]
 
-ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. The canonical plan adds explicit T118 AuthService-backed login/session/logout HTTP and T119 tenant-scoped TaskRun discovery before the Streamlit Product UI. The UI remains Streamlit-first and exposes persisted task/run/approval/trace evidence; it does not execute the internal runtime. Canonical cards, DAG and batches are in `process/tasks/T110.md`–`T119.md` and `process/ADR-011.md`.
+ADR-011 is accepted/frozen; T110 is COMPLETE / APPROVED as the planning gate. The canonical plan adds explicit T118 AuthService-backed login/session/logout HTTP and T119 tenant-scoped TaskRun discovery before the Streamlit Product UI. The UI remains Streamlit-first and exposes persisted task/run/approval/trace evidence; the original Phase 9 plan did not execute the internal runtime, while the current Phase 13 Product path does through the bounded process-local bridge. Canonical cards, DAG and batches are in `process/tasks/T110.md`–`T119.md` and `process/ADR-011.md`.
 
 Batches: T110; T118–T119; T111–T112; T113–T116; T117 Final Audit.
 DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 → T113`; `T113 → (T114, T115)`; `T114 + T115 → T116 → T117`.
@@ -293,3 +293,13 @@ DAG: `T107 → T110 → (T118, T119)`; `T118 → T111 → T112`; `T112 + T119 �
 T113–T116 are COMPLETE / APPROVED; Phase 9 Batch 3 is COMPLETE / STRONG REVIEW
 APPROVED. T117 Phase 9 Final Audit is the next executable work.
 
+## Phase 13 — Portfolio Hardening & Demo Experience [PLANNING APPROVED / FROZEN]
+
+T138 is COMPLETE / APPROVED after focused Planning Strong Re-review. ADR-013 is
+Accepted / frozen. Phase 13 Planning is APPROVED / FROZEN. Canonical DAG:
+`T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.
+The phase targets deterministic parameter authority, accurate runtime evidence,
+provenance-bound real cached Sentinel-2 pixels, and a portfolio-first Streamlit
+flow. T138–T144 are complete and approved. T145 is COMPLETE / FINAL AUDIT
+APPROVED, and Phase 13 is COMPLETE / FINAL AUDIT APPROVED. The phase does not
+declare the overall project finished. See ADR-013 and cards T138–T145.

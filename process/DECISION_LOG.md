@@ -616,3 +616,23 @@ Planning inspected the current Streamlit/AgentClient and protected Task, TaskRun
 The Phase 11 Planning Gate completed independent review: the initial Planning Strong Review was **NOT APPROVED** for a canonical-ID blocker; the minimum planning correction was completed; focused Planning Strong Re-review was **APPROVED**. The approved plan is frozen without beginning implementation.
 
 Canonical ownership is T129 Planning Gate; T130–T132 documentation reconciliation; T133 independent architecture/security verification; T134 conditional critical/high remediation; T135 deterministic existing-behavior demo; T136 final executable evidence; and T137 independent Phase Final Audit. The static DAG is `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`; T134 is activated only by a qualifying blocker and never inserted as an unconditional dependency. Phase 10 remains complete, T129 is complete/approved, and Batch 1 is next.
+## Phase 13 planning decision — ADR-013 / T138 (2026-09-30)
+
+Planning inspected the Phase 12 GeoChange path, runtime graph, observability,
+Product Streamlit surface, settings, tests, and evidence. The live findings
+require deterministic server-owned defaults, truthful stage/provider evidence,
+bounded STAC recovery, provenance-bound real cached pixels, and portfolio UX.
+ADR-013 is Proposed pending independent Planning Strong Review. No production
+code, tests, migrations, dependencies, or runtime behavior changed. Canonical
+DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.
+
+The initial Planning Strong Review returned NOT APPROVED for three planning
+blockers: model-controlled explicitness, an underspecified stage-status
+representation, and contradictory Phase 13 dependencies. The focused
+correction preserves that history and narrows the fixes to deterministic
+server-side text extraction, fixed `result_metadata.stage_status`, and one
+canonical technical DAG. At that point T138 remained pending focused re-review.
+
+The focused Planning Strong Re-review closed all three blockers. ADR-013 is
+Accepted / frozen, T138 is COMPLETE / APPROVED, Phase 13 Planning is
+APPROVED / FROZEN, and the next executable work is Batch A: T139 → T140.

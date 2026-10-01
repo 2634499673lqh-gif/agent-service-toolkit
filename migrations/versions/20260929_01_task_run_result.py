@@ -27,5 +27,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("task_run_result_metadata_bounds", "task_runs", schema="taskpilot")
+    op.drop_constraint(
+        "ck_task_runs_task_run_result_metadata_bounds", "task_runs", schema="taskpilot"
+    )
     op.drop_column("task_runs", "result_metadata", schema="taskpilot")

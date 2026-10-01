@@ -5234,3 +5234,396 @@ Status: Phase 12 COMPLETE / FINAL AUDIT APPROVED following the authoritative Fin
 Accepted non-blocking LOW follow-up: `tests/persistence/test_postgres_integration.py:87` retains a legacy expectation for `t034_observability`; the valid current migration head is `t035_task_run_result`. This finding is recorded without modifying the test.
 
 Changed only canonical status documentation. No source, tests, runtime, evaluation, UI, architecture, or configuration changes; no commit or push.
+### 2026-09-30 — T138 Phase 13 Planning Gate
+
+Status: planning artifacts are complete and READY FOR INDEPENDENT PLANNING
+STRONG REVIEW. Verified branch `phase-13-portfolio-hardening-demo`, HEAD
+`c5183f14cbaca44234db98329e1176776ff36115`, synchronized origin, clean working
+tree, and Phase 12 COMPLETE / FINAL AUDIT APPROVED baseline. Added ADR-013 and
+cards T138–T145; updated backlog, roadmap, task index, decision log, and this
+log. No production code, tests, migrations, dependencies, runtime, Docker, or
+UI behavior changed. Validation: repository inspection, path verification, and
+`git diff --check`. Next task: independent Planning Strong Review of T138.
+
+### 2026-09-30 — T138 focused planning correction after Strong Review NOT APPROVED
+
+Status: T138 remains PLANNING IN PROGRESS / STRONG REVIEW NOT APPROVED; the
+original review history is preserved. Corrected only the three identified
+blockers: deterministic server extraction of explicit `cloud_threshold` and
+`decline_threshold` values from original text; fixed terminal
+`result_metadata.stage_status` with planner/execution/verifier keys and truthful
+`not_run` semantics; and one canonical dependency graph. The technical DAG is
+`T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 →
+T145`; execution remains sequential review batches A, B, C, then T145. No
+production code, tests, migrations, dependencies, runtime, Docker, or UI
+behavior changed. Ready for focused Planning Strong Re-review after validation.
+
+### 2026-09-30 — T138 focused Planning Strong Re-review approval
+
+Status: T138 COMPLETE / APPROVED; ADR-013 Accepted / frozen; Phase 13 Planning
+APPROVED / FROZEN. The focused independent re-review closed the three original
+planning blockers. Batch A (`T139 → T140`) is the next executable work. This is
+documentation-only status synchronization; no production code, tests,
+migrations, dependencies, runtime, Docker, or UI behavior changed.
+### 2026-09-30 — Phase 13 Batch A implementation: T139 → T140
+
+Status: T139 and T140 implemented / awaiting independent Strong Review. Added
+deterministic original-text authority for cloud and NDVI thresholds, fixed
+server defaults and source markers, server-owned data mode, truthful terminal
+planner/execution/verifier stage metadata, planner failure observations, and
+bounded STAC failure normalization for retry/replan/terminal routing. Added
+focused authority and stage-status tests.
+
+Files changed: `src/geochange/{llm,models,runtime_caps}.py`,
+`src/runtime/{failure,graph}.py`, `src/service/task_runtime.py`,
+`src/persistence/models.py`, `tests/geochange/test_llm_authority.py`,
+`tests/runtime/test_stage_status.py`, and this task index/log.
+
+Validation: `uv run pytest tests/geochange/test_llm_authority.py
+tests/runtime/test_stage_status.py tests/geochange tests/runtime/test_planner_node.py
+tests/runtime/test_task_runtime.py tests/runtime/test_failure_classifier.py -q`
+(75 passed); `uv run pyrefly check ...` (0 errors); `uv run ruff check ...`
+(passed); `python -m compileall -q src`; `git diff --check` (passed).
+PostgreSQL-backed runtime tests were invoked (`34 skipped`) because no
+disposable PostgreSQL service was configured; the PostgreSQL API tests were
+also invoked (`3 skipped`).
+The full repository suite then passed: 733 passed, 133 skipped.
+
+Learner focus: server-side parsing is the authority boundary; terminal stage
+metadata is derived from durable runtime state; provider errors are normalized
+into bounded classifications before routing. Next task is independent Batch A
+Strong Review; T141 and later Phase 13 work remain deferred.
+### 2026-09-30 — Phase 13 Batch A focused corrective implementation
+
+Fixed the four Batch A Strong Review blockers: strict suffix-aware explicit
+number parsing, structured `GeoChangeTask` model-instance support,
+fail-closed model `data_mode` conflicts, and separation of malformed STAC
+responses from retryable provider connectivity failures. Added regression
+coverage for all reproduced malformed suffixes, model instances, unsupported
+data modes, and STAC error classes.
+
+Focused correction tests passed (77); affected runtime/GeoChange/persistence/
+trace/UI tests passed (234, 37 skipped). PostgreSQL tier was invoked but could
+not run: `TASKPILOT_TEST_DATABASE_URL` and `TASKPILOT_DATABASE_URL` are unset,
+and `docker info` reports that the Docker Desktop Linux Engine pipe is absent.
+No PostgreSQL evidence is claimed. Static checks and compilation remain part of
+the focused re-review validation.
+### 2026-09-30 — Phase 13 Batch A PostgreSQL evidence
+
+Docker Desktop Engine was reachable and the repository PostgreSQL 16 container
+was healthy. Using the established isolated workflow with
+`TASKPILOT_TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/taskpilot_test`,
+the runtime/API tier `tests/runtime/test_task_runtime_postgres.py`
+plus `tests/service/test_task_run_api_postgres.py` passed 37 tests. The focused
+AgentRun/ToolCall persistence and redaction tier passed 2 tests:
+`test_observability_persistence_is_bounded_tenant_scoped_and_restrictive` and
+`test_observability_postgres_checks_and_persisted_redaction`.
+
+The broader `tests/persistence/test_postgres_integration.py` run had one
+unrelated historical migration assertion failure: the test expects
+`t034_observability`, while current repository head is `t035_task_run_result`.
+No Batch A defect was exposed; no implementation changes were made in this
+evidence-only session.
+
+### 2026-09-30 — Phase 13 Batch A final focused parser correction
+
+The latest focused Strong Re-review found spaced unsupported decline units.
+Changed only the decline numeric suffix assertion in `src/geochange/llm.py`
+to reject whitespace followed by `%` or `percent`. Added spaced-unit and
+trailing-junk regressions in `tests/geochange/test_llm_authority.py`; existing
+valid forms, numeric-prefix rejection, and server authority tests remain passing.
+Validation: `uv run pytest tests/geochange/test_llm_authority.py -q` (17 passed),
+focused Ruff (passed), focused Pyrefly (0 errors), `git diff --check` (passed).
+PostgreSQL evidence was not rerun for this parser-only correction. T139/T140
+remain awaiting independent Strong Review; ready for final focused re-review.
+Learner focus: a numeric match must validate its suffix, including whitespace
+before a unit. Exercise: try a tab before `percent` and confirm rejection.
+
+### 2026-09-30 — Phase 13 Batch A final focused Strong Review approval
+
+Status: T139 and T140 are COMPLETE / APPROVED; Batch A is COMPLETE / APPROVED.
+The final parser blocker is closed: spaced unsupported `%`/`percent` units and
+numeric-prefix trailing junk fail closed while valid decline syntax and server
+authority remain intact. Focused parser tests passed (17), with Ruff, Pyrefly,
+and diff checks passing. Batch B (`T141 → T142`) may begin. No production,
+test, migration, dependency, or Git state changes were made by review.
+
+
+### 2026-09-30 — Phase 13 Batch B implementation: T141 → T142
+
+Status: T141 and T142 are implemented and awaiting independent Strong Review.
+The feasibility gate verified two Earth Search Sentinel-2 L2A items for the
+bounded Wuhan East Lake request: `S2B_50RKU_20230728_1_L2A` (2023-07-28) and
+`S2A_50RKU_20240730_0_L2A` (2024-07-30). Each fixture is a 64×64 native 10 m
+uint16 B04/B08 crop in EPSG:32650 with exact STAC item, collection, date,
+asset URL/ETag/size, AOI, dimensions, radiometry, and SHA-256 in the manifest.
+The total raster fixture is below the 1 MB bound; source and Copernicus
+attribution/licensing constraints are recorded in `manifest.json` and
+`docs/GEOCHANGE_FIXTURE.md`.
+
+Runtime now verifies the pinned manifest and per-scene checksums, binds scene
+evidence to the fixture, masks nodata after source scale/offset conversion, and
+computes NDVI/delta/statistics and three PNGs from the cached real pixels. Any
+manifest, checksum, scene, period, AOI, asset, or binding mismatch fails closed.
+Live STAC remains opt-in metadata only and cannot select a different raster.
+
+Validation: the fixture/provenance tests passed (19), the full GeoChange tier
+passed (71), the affected runtime/service/evaluation regression passed
+`283 passed, 35 skipped`, and the provider-free evaluation passed 8/8. The
+PostgreSQL runtime tier passed 35 tests, including persisted cached-real result
+metadata, checkpoint provenance, three authenticated artifacts, and a foreign
+tenant rejection; the TaskRun/Task API tier passed 8 tests. The reproducibility
+script completed with 3,092,549 bounded source bytes. Ruff, Pyrefly, and diff
+checks pass. The broader historical PostgreSQL migration tier remains `24
+passed, 1 failed` on its known T144-owned stale `t034_observability` revision
+assertion; no fix was made. No migration, dependency, commit, or push was made.
+
+Learner focus: read `data/geochange-fixtures/real-sentinel2-v1/manifest.json`,
+`src/geochange/fixture.py`, `src/geochange/runtime_caps.py`, and
+`tests/geochange/test_fixture.py`. The main concept is provenance binding:
+metadata can describe a raster only when its immutable identity and checksum
+match the pixels actually processed. Exercise: flip one byte in either NPZ and
+run the focused fixture tests to observe the fail-closed checksum error. Do
+not worry about live COG window processing or worker infrastructure yet.
+
+### 2026-10-01 — Phase 13 Batch B focused corrective implementation
+
+Fixed the two T142 Strong Review blockers without changing the fixture contract.
+The verifier now independently recomputes cached real-pixel NDVI/statistics from
+`GeoChangeTask` and the pinned manifest, compares every persisted metric with
+zero relative tolerance, and rejects forged effective thresholds or statistics.
+It also renders the expected three PNGs through the existing deterministic
+pipeline, hashes them, and rejects valid but unrelated content for each artifact
+role while retaining path and tenant authorization checks.
+
+Added focused rejection coverage for forged metrics, thresholds, valid PNG
+replacement for `ndvi_before`, `ndvi_after`, and `ndvi_change`, plus an
+untampered fixture-backed success case. Validation: focused GeoChange tests
+passed 57; affected runtime/service regression passed 212 with 35 skips;
+deterministic evaluation passed 8/8; PostgreSQL runtime/API tier passed 43;
+Ruff, Pyrefly, and `git diff --check` passed. The known historical
+`t034_observability` migration assertion remains deferred to T144. No commit or
+push was made. T141/T142 remain IMPLEMENTED / AWAITING FOCUSED STRONG
+RE-REVIEW.
+
+### 2026-10-01 — Phase 13 Batch B focused Strong Re-review approval
+
+Status: T141 and T142 are COMPLETE / APPROVED; Batch B is COMPLETE / APPROVED.
+The two prior T142 blockers are closed. The verifier independently recomputes
+fixture-backed metrics, including the effective decline threshold, and rejects
+forged values. It independently renders and hashes all three deterministic PNG
+roles and rejects unrelated valid replacements. Focused evidence passed: GeoChange
+57 tests; affected runtime/service 186 passed, 35 skipped; deterministic
+evaluation 8/8; PostgreSQL runtime/API 43 passed; Ruff, Pyrefly, and diff checks
+passed. No production or test changes were made by review. Batch C (`T143 →
+T144`) may begin.
+
+### 2026-10-01 — T143 Product UI hardening implementation
+
+Reworked the Streamlit Product view so the selected task request and readable
+task/run/stage statuses lead the page. Runtime mode, provider/model flags,
+selected scenes, verification, artifacts, and provenance are presented before
+developer details. Raw result metadata and the trace timeline remain available
+inside an explicit developer section, keeping UUIDs and event identifiers out
+of the primary portfolio view. Active runs use four bounded 0.2-second refresh
+checks and then show a truthful manual-refresh message; no lifecycle state is
+mutated optimistically.
+
+Files changed: `src/taskpilot_ui.py`, `tests/app/test_taskpilot_ui.py`, and
+`process/PROGRESS_LOG.md`. No migration, dependency, authentication, API
+boundary, runtime, or GeoChange computation changes were made. Learners should
+read the UI projection helpers and `_render_run_view` to see how server-owned
+evidence is translated into human-facing labels. Suggested next task: T144
+only after Strong Review approval of T143.
+
+### 2026-10-01 — T143 focused corrective implementation
+
+Closed the focused UI blockers from Strong Review. Provenance now explicitly
+labels `CACHED_REAL_SENTINEL2_RASTER` as cached real Sentinel-2 pixels with
+deterministic local computation and no live raster processing, while retaining
+a distinct live-STAC-metadata label. Scene projection supports the persisted
+flat `period_a_item_id`/`period_a_date` and `period_b_item_id`/`period_b_date`
+fields. Runtime profile reads persisted provider/model/live fields, including
+explicit false values and the supported nested profile shape. Polling budgets
+are keyed by selected run ID, remain bounded, and clear on terminal states.
+
+Focused tests cover provenance, scenes, false runtime flags, per-run polling,
+and user-facing status wording. UI tests passed 15; stage/GeoChange regression
+passed 29. Ruff, Pyrefly, compile, and diff checks passed. No API schema,
+authentication, runtime semantics, migration, commit, or push changes were made.
+Ready for focused Strong Re-review.
+
+### 2026-10-01 — T143 runtime profile persistence corrective implementation
+
+Connected the runtime profile to terminal TaskRun persistence. Runtime
+finalization now records a bounded `runtime_profile` containing provider,
+model, and an explicit `live_provider` boolean, using observed provider
+metadata first and the server-owned configured model/policy when available.
+The existing result metadata validator now allowlists and validates exactly
+this compact structure; no table or migration was added. The existing
+Streamlit projection receives these fields through the authenticated run API.
+
+Focused UI/runtime/GeoChange tests passed (44). PostgreSQL runtime/API tests
+were invoked but skipped because `TASKPILOT_TEST_DATABASE_URL` is not
+configured. Ruff, Pyrefly, compile, and diff checks passed. No commit or push.
+Ready for focused Strong Re-review once PostgreSQL evidence is available.
+
+### 2026-10-01 — T143 runtime profile final corrective verification
+
+The terminal runtime profile implementation is complete and type/lint clean.
+The bounded profile is generated before TaskRun lifecycle completion, validated
+by the existing result metadata model, and returned unchanged by the existing
+authenticated TaskRun API. It records observed provider/model metadata when
+present, otherwise server-owned configured/fake model policy, plus an explicit
+`live_provider` boolean. Focused UI/runtime/GeoChange/correlation tests passed
+48. PostgreSQL runtime/API evidence was invoked and remains skipped solely
+because `TASKPILOT_TEST_DATABASE_URL` is not configured. No commit or push.
+This implementation is ready for focused Strong Re-review.
+
+### 2026-10-01 — T143 runtime profile semantic correction
+
+Replaced provider derivation by an explicit model-enum-to-provider map, so
+DeepSeek and every supported configured model resolve deterministically without
+string-type guessing. `live_provider` now means an external provider was
+actually observed during this run: fake and deterministic/local runs persist
+false, while an observation carrying a supported external provider marks true.
+The persisted profile, API response, and existing Streamlit projection retain
+the same provider/model/boolean values.
+
+Semantic profile tests and affected UI/runtime tests passed (47). Targeted
+PostgreSQL runtime/API tests were rerun and skipped because
+`TASKPILOT_TEST_DATABASE_URL` is not configured. Ruff, Pyrefly, compilation,
+and diff checks passed. No commit or push.
+
+### 2026-10-01 — T143 Final Focused Strong Re-review approval
+
+Status: T143 COMPLETE / APPROVED. Independent review verified deterministic
+provider resolution, observation-based `live_provider` semantics, bounded
+result-metadata validation, authenticated TaskRun API propagation, Streamlit
+display, and PostgreSQL runtime/API evidence (`38 passed, 0 skipped`). Focused
+UI/runtime/GeoChange validation passed (`136 passed`), with Ruff, Pyrefly,
+compilation, and diff checks passing. No implementation changes were made by
+review. T144 is the next task in Batch C. No commit or push.
+
+### 2026-10-01 — T144 documentation, evaluation and demo polish
+
+Status: T144 IMPLEMENTED / AWAITING STRONG REVIEW. Updated the portfolio README,
+architecture/evaluation/developer/user/demo guides, and current Phase 13 status
+to describe the implemented LLM planning, bounded runtime, GeoChange workflow,
+cached real Sentinel-2 raster mode, provenance/verifier evidence, and
+observability. Added a reproducible local demo flow and clarified that live STAC
+is metadata-only while pixels remain cached. Corrected stale wording that said
+Product runs did not execute the runtime. No production code, tests, migrations,
+dependencies, authentication, persistence, or runtime behavior changed.
+
+Validation: `uv run python scripts/evaluation_geochange.py` passed 8/8 cases
+(`pass_rate=1.0000`); Markdown lint passed for all changed user-facing guides
+and `docs/ARCHITECTURE.md`; `git diff --check` passed. Repository-wide lint still
+reports pre-existing MD032/MD022/MD012 findings in the historical `ROADMAP.md`
+and `process/PROGRESS_LOG.md` sections. No commit or push.
+
+### 2026-10-01 — T144 focused live Product smoke evidence
+
+Recorded one fresh authenticated Docker Compose Product smoke in
+`process/T144_LIVE_PRODUCT_SMOKE.md`. The rebuilt stack used fake-model mode with
+live LLM/STAC switches disabled. TaskRun `1eab9bd0-f1ae-44ba-89a1-586acd39da57`
+reached `succeeded` with planner, execution, and verifier all `passed`, the
+supported `CACHED_REAL_SENTINEL2_RASTER` mode, fixture-bound July 2023/July 2024
+scene evidence, verifier passed, eight successful capability trace events, and
+all three authenticated PNG artifacts returning HTTP 200. No secret or raw
+provider payload was recorded. Historical
+`REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE` evidence was not used for this result.
+
+### 2026-10-01 — T144 Product-smoke corrective implementation
+
+Focused review reproduced a real defect: fake/offline GeoChange planning called
+`_default_geochange_task()` directly and therefore skipped T139's deterministic
+original-text extraction. The fix in `src/runtime/graph.py` reuses
+`extract_explicit_parameters` for the offline path, applies only trusted
+`cloud_threshold`/`decline_threshold` values, and preserves the frozen defaults
+when values are omitted. Invalid or conflicting explicit values still fail
+through the existing planner error path.
+
+Regression coverage passed: 19 focused authority tests and 15 runtime tests.
+Ruff and Pyrefly passed. A corrected authenticated Docker Product smoke
+(`84bfd841-5a04-4877-a2f2-c12f0d20c85d`) reached `succeeded` with all stages and
+verifier passed, `CACHED_REAL_SENTINEL2_RASTER`, fake provider profile, effective
+decline threshold `-0.15`, decline percentage `68.0525164114`, significant
+decline area `62,200 m²`, eight trace events, and all three authenticated PNGs
+returning HTTP 200. The original failed smoke remains preserved above as
+historical defect evidence. No commit or push.
+
+### 2026-10-01 — T144 focused Strong Re-review approval
+
+Status: T144 COMPLETE / APPROVED after focused re-review of the Product-smoke
+authority correction. The fake/offline path now reuses T139's deterministic
+original-text extractor; explicit thresholds, defaults, and fail-closed invalid
+or conflicting values are covered. The corrected authenticated Product smoke
+persisted `-0.15`, passed all stages and verification, used
+`CACHED_REAL_SENTINEL2_RASTER`, and returned all three authorized artifacts.
+T145 Final Audit may begin. This is documentation-only status synchronization;
+no further implementation changes, commit, or push were made by review.
+### 2026-10-01 — T145 Final Audit corrective implementation
+
+Closed the identified T145 audit blockers without changing runtime behavior.
+Recorded a fresh authenticated Product smoke with real DeepSeek planning,
+live STAC metadata enabled, and `CACHED_REAL_SENTINEL2_RASTER` preserved;
+the sanitized evidence is in `process/T145_LIVE_PRODUCT_SMOKE.md` and its JSON
+capture. The run succeeded with planner, execution, and verifier all passed,
+verifier passed, fixture-bound scenes, deterministic metrics, and all three
+authenticated PNG artifacts. The evidence explicitly separates live STAC
+metadata from cached local raster pixel processing and preserves the persisted
+`live_provider=false` contract value.
+
+Changed only the stale PostgreSQL head assertion in
+`tests/persistence/test_postgres_integration.py` to recognize
+`t035_task_run_result` and its `result_metadata` column; migrations were not
+changed. Synchronized current Phase 13 statuses in `TASK_BACKLOG.md`,
+`process/tasks/INDEX.md`, `ROADMAP.md`, and `docs/ARCHITECTURE.md`.
+
+Follow-up correction: `migrations/versions/20260929_01_task_run_result.py`
+now drops the convention-generated
+`ck_task_runs_task_run_result_metadata_bounds` constraint. Upgrade behavior and
+schema intent are unchanged. Full PostgreSQL migration regression passed
+25 tests; runtime/API PostgreSQL tests passed 38 tests. Ruff formatting/checks
+and the migration file's Pyrefly check pass; the broader integration-test
+Pyrefly command retains its pre-existing third-party/stub typing findings.
+`git diff --check` passes. No commit or push.
+
+Learner focus: distinguish evidence provenance from execution provenance. Read
+`src/geochange/runtime_caps.py`, `src/geochange/fixture.py`,
+`src/service/task_runtime.py`, and `process/T145_LIVE_PRODUCT_SMOKE.md`.
+Exercise: compare the live STAC item IDs and asset hashes with the fixture
+manifest while keeping raster reads local. Do not worry about remote COG
+processing or worker infrastructure yet.
+
+### 2026-10-01 — T145 repository-wide formatting gate correction
+
+Applied Ruff formatting to the exact 32 files reported by the repository-wide
+`uv run ruff format --check .` gate: 18 Phase 13 files and 14 historical/shared
+files. AST comparison against HEAD for all 32 files found no semantic changes;
+the edits are formatting-only. The gate now passes with 226 files already
+formatted and zero files requiring reformatting.
+
+Validation: repository-wide Ruff format check passed; repository-wide Ruff
+lint passed; `uv run pyrefly check` passed with 0 errors (18 suppressed);
+GeoChange/runtime regression passed 90 tests; runtime/API PostgreSQL tests
+passed 38 tests; `git diff --check` passed. The approved live Product and
+migration evidence remains unchanged. T145 remains awaiting independent Final
+Audit re-review. No commit or push.
+
+### 2026-10-01 — T145 Phase 13 Final Audit approval
+
+Status: T145 COMPLETE / APPROVED; Phase 13 is COMPLETE / FINAL AUDIT APPROVED.
+Independent audit verified the authenticated DeepSeek Product smoke, live STAC
+metadata, cached real Sentinel-2 pixel processing, TaskRun lifecycle, stage
+status, verifier, runtime profile, provenance, trace, artifacts, and secret
+safety. PostgreSQL migration/downgrade regression passed 25 tests and runtime/API
+persistence passed 38 tests. GeoChange/runtime regression passed 259 tests with
+35 environment-gated PostgreSQL skips. Tracked-file Ruff formatting and lint,
+Pyrefly (0 errors), lock consistency, and diff checks passed; the direct `.`
+format command only reported inaccessible untracked pytest temporary directories,
+while all 226 tracked Python files were formatted. Formatting-only edits were
+AST-equivalent to their baseline. No production behavior, contract, dependency,
+authentication, migration semantics, or scope expansion was introduced by the
+status synchronization. No commit or push.

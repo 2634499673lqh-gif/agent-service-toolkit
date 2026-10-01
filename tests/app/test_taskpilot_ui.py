@@ -8,6 +8,15 @@ from uuid import uuid4
 import httpx
 from streamlit.testing.v1 import AppTest
 
+from taskpilot_ui import (
+    _human_status,
+    _poll_attempt_key,
+    _provenance_label,
+    _runtime_profile,
+    _scene_labels,
+    _stage_status,
+)
+
 
 def _task(task_id: str, title: str = "Task") -> dict[str, str]:
     return {
@@ -29,6 +38,46 @@ def _login(at: AppTest, email: str = "person@example.com") -> AppTest:
     at.text_input(key="taskpilot_login_password_0").set_value("password")
     at.button(key="FormSubmitter:taskpilot_login-Sign in").click().run()
     return at
+
+
+def test_product_status_projection_is_user_facing_and_bounded():
+    assert _human_status("RUNNING") == "In progress"
+    assert _human_status("not_run") == "Not run"
+    assert _stage_status({"planner": "passed", "execution": "running"}) == {
+        "planner": "Passed",
+        "execution": "In progress",
+        "verifier": "Not started",
+    }
+
+
+def test_product_runtime_and_scene_projection_uses_safe_metadata():
+    metadata = {
+        "execution_mode": "CACHED_REAL_SENTINEL2_RASTER",
+        "runtime_profile": {"provider": "fixture", "model": "cached", "live_provider": False},
+        "selected_scene_evidence": {
+            "period_a_item_id": "scene-a",
+            "period_a_date": "2023-07-01",
+            "period_b_item_id": "scene-b",
+            "period_b_date": "2024-07-01",
+        },
+    }
+    assert _runtime_profile(metadata) == {
+        "execution_mode": "CACHED_REAL_SENTINEL2_RASTER",
+        "provider": "fixture",
+        "model": "cached",
+        "live": "False",
+    }
+    assert _scene_labels(metadata) == [
+        "period_a: scene-a · 2023-07-01",
+        "period_b: scene-b · 2024-07-01",
+    ]
+    assert "Cached real Sentinel-2 raster" in _provenance_label(metadata["execution_mode"])
+    assert "no live raster processing" in _provenance_label(metadata["execution_mode"])
+
+
+def test_product_poll_budget_is_isolated_per_run():
+    assert _poll_attempt_key("run-a") != _poll_attempt_key("run-b")
+    assert _poll_attempt_key("run-a").endswith(":run-a")
 
 
 def test_product_is_default_without_legacy_startup():
@@ -348,7 +397,7 @@ def test_product_list_detail_status_refresh_and_selection_clear():
         at.selectbox(key="taskpilot_selected_task_id").set_value(first_id).run()
         assert detail_reads == 1
         assert any(
-            "Status: DRAFT" in item.value and "Updated: 2026-09-26T11:00:00Z" in item.value
+            "Task status: Draft" in item.value and "Updated: 2026-09-26T11:00:00Z" in item.value
             for item in at.caption
         )
         at.session_state["taskpilot_run"] = {"status": "PENDING"}

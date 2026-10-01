@@ -1,4 +1,5 @@
 """Run the deterministic, public TaskPilot Product API demo flow."""
+
 from __future__ import annotations
 
 import argparse
@@ -66,7 +67,9 @@ def main() -> int:
             try:
                 client.logout()
             except TaskPilotClientError:
-                print("warning: local demo state was retained; logout request failed", file=sys.stderr)
+                print(
+                    "warning: local demo state was retained; logout request failed", file=sys.stderr
+                )
 
 
 if __name__ == "__main__":

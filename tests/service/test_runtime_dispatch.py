@@ -63,7 +63,9 @@ async def test_duplicate_dispatch_only_starts_one_runtime(monkeypatch):
             started.set()
             await release.wait()
 
-    monkeypatch.setattr("service.runtime_dispatch.get_business_session_factory", lambda: lambda: Session())
+    monkeypatch.setattr(
+        "service.runtime_dispatch.get_business_session_factory", lambda: lambda: Session()
+    )
     monkeypatch.setattr("service.runtime_dispatch.TaskRuntimeService", Runtime)
     dispatcher = RuntimeDispatchService(object())
     run_id = uuid4()
@@ -109,7 +111,9 @@ async def test_owned_dispatch_exception_recovers_running_run(monkeypatch):
 
     from persistence.models import TaskRunStatus
 
-    monkeypatch.setattr("service.runtime_dispatch.get_business_session_factory", lambda: lambda: Session())
+    monkeypatch.setattr(
+        "service.runtime_dispatch.get_business_session_factory", lambda: lambda: Session()
+    )
     monkeypatch.setattr("service.runtime_dispatch.TaskRuntimeService", Runtime)
     monkeypatch.setattr("service.runtime_dispatch.TaskRunRepository", Runs)
     monkeypatch.setattr("service.runtime_dispatch.TaskLifecycleService", Lifecycle)

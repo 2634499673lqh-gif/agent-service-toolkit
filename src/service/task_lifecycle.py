@@ -93,20 +93,34 @@ class TaskLifecycleService:
         return run
 
     async def succeed_run(
-        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None,
+        self,
+        task_id: UUID,
+        organization_id: UUID,
+        task_run_id: UUID | None = None,
         result_metadata: dict[str, object] | None = None,
     ) -> Task:
         return await self._finish_public(
-            task_id, organization_id, TaskRunStatus.SUCCEEDED, TaskStatus.SUCCEEDED, task_run_id,
+            task_id,
+            organization_id,
+            TaskRunStatus.SUCCEEDED,
+            TaskStatus.SUCCEEDED,
+            task_run_id,
             result_metadata,
         )
 
     async def fail_run(
-        self, task_id: UUID, organization_id: UUID, task_run_id: UUID | None = None,
+        self,
+        task_id: UUID,
+        organization_id: UUID,
+        task_run_id: UUID | None = None,
         result_metadata: dict[str, object] | None = None,
     ) -> Task:
         return await self._finish_public(
-            task_id, organization_id, TaskRunStatus.FAILED, TaskStatus.FAILED, task_run_id,
+            task_id,
+            organization_id,
+            TaskRunStatus.FAILED,
+            TaskStatus.FAILED,
+            task_run_id,
             result_metadata,
         )
 

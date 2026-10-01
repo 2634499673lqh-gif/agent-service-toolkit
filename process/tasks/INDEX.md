@@ -167,3 +167,25 @@ See `process/ADR-012.md` and cards `T120.md`–`T128.md`.
 
 T129 is COMPLETE / APPROVED after initial Planning Strong Review NOT APPROVED and focused re-review APPROVED. T130–T132 Batch 1 are COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED; T135 is COMPLETE / APPROVED; T136 is COMPLETE / APPROVED after focused Strong Re-review; T137 is COMPLETE / APPROVED; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive. Static DAG: `T129 → (T130, T131, T132) → T133 → T135 → T136 → T137`. See `process/tasks/T129.md`–`T137.md`.
 
+## Phase 13 Task Cards — Portfolio Hardening & Demo Experience [COMPLETE / FINAL AUDIT APPROVED]
+
+T138 is COMPLETE / APPROVED after focused Planning Strong Re-review. ADR-013 is
+Accepted / frozen and Phase 13 Planning is APPROVED / FROZEN.
+T139 and T140 are COMPLETE / APPROVED after Batch A Strong Review. T141 and
+T142 are COMPLETE / APPROVED after focused Batch B Strong Re-review. T143 is
+COMPLETE / APPROVED after focused Strong Re-review. T144 is COMPLETE /
+APPROVED; Batch C is complete. T145 is COMPLETE / APPROVED after the
+independent Phase Final Audit. Phase 13 is COMPLETE / FINAL AUDIT APPROVED.
+
+| Task | Purpose | Review | Depends On | Status |
+|---|---|---|---|---|
+| T138 | Planning gate / ADR-013 | Planning Strong Review | Phase 12 | COMPLETE / APPROVED |
+| T139 | LLM parameter authority | Strong Review | T138 | COMPLETE / APPROVED |
+| T140 | Runtime reliability/observability | Strong Review | T139 | COMPLETE / APPROVED |
+| T141 | Real raster fixture/provenance | Strong Review | T138 | COMPLETE / APPROVED |
+| T142 | Real raster integration | Strong Review | T141 | COMPLETE / APPROVED |
+| T143 | Portfolio Streamlit UX | Strong Review | T140, T142 | COMPLETE / APPROVED |
+| T144 | Evaluation/evidence/docs | Strong Review | T143 | COMPLETE / APPROVED |
+| T145 | Phase 13 Final Audit | Phase Final Audit | T144 | COMPLETE / APPROVED |
+
+DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.

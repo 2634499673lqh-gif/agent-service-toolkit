@@ -104,7 +104,7 @@ Business persistence is enabled only by an explicit PostgreSQL `TASKPILOT_DATABA
 
 Not implemented: TaskPilot login/`/me` endpoints, TaskStep records, permission or role tables, JWT/refresh tokens, and organization-switch endpoints. T031/T032 provide Task and TaskRun persistence; migration `t034_observability` provides the AgentRun and ToolCall observability tables, T035 provides the explicit lifecycle service, T036/T037 provide tenant-safe Task routes, T038 provides tenant-scoped TaskRun routes, and T081/T082 provide Approval persistence and protected nested read/decision routes. T097 adds only the tenant-scoped ordered trace projection over those existing rows. `ApprovalService.create_or_reuse` is internal to trusted runtime wiring. T040–T050 provide the committed internal bounded runtime described below. T093 now wires the middleware request ID, validated TaskRun, zero-based step coordinates, AgentRun, and ToolCall through the runtime/capability boundary; T094/T095 normalize timing, errors, provider usage, and metadata, while T096 provides a deterministic in-process cost estimate. These remain observational and are not billing authority. Phase 4 adds no TaskStep persistence, public runtime HTTP endpoint, worker, HTTP idempotency, or real external side effect. `tests/persistence` and the TaskPilot security suites need a disposable PostgreSQL test database and skip without one.
 
-## Current TaskPilot implementation status — Phase 11 Batch 1 approved; T133 COMPLETE / APPROVED
+## Current TaskPilot implementation status — Phase 13 COMPLETE / FINAL AUDIT APPROVED
 
 The committed Phase 4 implementation covers T040–T050 and T051 Final Audit is approved. Phase 4 is complete and merged to `main`. T060–T064 are implemented, Strong Review approved, committed, and pushed; Phase 5 implementation is complete and the Phase 5 Final Audit is approved. The initial audit returned NOT APPROVED solely because canonical status documentation was stale; the focused re-review subsequently approved Phase 5, which is complete.
 
@@ -113,7 +113,7 @@ complete and approved; T081 Approval persistence is complete with Strong Review
 approval, committed, and pushed. T082 Approval service and decision APIs are
 complete, Strong Review approved, committed, and pushed to origin. T083 runtime approval boundary is COMPLETE; Strong Review APPROVED; committed and pushed. T084 bounded action claim/effect behavior is COMPLETE; Strong Review APPROVED; committed and pushed. The initial T085 Final Audit returned NOT APPROVED for a documentation-only status blocker. After the blocker fix, focused Final Audit re-review APPROVED T085. ADR-008 remains Accepted and frozen; Phase 6 is COMPLETE. ADR-009 remains Accepted and frozen; T090–T097 are COMPLETE / APPROVED; T098 Phase 7 Final Audit is APPROVED; Phase 7 is COMPLETE. Phase 8 Planning is APPROVED / frozen; T101–T103 are COMPLETE / APPROVED; Batch 2 starts at T104.
 
-Phase 8 is complete and Phase 9 Product UI is implemented and approved. Phase 10 concurrency and deployment hardening is COMPLETE / FINAL AUDIT APPROVED; T122 remains deferred. Phase 11 Batch 1 (T130–T132) is COMPLETE / STRONG REVIEW APPROVED. T133 is COMPLETE / APPROVED after final focused Strong Re-review; NO T134 ACTIVATION REQUIRED. T134 remains conditional and inactive; T135 is the next executable task.
+Phase 8 is complete and Phase 9 Product UI is implemented and approved. Phase 10 concurrency and deployment hardening is COMPLETE / FINAL AUDIT APPROVED; T122 remains deferred. Phase 11 is COMPLETE / FINAL AUDIT APPROVED. Phase 13 planning is accepted and frozen; T138–T144 are COMPLETE / APPROVED. T145 is COMPLETE / APPROVED and Phase 13 is COMPLETE / FINAL AUDIT APPROVED.
 
 The implemented runtime is an internal, deterministic LangGraph topology:
 
@@ -129,9 +129,8 @@ The implemented runtime is an internal, deterministic LangGraph topology:
 
 The following boundaries remain deferred: persistent TaskStep, a public runtime
 HTTP API, worker/queue execution, generic real external-effect infrastructure,
-real external tools or providers, and any production
-deployment claim. Checkpoint or graph progress never grants authorization,
-and Phase 4 makes no exactly-once execution guarantee.
+and any production deployment claim. Checkpoint or graph progress never grants
+authorization, and the runtime makes no exactly-once execution guarantee.
 
 ### Phase 5 implementation boundary
 
@@ -139,10 +138,10 @@ The implemented Phase 5 package (T060–T064, following approved T051) adds one 
 
 ## Phase 9 planning boundary (accepted/frozen ADR-011, 2026-09-26)
 
-The current Product UI plan keeps Streamlit and the legacy AgentClient/chat path separate. Product UI requires an explicit AuthService-backed login/session/logout HTTP surface (T118) and a tenant-scoped TaskRun discovery route (T119), because neither exists today. The thin Product client uses server-derived CurrentPrincipal and does not treat caller user IDs or `AUTH_SECRET` as TaskPilot identity. V1 covers persisted task management plus run, approval and sanitized trace inspection; starting a run does not execute the internal runtime and no TaskStep or public runtime endpoint is introduced. See `process/ADR-011.md` and T110–T119.
+The historical Phase 9 Product UI plan kept Streamlit and the legacy AgentClient/chat path separate and introduced the AuthService-backed login/session/logout surface (T118) and tenant-scoped TaskRun discovery route (T119). The current Product client uses server-derived CurrentPrincipal and does not treat caller user IDs or `AUTH_SECRET` as TaskPilot identity. Product run creation now dispatches the bounded internal runtime through the process-local bridge; no TaskStep or public runtime endpoint is introduced. See `process/ADR-011.md` and T110–T119.
 
 ## Phase 12 Product / GeoChange boundary
 
 The approved Product path persists a Task and TaskRun, dispatches the existing runtime, and exposes bounded GeoChange result metadata, tenant-authorized PNG references, and trace events. The current vertical is the Wuhan East Lake vegetation-change workflow with four capabilities: `resolve_aoi`, `search_sentinel2`, `compute_vegetation_change`, and `summarize_change`. The LLM may interpret the request, produce bounded structured planning, and write an explanation; deterministic server code remains authoritative for tenant authorization, lifecycle, AOI/STAC validation, NDVI/statistics, verification, and artifact access.
 
-The supported portfolio mode is `REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE`: Sentinel-2 metadata may be live, while raster pixels are controlled local fixture arrays. Batch C adds only evaluation and presentation. It does not add worker infrastructure, live remote COG processing, or broader GIS capabilities. A quality failure can consume the existing single replan budget; exhaustion is terminal.
+The supported portfolio mode is `CACHED_REAL_SENTINEL2_RASTER`: deterministic NumPy code reads two small, checksum-verified real Sentinel-2 B04/B08 crops from `data/geochange-fixtures/real-sentinel2-v1/`. Live STAC metadata is optional, but it must bind to those cached scene and asset identities; no remote raster is downloaded or processed per run. Batch C adds evaluation evidence and presentation documentation only. It does not add worker infrastructure, production-scale GIS, live remote COG processing, or broader AOI/provider coverage. A quality failure can consume the existing single replan budget; exhaustion is terminal.
