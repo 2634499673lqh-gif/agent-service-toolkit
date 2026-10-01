@@ -401,7 +401,9 @@ async def test_postgres_pending_runtime_creates_checkpoint_and_succeeds(seeded_t
 
 @pytest.mark.asyncio
 async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_authorization(
-    seeded_task, monkeypatch, tmp_path,
+    seeded_task,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     session_factory, saver, organization_id, task_id, user_id = seeded_task
     monkeypatch.setattr(settings, "GEOCHANGE_LIVE_STAC", False)
@@ -420,7 +422,10 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
     run_id = await _start_run(session_factory, task_id, organization_id)
     async with session_factory() as session:
         result = await TaskRuntimeService(saver).execute_run(
-            session, organization_id=organization_id, task_id=task_id, task_run_id=run_id,
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
         )
     assert result.terminal_outcome == "SUCCEEDED"
     principal = await _principal_for(session_factory, user_id, organization_id)
@@ -434,20 +439,32 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
         assert metadata["runtime_profile"]["model"] == "fake"
         assert metadata["selected_scene_evidence"]["fixture_manifest"] == MANIFEST_SHA256
         assert metadata["metrics"]["decline_threshold"] == -0.15
-        assert metadata["stage_status"] == {"planner": "passed", "execution": "passed", "verifier": "passed"}
+        assert metadata["stage_status"] == {
+            "planner": "passed",
+            "execution": "passed",
+            "verifier": "passed",
+        }
         assert len(json.dumps(metadata).encode()) < 4096
         assert metadata["metrics"]["valid_pixels"] == 914
         for artifact in ("ndvi_before", "ndvi_after", "ndvi_change"):
-            response = await get_task_artifact(task_id, run_id, artifact, principal=principal, session=session)
+            response = await get_task_artifact(
+                task_id, run_id, artifact, principal=principal, session=session
+            )
             assert response.media_type == "image/png"
         from fastapi import HTTPException
+
         foreign = replace(principal, organization_id=uuid4())
         with pytest.raises(HTTPException) as error:
-            await get_task_artifact(task_id, run_id, "ndvi_before", principal=foreign, session=session)
+            await get_task_artifact(
+                task_id, run_id, "ndvi_before", principal=foreign, session=session
+            )
         assert error.value.status_code == 404
     checkpoint = await saver.aget_tuple({"configurable": {"thread_id": f"taskpilot-run:{run_id}"}})
     assert checkpoint is not None
-    assert checkpoint.checkpoint["channel_values"]["geochange_evidence"]["fixture_manifest"] == MANIFEST_SHA256
+    assert (
+        checkpoint.checkpoint["channel_values"]["geochange_evidence"]["fixture_manifest"]
+        == MANIFEST_SHA256
+    )
 
 
 @pytest.mark.asyncio

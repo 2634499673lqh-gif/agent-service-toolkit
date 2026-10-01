@@ -39,7 +39,9 @@ def test_external_provider_observation_marks_execution_live(monkeypatch):
     monkeypatch.setattr(settings, "USE_FAKE_MODEL", False)
     monkeypatch.setattr(settings, "DEFAULT_MODEL", DeepseekModelName.DEEPSEEK_V4_FLASH)
 
-    assert _runtime_profile(_observations({"provider": "deepseek", "model": "deepseek-v4-flash"})) == {
+    assert _runtime_profile(
+        _observations({"provider": "deepseek", "model": "deepseek-v4-flash"})
+    ) == {
         "provider": "deepseek",
         "model": "deepseek-v4-flash",
         "live_provider": True,

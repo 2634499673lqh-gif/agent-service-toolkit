@@ -89,10 +89,18 @@ class GeoChangeLLM:
         # Numeric constraints, mode, and provider policy are server-owned.
         raw = {
             **raw,
-            "cloud_threshold": 30.0 if explicit.cloud_threshold is None else explicit.cloud_threshold,
-            "decline_threshold": -0.2 if explicit.decline_threshold is None else explicit.decline_threshold,
-            "cloud_threshold_source": "server_default" if explicit.cloud_threshold is None else "user_text",
-            "decline_threshold_source": "server_default" if explicit.decline_threshold is None else "user_text",
+            "cloud_threshold": 30.0
+            if explicit.cloud_threshold is None
+            else explicit.cloud_threshold,
+            "decline_threshold": -0.2
+            if explicit.decline_threshold is None
+            else explicit.decline_threshold,
+            "cloud_threshold_source": "server_default"
+            if explicit.cloud_threshold is None
+            else "user_text",
+            "decline_threshold_source": "server_default"
+            if explicit.decline_threshold is None
+            else "user_text",
             "data_mode": "local_real_raster_fixture",
             "version": "1",
         }

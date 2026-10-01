@@ -22,9 +22,7 @@ def run_local_analysis(
     """Execute the local real-raster mode; inputs are supplied by trusted runtime code."""
 
     root = Path(artifact_root).resolve()
-    change = compute_vegetation_change(
-        red_a, nir_a, red_b, nir_b, artifact_dir=root
-    )
+    change = compute_vegetation_change(red_a, nir_a, red_b, nir_b, artifact_dir=root)
     verification = verify_change(change, artifacts=change.artifacts, artifact_root=root)
     if verification["status"] != "passed":
         raise ValueError(f"GeoChange verification failed: {verification['code']}")

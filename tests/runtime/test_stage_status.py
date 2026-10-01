@@ -21,13 +21,17 @@ def _state(**updates):
 def test_terminal_stage_status_distinguishes_planner_and_execution_failures():
     planner_failed = _state(plan=None)
     assert _terminal_stage_status(planner_failed) == {
-        "planner": "failed", "execution": "not_run", "verifier": "not_run"
+        "planner": "failed",
+        "execution": "not_run",
+        "verifier": "not_run",
     }
     execution_failed = _state(
         execution_result=ExecutionResult(step_position=1, success=False, error_code="failed")
     )
     assert _terminal_stage_status(execution_failed) == {
-        "planner": "passed", "execution": "failed", "verifier": "not_run"
+        "planner": "passed",
+        "execution": "failed",
+        "verifier": "not_run",
     }
 
 
@@ -37,11 +41,15 @@ def test_terminal_stage_status_reports_verifier_rejection_and_success():
         verification=VerificationResult(verdict="FAIL", reason="insufficient", evidence=[]),
     )
     assert _terminal_stage_status(rejected) == {
-        "planner": "passed", "execution": "passed", "verifier": "failed"
+        "planner": "passed",
+        "execution": "passed",
+        "verifier": "failed",
     }
     passed = rejected.model_copy(
         update={"verification": VerificationResult(verdict="PASS", reason="valid", evidence=[])}
     )
     assert _terminal_stage_status(passed) == {
-        "planner": "passed", "execution": "passed", "verifier": "passed"
+        "planner": "passed",
+        "execution": "passed",
+        "verifier": "passed",
     }

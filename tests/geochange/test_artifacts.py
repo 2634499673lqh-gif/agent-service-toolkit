@@ -1,4 +1,3 @@
-
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -21,9 +20,7 @@ def test_artifact_identity_is_bounded(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_artifact_endpoint_authorizes_visible_run_and_rejects_unknown(
-    tmp_path, monkeypatch
-):
+async def test_artifact_endpoint_authorizes_visible_run_and_rejects_unknown(tmp_path, monkeypatch):
     task_id, run_id = uuid4(), uuid4()
     monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
     path = tmp_path / str(task_id) / str(run_id)
@@ -34,7 +31,9 @@ async def test_artifact_endpoint_authorizes_visible_run_and_rejects_unknown(
         async def get_run(self, principal, requested_task, requested_run):
             if requested_task != task_id or requested_run != run_id:
                 return None
-            return SimpleNamespace(result_metadata={"artifact_references": {"ndvi_before": "ndvi_before"}})
+            return SimpleNamespace(
+                result_metadata={"artifact_references": {"ndvi_before": "ndvi_before"}}
+            )
 
     monkeypatch.setattr(task_api, "TaskRunService", lambda session: VisibleRuns())
     response = await task_api.get_task_artifact(

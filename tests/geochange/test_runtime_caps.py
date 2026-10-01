@@ -52,7 +52,12 @@ async def test_capabilities_consume_validated_geochange_parameters():
     assert evidence["fixture_manifest"]
 
     context = _context(task, "summarize_change")
-    context = context.model_copy(update={"geochange_evidence": evidence, "geochange_aoi_evidence": json.loads(resolve.output)})
+    context = context.model_copy(
+        update={
+            "geochange_evidence": evidence,
+            "geochange_aoi_evidence": json.loads(resolve.output),
+        }
+    )
     summary = await SummarizeChangeRuntimeCapability().execute(
         PlanStep(position=1, instruction="summarize_change"), context
     )
@@ -62,23 +67,35 @@ async def test_capabilities_consume_validated_geochange_parameters():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mismatch", [False, True])
 async def test_live_metadata_binds_exact_cached_scene_or_fails_closed(monkeypatch, mismatch):
-    task = GeoChangeTask(period_a={"start": "2023-07-01", "end": "2023-07-31"},
-                         period_b={"start": "2024-07-01", "end": "2024-07-31"})
+    task = GeoChangeTask(
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+    )
     manifest = load_manifest()
+
     def search(aoi, period, threshold):
         scene = manifest["scenes"]["period_a" if period == task.period_a else "period_b"]
-        return Sentinel2Item(item_id=scene["item_id"] + ("-different" if mismatch else ""),
-                             acquisition_date=date.fromisoformat(scene["acquisition_date"]),
-                             cloud_cover=scene["cloud_cover"], collection=scene["collection"],
-                             red_asset=scene["red_asset_identity"]["href"],
-                             nir_asset=scene["nir_asset_identity"]["href"],
-                             query_start=period.start, query_end=period.end)
+        return Sentinel2Item(
+            item_id=scene["item_id"] + ("-different" if mismatch else ""),
+            acquisition_date=date.fromisoformat(scene["acquisition_date"]),
+            cloud_cover=scene["cloud_cover"],
+            collection=scene["collection"],
+            red_asset=scene["red_asset_identity"]["href"],
+            nir_asset=scene["nir_asset_identity"]["href"],
+            query_start=period.start,
+            query_end=period.end,
+        )
+
     monkeypatch.setattr(settings, "GEOCHANGE_LIVE_STAC", True)
     monkeypatch.setattr("geochange.runtime_caps.search_sentinel2", search)
     step = PlanStep(position=1, instruction="search_sentinel2")
-    selected = await SearchSentinel2RuntimeCapability().execute(step, _context(task, step.instruction))
+    selected = await SearchSentinel2RuntimeCapability().execute(
+        step, _context(task, step.instruction)
+    )
     evidence = json.loads(selected.output)
-    context = _context(task, "compute_vegetation_change").model_copy(update={"geochange_evidence": evidence})
+    context = _context(task, "compute_vegetation_change").model_copy(
+        update={"geochange_evidence": evidence}
+    )
     result = await ComputeVegetationRuntimeCapability().execute(step, context)
     assert result.success == (not mismatch)
     if mismatch:
@@ -89,19 +106,31 @@ async def test_live_metadata_binds_exact_cached_scene_or_fails_closed(monkeypatc
 
 @pytest.mark.asyncio
 async def test_cached_real_summary_remains_bounded_with_maximum_llm_prose(monkeypatch, tmp_path):
-    task = GeoChangeTask(period_a={"start": "2023-07-01", "end": "2023-07-31"},
-                         period_b={"start": "2024-07-01", "end": "2024-07-31"})
+    task = GeoChangeTask(
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+    )
+
     async def explain(self, evidence):
         return "x" * 500
+
     monkeypatch.setattr(settings, "GEOCHANGE_LIVE_LLM", True)
     monkeypatch.setattr(settings, "USE_FAKE_MODEL", False)
     monkeypatch.setattr("geochange.runtime_caps.get_model", lambda model: object())
     monkeypatch.setattr("geochange.runtime_caps.GeoChangeLLM.explain", explain)
     monkeypatch.setattr("geochange.runtime_caps.ARTIFACT_ROOT", tmp_path)
-    context = _context(task, "summarize_change").model_copy(update={
-        "geochange_evidence": scene_evidence(task),
-        "geochange_aoi_evidence": {"catalog_key": task.aoi_key, "crs": "EPSG:4326", "source": "taskpilot.geochange.catalog.v1"},
-    })
-    result = await SummarizeChangeRuntimeCapability().execute(PlanStep(position=1, instruction="summarize_change"), context)
+    context = _context(task, "summarize_change").model_copy(
+        update={
+            "geochange_evidence": scene_evidence(task),
+            "geochange_aoi_evidence": {
+                "catalog_key": task.aoi_key,
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+        }
+    )
+    result = await SummarizeChangeRuntimeCapability().execute(
+        PlanStep(position=1, instruction="summarize_change"), context
+    )
     assert not result.success
     assert result.error_code == "geochange_output_oversized"

@@ -20,8 +20,10 @@ from geochange.verifier import verify_change
 
 
 def task():
-    return GeoChangeTask(period_a={"start": "2023-07-01", "end": "2023-07-31"},
-                         period_b={"start": "2024-07-01", "end": "2024-07-31"})
+    return GeoChangeTask(
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+    )
 
 
 def test_manifest_matches_independently_saved_stac_and_real_pixels():
@@ -34,7 +36,10 @@ def test_manifest_matches_independently_saved_stac_and_real_pixels():
         assert scene["acquisition_datetime"] == item["properties"]["datetime"]
         assert scene["acquisition_date"] == item["properties"]["datetime"][:10]
         assert scene["fixture_version"] == manifest["fixture_version"]
-        assert scene["fixture_sha256"] == hashlib.sha256((FIXTURE_ROOT / scene["fixture_file"]).read_bytes()).hexdigest()
+        assert (
+            scene["fixture_sha256"]
+            == hashlib.sha256((FIXTURE_ROOT / scene["fixture_file"]).read_bytes()).hexdigest()
+        )
         assert scene["dimensions"] == [64, 64]
         assert scene["crs"] == f"EPSG:{item['properties']['proj:epsg']}" == "EPSG:32650"
         for band in ("red", "nir"):
@@ -95,16 +100,23 @@ def test_real_radiometry_ndvi_masks_and_artifacts_are_reproducible(tmp_path):
     masks = []
     for period in ("period_a", "period_b"):
         with np.load(FIXTURE_ROOT / manifest["scenes"][period]["fixture_file"]) as bundle:
-            red = bundle["red"].astype(np.float32) * .0001 - .1
-            nir = bundle["nir"].astype(np.float32) * .0001 - .1
-            valid = (bundle["red"] != 0) & (bundle["nir"] != 0) & (red >= 0) & (nir >= 0) & ((red + nir) > 0)
+            red = bundle["red"].astype(np.float32) * 0.0001 - 0.1
+            nir = bundle["nir"].astype(np.float32) * 0.0001 - 0.1
+            valid = (
+                (bundle["red"] != 0)
+                & (bundle["nir"] != 0)
+                & (red >= 0)
+                & (nir >= 0)
+                & ((red + nir) > 0)
+            )
             ndvi = np.full(red.shape, np.nan, dtype=np.float32)
             ndvi[valid] = (nir[valid] - red[valid]) / (nir[valid] + red[valid])
             ndvis.append(ndvi)
             masks.append(valid)
     np.testing.assert_array_equal(first.valid_mask, masks[0] & masks[1])
-    np.testing.assert_allclose(first.delta[first.valid_mask],
-                               (ndvis[1] - ndvis[0])[first.valid_mask])
+    np.testing.assert_allclose(
+        first.delta[first.valid_mask], (ndvis[1] - ndvis[0])[first.valid_mask]
+    )
     metrics = summarize_change(first, task())
     assert 0 < metrics["valid_pixels"] < 4096
     assert metrics["valid_analysis_area_m2"] == metrics["valid_pixels"] * 100
@@ -156,8 +168,11 @@ def test_verifier_rejects_forged_fixture_metrics(tmp_path, metric):
         metrics=forged,
     )
     assert result["code"] in {
-        "metrics_mismatch", "delta_metric_mismatch", "decline_metric_mismatch",
-        "valid_area_mismatch", "empty_valid_pixels",
+        "metrics_mismatch",
+        "delta_metric_mismatch",
+        "decline_metric_mismatch",
+        "valid_area_mismatch",
+        "empty_valid_pixels",
     }
 
 

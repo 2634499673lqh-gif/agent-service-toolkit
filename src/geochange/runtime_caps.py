@@ -49,9 +49,12 @@ class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
         output = json.dumps(payload, separators=(",", ":"))
         if len(output) > 2000:
-            return ExecutionResult(step_position=step.position, success=False,
-                                   error_code="geochange_output_oversized",
-                                   error_message="GeoChange output exceeds the bounded limit")
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_output_oversized",
+                error_message="GeoChange output exceeds the bounded limit",
+            )
         return ExecutionResult(
             step_position=step.position,
             success=True,
@@ -61,20 +64,28 @@ class _Base:
 
 class ResolveAOIRuntimeCapability(_Base):
     metadata = CapabilityMetadata(
-        name="resolve_aoi", description="Resolve controlled Wuhan East Lake AOI.",
-        read_only=True, deterministic=True, side_effect_free=True,
+        name="resolve_aoi",
+        description="Resolve controlled Wuhan East Lake AOI.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
         aoi = resolve_aoi(task.aoi_key)
-        return self._result(step, {"catalog_key": aoi.catalog_key, "crs": aoi.crs, "source": aoi.source})
+        return self._result(
+            step, {"catalog_key": aoi.catalog_key, "crs": aoi.crs, "source": aoi.source}
+        )
 
 
 class SearchSentinel2RuntimeCapability(_Base):
     metadata = CapabilityMetadata(
-        name="search_sentinel2", description="Select bounded Sentinel-2 metadata.",
-        read_only=True, deterministic=True, side_effect_free=True,
+        name="search_sentinel2",
+        description="Select bounded Sentinel-2 metadata.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
@@ -94,17 +105,39 @@ class SearchSentinel2RuntimeCapability(_Base):
                 item_a = search_sentinel2(aoi, task.period_a, 100.0)
                 item_b = search_sentinel2(aoi, task.period_b, 100.0)
             except ConnectionError:
-                return ExecutionResult(step_position=step.position, success=False, error_code="stac_provider_unavailable", error_message="Sentinel-2 provider is unavailable")
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="stac_provider_unavailable",
+                    error_message="Sentinel-2 provider is unavailable",
+                )
             except ValueError as error:
-                code = "stac_no_suitable_imagery" if "no Sentinel-2 item" in str(error) else "stac_response_malformed"
-                return ExecutionResult(step_position=step.position, success=False, error_code=code, error_message="Sentinel-2 metadata is unavailable")
-            if item_a.cloud_cover > task.cloud_threshold or item_b.cloud_cover > task.cloud_threshold:
+                code = (
+                    "stac_no_suitable_imagery"
+                    if "no Sentinel-2 item" in str(error)
+                    else "stac_response_malformed"
+                )
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code=code,
+                    error_message="Sentinel-2 metadata is unavailable",
+                )
+            if (
+                item_a.cloud_cover > task.cloud_threshold
+                or item_b.cloud_cover > task.cloud_threshold
+            ):
                 code = (
                     "stac_explicit_quality_violation"
                     if task.cloud_threshold_source == "user_text"
                     else "stac_default_quality_violation"
                 )
-                return ExecutionResult(step_position=step.position, success=False, error_code=code, error_message="selected imagery exceeds the validated cloud threshold")
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code=code,
+                    error_message="selected imagery exceeds the validated cloud threshold",
+                )
             evidence = _live_scene_evidence(task, item_a, item_b)
         else:
             evidence = scene_evidence(task)
@@ -113,8 +146,11 @@ class SearchSentinel2RuntimeCapability(_Base):
 
 class ComputeVegetationRuntimeCapability(_Base):
     metadata = CapabilityMetadata(
-        name="compute_vegetation_change", description="Compute deterministic NDVI change.",
-        read_only=True, deterministic=True, side_effect_free=True,
+        name="compute_vegetation_change",
+        description="Compute deterministic NDVI change.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
@@ -129,23 +165,41 @@ class ComputeVegetationRuntimeCapability(_Base):
                 error_code="geochange_provenance_invalid",
                 error_message=str(error)[:200],
             )
-        return self._result(step, {"valid_pixels": int(change.valid_mask.sum()), "mean_delta_ndvi": float(np.nanmean(change.delta))})
+        return self._result(
+            step,
+            {
+                "valid_pixels": int(change.valid_mask.sum()),
+                "mean_delta_ndvi": float(np.nanmean(change.delta)),
+            },
+        )
 
 
 class SummarizeChangeRuntimeCapability(_Base):
     metadata = CapabilityMetadata(
-        name="summarize_change", description="Summarize deterministic vegetation change.",
-        read_only=True, deterministic=True, side_effect_free=True,
+        name="summarize_change",
+        description="Summarize deterministic vegetation change.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
-        artifact_root = ARTIFACT_ROOT / str(context.runtime_task_id or "runtime") / str(context.runtime_task_run_id or "current")
+        artifact_root = (
+            ARTIFACT_ROOT
+            / str(context.runtime_task_id or "runtime")
+            / str(context.runtime_task_run_id or "current")
+        )
         scene_evidence = dict(getattr(context, "geochange_evidence", {}) or {})
         try:
             change = compute_cached_change(task, scene_evidence, artifact_dir=artifact_root)
         except ValueError as error:
-            return ExecutionResult(step_position=step.position, success=False, error_code="geochange_provenance_invalid", error_message=str(error)[:200])
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_provenance_invalid",
+                error_message=str(error)[:200],
+            )
         aoi_evidence = dict(getattr(context, "geochange_aoi_evidence", {}) or {})
         metrics = summarize_change(change, task)
         mode = EXECUTION_MODE
@@ -161,7 +215,12 @@ class SummarizeChangeRuntimeCapability(_Base):
             metrics=metrics,
         )
         if verification["status"] != "passed":
-            return ExecutionResult(step_position=step.position, success=False, error_code="geochange_quality_failed", error_message="deterministic GeoChange verification failed")
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_quality_failed",
+                error_message="deterministic GeoChange verification failed",
+            )
         summary = (
             f"Vegetation change around Wuhan East Lake: mean NDVI changed "
             f"from {metrics['mean_ndvi_period_a']:.3f} to {metrics['mean_ndvi_period_b']:.3f}; "
@@ -169,7 +228,11 @@ class SummarizeChangeRuntimeCapability(_Base):
         )
         if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
             summary = await GeoChangeLLM(get_model(settings.DEFAULT_MODEL)).explain(
-                {"analysis_type": "vegetation_change", "metrics": metrics, "verifier_status": "passed"}
+                {
+                    "analysis_type": "vegetation_change",
+                    "metrics": metrics,
+                    "verifier_status": "passed",
+                }
             )
         validated_result = GeoChangeResult(
             mode=mode,

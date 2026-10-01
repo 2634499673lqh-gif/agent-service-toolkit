@@ -154,12 +154,14 @@ class _DefaultPlannerModel:
     async def __call__(self, request: Any) -> object:
         text = f"{request.task_input.title} {request.task_input.description or ''}".casefold()
         if any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖")):
-            return {"steps": [
-                {"position": 1, "instruction": "resolve_aoi"},
-                {"position": 2, "instruction": "search_sentinel2"},
-                {"position": 3, "instruction": "compute_vegetation_change"},
-                {"position": 4, "instruction": "summarize_change"},
-            ]}
+            return {
+                "steps": [
+                    {"position": 1, "instruction": "resolve_aoi"},
+                    {"position": 2, "instruction": "search_sentinel2"},
+                    {"position": 3, "instruction": "compute_vegetation_change"},
+                    {"position": 4, "instruction": "summarize_change"},
+                ]
+            }
         return {
             "steps": [
                 {
@@ -220,6 +222,7 @@ def build_runtime_graph(
 
     planner_node = planner or PlannerNode(_DefaultPlannerModel())
     from geochange.runtime_caps import runtime_capabilities
+
     if capability_dispatcher is not None and executor is not None:
         raise ValueError("executor and capability_dispatcher are mutually exclusive")
     if capability_dispatcher is None:
@@ -259,9 +262,9 @@ def build_runtime_graph(
             if _is_geochange_request(state.task_input):
                 if geochange_task is None:
                     if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
-                        geochange_task = await GeoChangeLLM(get_model(settings.DEFAULT_MODEL)).parse_task(
-                            state.task_input.description or state.task_input.title
-                        )
+                        geochange_task = await GeoChangeLLM(
+                            get_model(settings.DEFAULT_MODEL)
+                        ).parse_task(state.task_input.description or state.task_input.title)
                     else:
                         geochange_task = _offline_geochange_task(state.task_input)
                 if geochange_task.analysis_type != "vegetation_change":
@@ -269,14 +272,20 @@ def build_runtime_graph(
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
             if observation_sink is not None:
-                await observation_sink.record(_planner_observation(state, request_id, started_at, failure))
+                await observation_sink.record(
+                    _planner_observation(state, request_id, started_at, failure)
+                )
             return {"failure": failure}
         except Exception:
             failure = _failure(failure_classifier, "planner_execution_failed")
             if observation_sink is not None:
-                await observation_sink.record(_planner_observation(state, request_id, started_at, failure))
+                await observation_sink.record(
+                    _planner_observation(state, request_id, started_at, failure)
+                )
             return {"failure": failure}
-        geochange_task_data = None if geochange_task is None else geochange_task.model_dump(mode="json")
+        geochange_task_data = (
+            None if geochange_task is None else geochange_task.model_dump(mode="json")
+        )
         return {
             "plan": plan.model_dump(mode="json"),
             "geochange_task": geochange_task_data,
@@ -355,7 +364,12 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "capability_context_invalid")}
         selected_capability = capability_name
         instruction_name = step.instruction.strip().split()[0]
-        if instruction_name in {"resolve_aoi", "search_sentinel2", "compute_vegetation_change", "summarize_change"}:
+        if instruction_name in {
+            "resolve_aoi",
+            "search_sentinel2",
+            "compute_vegetation_change",
+            "summarize_change",
+        }:
             if not isinstance(capability_dispatcher.metadata_for(instruction_name), RuntimeFailure):
                 selected_capability = instruction_name
         metadata = capability_dispatcher.metadata_for(selected_capability)
@@ -591,7 +605,9 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
         return {
             "capability_context": None,
-            "geochange_task": state.geochange_task.model_dump(mode="json") if state.geochange_task else None,
+            "geochange_task": state.geochange_task.model_dump(mode="json")
+            if state.geochange_task
+            else None,
             "geochange_aoi_evidence": state.geochange_aoi_evidence,
             "geochange_evidence": state.geochange_evidence,
             **replacement.model_dump(mode="json"),

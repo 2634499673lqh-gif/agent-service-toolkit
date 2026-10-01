@@ -26,9 +26,7 @@ class RuntimeDispatchService:
             return
         self._active_runs.add(task_run_id)
         task = asyncio.create_task(
-            self._execute(
-                organization_id=organization_id, task_id=task_id, task_run_id=task_run_id
-            )
+            self._execute(organization_id=organization_id, task_id=task_id, task_run_id=task_run_id)
         )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)

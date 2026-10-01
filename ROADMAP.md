@@ -300,6 +300,6 @@ Accepted / frozen. Phase 13 Planning is APPROVED / FROZEN. Canonical DAG:
 `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143 → T144 → T145`.
 The phase targets deterministic parameter authority, accurate runtime evidence,
 provenance-bound real cached Sentinel-2 pixels, and a portfolio-first Streamlit
-flow. T138–T144 are complete and approved. T145 remains the independent Phase 13
-Final Audit and is the next task but is not started. The phase does not declare the overall project
-finished. See ADR-013 and cards T138–T145.
+flow. T138–T144 are complete and approved. T145 is COMPLETE / FINAL AUDIT
+APPROVED, and Phase 13 is COMPLETE / FINAL AUDIT APPROVED. The phase does not
+declare the overall project finished. See ADR-013 and cards T138–T145.

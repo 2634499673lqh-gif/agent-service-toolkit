@@ -73,9 +73,7 @@ async def test_structured_geochange_model_instance_is_accepted():
         period_a={"start": "2023-07-01", "end": "2023-07-31"},
         period_b={"start": "2024-07-01", "end": "2024-07-31"},
     )
-    task = await GeoChangeLLM(StructuredModel(structured)).parse_task(
-        "Analyze vegetation decline"
-    )
+    task = await GeoChangeLLM(StructuredModel(structured)).parse_task("Analyze vegetation decline")
     assert task == structured
 
 

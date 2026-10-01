@@ -36,7 +36,10 @@ def test_stac_selection_requires_assets_and_cloud_threshold():
         "id": "scene-1",
         "collection": "sentinel-2-l2a",
         "properties": {"datetime": "2023-07-10T00:00:00Z", "eo:cloud_cover": 5},
-        "assets": {"red": {"href": "https://example/red.tif"}, "nir": {"href": "https://example/nir.tif"}},
+        "assets": {
+            "red": {"href": "https://example/red.tif"},
+            "nir": {"href": "https://example/nir.tif"},
+        },
     }
     period = _task().period_a
     item = select_sentinel2([feature], period, 10)
@@ -48,16 +51,17 @@ def test_stac_selection_requires_assets_and_cloud_threshold():
 def test_ndvi_delta_summary_and_png(tmp_path):
     red_a = np.array([[1, 1], [2, 2]], dtype=float)
     nir_a = np.array([[3, 1], [4, 2]], dtype=float)
-    change = compute_vegetation_change(
-        red_a, nir_a, red_a * 2, nir_a, artifact_dir=tmp_path
-    )
+    change = compute_vegetation_change(red_a, nir_a, red_a * 2, nir_a, artifact_dir=tmp_path)
     assert np.isclose(change.ndvi_a[0, 0], 0.5)
     assert change.delta.shape == (2, 2)
     assert set(change.artifacts) == {"ndvi_before", "ndvi_after", "ndvi_change"}
     summary = summarize_change(change, _task(decline_threshold=-0.1))
     assert summary["valid_pixels"] == 4
     assert 0 <= summary["decline_percentage"] <= 100
-    assert verify_change(change, artifacts=change.artifacts, artifact_root=tmp_path)["status"] == "passed"
+    assert (
+        verify_change(change, artifacts=change.artifacts, artifact_root=tmp_path)["status"]
+        == "passed"
+    )
 
 
 def test_divide_by_zero_and_grid_mismatch_rejected():
@@ -81,19 +85,37 @@ def test_local_analysis_returns_bounded_result(tmp_path):
     assert result.metrics["valid_pixels"] == 1
 
 
-def _complete_evidence(task: GeoChangeTask) -> tuple[dict[str, str], dict[str, str], dict[str, float | int]]:
-    aoi = {"catalog_key": task.aoi_key, "crs": "EPSG:4326", "source": "taskpilot.geochange.catalog.v1"}
+def _complete_evidence(
+    task: GeoChangeTask,
+) -> tuple[dict[str, str], dict[str, str], dict[str, float | int]]:
+    aoi = {
+        "catalog_key": task.aoi_key,
+        "crs": "EPSG:4326",
+        "source": "taskpilot.geochange.catalog.v1",
+    }
     scenes = {
-        "period_a_item_id": "scene-a", "period_a_date": task.period_a.start.isoformat(),
-        "period_a_collection": "sentinel-2-l2a", "period_a_cloud_cover": "10",
-        "period_a_red": "red", "period_a_nir": "nir", "period_b_item_id": "scene-b",
-        "period_b_date": task.period_b.start.isoformat(), "period_b_collection": "sentinel-2-l2a",
-        "period_b_cloud_cover": "10", "period_b_red": "red", "period_b_nir": "nir",
+        "period_a_item_id": "scene-a",
+        "period_a_date": task.period_a.start.isoformat(),
+        "period_a_collection": "sentinel-2-l2a",
+        "period_a_cloud_cover": "10",
+        "period_a_red": "red",
+        "period_a_nir": "nir",
+        "period_b_item_id": "scene-b",
+        "period_b_date": task.period_b.start.isoformat(),
+        "period_b_collection": "sentinel-2-l2a",
+        "period_b_cloud_cover": "10",
+        "period_b_red": "red",
+        "period_b_nir": "nir",
     }
     metrics = {
-        "valid_pixels": 1, "valid_analysis_area_m2": 100, "mean_ndvi_period_a": 0.5,
-        "mean_ndvi_period_b": 0.4, "mean_delta_ndvi": -0.1, "significant_decline_area_m2": 0,
-        "decline_percentage": 0, "decline_threshold": task.decline_threshold,
+        "valid_pixels": 1,
+        "valid_analysis_area_m2": 100,
+        "mean_ndvi_period_a": 0.5,
+        "mean_ndvi_period_b": 0.4,
+        "mean_delta_ndvi": -0.1,
+        "significant_decline_area_m2": 0,
+        "decline_percentage": 0,
+        "decline_threshold": task.decline_threshold,
     }
     return aoi, scenes, metrics
 
@@ -101,11 +123,36 @@ def _complete_evidence(task: GeoChangeTask) -> tuple[dict[str, str], dict[str, s
 @pytest.mark.parametrize(
     ("change", "execution_mode", "evidence_mutation", "expected_code"),
     [
-        ("valid", "REAL_STAC_LOCAL_FIXTURE", lambda e: e.update(period_a_item_id="scene-b"), "scenes_not_distinct"),
-        ("valid", "REAL_STAC_LOCAL_FIXTURE", lambda e: e.update(period_a_date="2022-01-01"), "period_a_date_invalid"),
-        ("valid", "REAL_STAC_LOCAL_FIXTURE", lambda e: e.update(period_a_collection="landsat"), "scene_collection_invalid"),
-        ("valid", "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE", lambda e: e.update(period_a_red="synthetic"), "provenance_invalid"),
-        ("valid", "REAL_STAC_LOCAL_FIXTURE", lambda e: e.update(period_a_cloud_cover="nan"), "scene_metadata_invalid"),
+        (
+            "valid",
+            "REAL_STAC_LOCAL_FIXTURE",
+            lambda e: e.update(period_a_item_id="scene-b"),
+            "scenes_not_distinct",
+        ),
+        (
+            "valid",
+            "REAL_STAC_LOCAL_FIXTURE",
+            lambda e: e.update(period_a_date="2022-01-01"),
+            "period_a_date_invalid",
+        ),
+        (
+            "valid",
+            "REAL_STAC_LOCAL_FIXTURE",
+            lambda e: e.update(period_a_collection="landsat"),
+            "scene_collection_invalid",
+        ),
+        (
+            "valid",
+            "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE",
+            lambda e: e.update(period_a_red="synthetic"),
+            "provenance_invalid",
+        ),
+        (
+            "valid",
+            "REAL_STAC_LOCAL_FIXTURE",
+            lambda e: e.update(period_a_cloud_cover="nan"),
+            "scene_metadata_invalid",
+        ),
     ],
 )
 def test_complete_verifier_rejects_invalid_external_evidence(
@@ -189,17 +236,20 @@ def test_cached_real_sentinel_mode_requires_manifest_and_asset_binding(tmp_path)
     computed = compute_cached_change(task, evidence, artifact_dir=tmp_path)
     aoi, _, _ = _complete_evidence(task)
     metrics = summarize_change(computed, task)
-    assert verify_change(
-        computed,
-        artifacts=computed.artifacts,
-        artifact_root=tmp_path,
-        task=task,
-        aoi_evidence=aoi,
-        scene_evidence=evidence,
-        execution_mode="CACHED_REAL_SENTINEL2_RASTER",
-        raster_source="cached_real_sentinel2_fixture",
-        metrics=metrics,
-    )["status"] == "passed"
+    assert (
+        verify_change(
+            computed,
+            artifacts=computed.artifacts,
+            artifact_root=tmp_path,
+            task=task,
+            aoi_evidence=aoi,
+            scene_evidence=evidence,
+            execution_mode="CACHED_REAL_SENTINEL2_RASTER",
+            raster_source="cached_real_sentinel2_fixture",
+            metrics=metrics,
+        )["status"]
+        == "passed"
+    )
     evidence["fixture_manifest"] = "tampered"
     result = verify_change(
         computed,
@@ -220,7 +270,11 @@ def test_verifier_rejects_missing_artifact_file(tmp_path):
     computed = compute_vegetation_change([[1.0]], [[3.0]], [[2.0]], [[3.0]], artifact_dir=tmp_path)
     aoi, scenes, metrics = _complete_evidence(task)
     (tmp_path / "ndvi_after.png").unlink()
-    artifacts = {"ndvi_before": "ndvi_before.png", "ndvi_after": "ndvi_after.png", "ndvi_change": "ndvi_change.png"}
+    artifacts = {
+        "ndvi_before": "ndvi_before.png",
+        "ndvi_after": "ndvi_after.png",
+        "ndvi_change": "ndvi_change.png",
+    }
     result = verify_change(
         computed,
         artifacts=artifacts,

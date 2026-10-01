@@ -5563,3 +5563,67 @@ persisted `-0.15`, passed all stages and verification, used
 `CACHED_REAL_SENTINEL2_RASTER`, and returned all three authorized artifacts.
 T145 Final Audit may begin. This is documentation-only status synchronization;
 no further implementation changes, commit, or push were made by review.
+### 2026-10-01 — T145 Final Audit corrective implementation
+
+Closed the identified T145 audit blockers without changing runtime behavior.
+Recorded a fresh authenticated Product smoke with real DeepSeek planning,
+live STAC metadata enabled, and `CACHED_REAL_SENTINEL2_RASTER` preserved;
+the sanitized evidence is in `process/T145_LIVE_PRODUCT_SMOKE.md` and its JSON
+capture. The run succeeded with planner, execution, and verifier all passed,
+verifier passed, fixture-bound scenes, deterministic metrics, and all three
+authenticated PNG artifacts. The evidence explicitly separates live STAC
+metadata from cached local raster pixel processing and preserves the persisted
+`live_provider=false` contract value.
+
+Changed only the stale PostgreSQL head assertion in
+`tests/persistence/test_postgres_integration.py` to recognize
+`t035_task_run_result` and its `result_metadata` column; migrations were not
+changed. Synchronized current Phase 13 statuses in `TASK_BACKLOG.md`,
+`process/tasks/INDEX.md`, `ROADMAP.md`, and `docs/ARCHITECTURE.md`.
+
+Follow-up correction: `migrations/versions/20260929_01_task_run_result.py`
+now drops the convention-generated
+`ck_task_runs_task_run_result_metadata_bounds` constraint. Upgrade behavior and
+schema intent are unchanged. Full PostgreSQL migration regression passed
+25 tests; runtime/API PostgreSQL tests passed 38 tests. Ruff formatting/checks
+and the migration file's Pyrefly check pass; the broader integration-test
+Pyrefly command retains its pre-existing third-party/stub typing findings.
+`git diff --check` passes. No commit or push.
+
+Learner focus: distinguish evidence provenance from execution provenance. Read
+`src/geochange/runtime_caps.py`, `src/geochange/fixture.py`,
+`src/service/task_runtime.py`, and `process/T145_LIVE_PRODUCT_SMOKE.md`.
+Exercise: compare the live STAC item IDs and asset hashes with the fixture
+manifest while keeping raster reads local. Do not worry about remote COG
+processing or worker infrastructure yet.
+
+### 2026-10-01 — T145 repository-wide formatting gate correction
+
+Applied Ruff formatting to the exact 32 files reported by the repository-wide
+`uv run ruff format --check .` gate: 18 Phase 13 files and 14 historical/shared
+files. AST comparison against HEAD for all 32 files found no semantic changes;
+the edits are formatting-only. The gate now passes with 226 files already
+formatted and zero files requiring reformatting.
+
+Validation: repository-wide Ruff format check passed; repository-wide Ruff
+lint passed; `uv run pyrefly check` passed with 0 errors (18 suppressed);
+GeoChange/runtime regression passed 90 tests; runtime/API PostgreSQL tests
+passed 38 tests; `git diff --check` passed. The approved live Product and
+migration evidence remains unchanged. T145 remains awaiting independent Final
+Audit re-review. No commit or push.
+
+### 2026-10-01 — T145 Phase 13 Final Audit approval
+
+Status: T145 COMPLETE / APPROVED; Phase 13 is COMPLETE / FINAL AUDIT APPROVED.
+Independent audit verified the authenticated DeepSeek Product smoke, live STAC
+metadata, cached real Sentinel-2 pixel processing, TaskRun lifecycle, stage
+status, verifier, runtime profile, provenance, trace, artifacts, and secret
+safety. PostgreSQL migration/downgrade regression passed 25 tests and runtime/API
+persistence passed 38 tests. GeoChange/runtime regression passed 259 tests with
+35 environment-gated PostgreSQL skips. Tracked-file Ruff formatting and lint,
+Pyrefly (0 errors), lock consistency, and diff checks passed; the direct `.`
+format command only reported inaccessible untracked pytest temporary directories,
+while all 226 tracked Python files were formatted. Formatting-only edits were
+AST-equivalent to their baseline. No production behavior, contract, dependency,
+authentication, migration semantics, or scope expansion was introduced by the
+status synchronization. No commit or push.

@@ -457,8 +457,12 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
     overview[0].metric("Task status", _human_status(task.get("status")))
     overview[1].metric("Run status", _human_status(run.get("status")))
     overview[2].metric("Attempt", _display_value(run.get("run_number")))
-    overview[3].metric("Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0)))
-    st.caption(f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}")
+    overview[3].metric(
+        "Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0))
+    )
+    st.caption(
+        f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}"
+    )
     run_status = _run_status(run.get("status"))
     if run_status == "RUNNING":
         poll_key = _poll_attempt_key(str(run_id))
@@ -470,7 +474,9 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
             )
             time.sleep(_ACTIVE_POLL_INTERVAL_SECONDS)
             st.rerun()
-        st.warning("Automatic refresh stopped after a bounded number of checks. Use Refresh runs to continue.")
+        st.warning(
+            "Automatic refresh stopped after a bounded number of checks. Use Refresh runs to continue."
+        )
     else:
         st.session_state.pop(_poll_attempt_key(str(run_id)), None)
     if run_status == "SUCCEEDED":
@@ -495,7 +501,9 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
             if stages:
                 st.markdown("#### Pipeline stages")
                 stage_columns = st.columns(3)
-                for column, stage in zip(stage_columns, ("planner", "execution", "verifier"), strict=True):
+                for column, stage in zip(
+                    stage_columns, ("planner", "execution", "verifier"), strict=True
+                ):
                     column.metric(stage.title(), stages[stage])
             st.caption(f"Verification: {_human_status(result_metadata.get('verifier_status'))}")
             scene_labels = _scene_labels(result_metadata)
@@ -506,8 +514,21 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
             provenance = _provenance(result_metadata)
             if provenance:
                 st.markdown("#### Provenance")
-                st.caption(" · ".join(f"{key.replace('_', ' ').title()}: {value}" for key, value in provenance.items()))
-            labels = {"mean_ndvi_period_a": "Mean NDVI A", "mean_ndvi_period_b": "Mean NDVI B", "mean_delta_ndvi": "Mean delta", "significant_decline_area_m2": "Decline area (m²)", "decline_percentage": "Decline percentage", "valid_analysis_area_m2": "Valid area (m²)", "decline_threshold": "Decline threshold"}
+                st.caption(
+                    " · ".join(
+                        f"{key.replace('_', ' ').title()}: {value}"
+                        for key, value in provenance.items()
+                    )
+                )
+            labels = {
+                "mean_ndvi_period_a": "Mean NDVI A",
+                "mean_ndvi_period_b": "Mean NDVI B",
+                "mean_delta_ndvi": "Mean delta",
+                "significant_decline_area_m2": "Decline area (m²)",
+                "decline_percentage": "Decline percentage",
+                "valid_analysis_area_m2": "Valid area (m²)",
+                "decline_threshold": "Decline threshold",
+            }
             cards = st.columns(3)
             for index, (key, label) in enumerate(labels.items()):
                 if key in metrics:
@@ -516,9 +537,15 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
                 st.json(_safe_object(result_metadata))
             st.markdown("#### NDVI comparison")
             image_columns = st.columns(3)
-            for column, (name, label) in zip(image_columns, (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")), strict=True):
+            for column, (name, label) in zip(
+                image_columns,
+                (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")),
+                strict=True,
+            ):
                 try:
-                    column.image(client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}")
+                    column.image(
+                        client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}"
+                    )
                 except TaskPilotClientError:
                     column.info(f"NDVI {label} artifact unavailable.")
             if result_metadata.get("summary"):
@@ -675,7 +702,9 @@ def _render_trace(client: TaskPilotClient, task_id: str, run_id: str) -> None:
 
 
 def _render_trace_details(client: TaskPilotClient, task_id: str, run_id: str) -> None:
-    st.caption("Bounded execution evidence. Internal identifiers are shown here for debugging only.")
+    st.caption(
+        "Bounded execution evidence. Internal identifiers are shown here for debugging only."
+    )
     limit = st.selectbox("Trace bound", options=[100, 500], key="taskpilot_trace_limit")
     if st.button("Refresh trace", key="taskpilot_refresh_trace"):
         st.session_state.pop("taskpilot_trace", None)
@@ -817,14 +846,19 @@ def render_product() -> None:
     """Render Product view and keep all state session-local."""
 
     client = _client()
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     .block-container { max-width: 1180px; padding-top: 2rem; }
     [data-testid="stMetric"] { background: #f6f8fa; border: 1px solid #e5e7eb; padding: .7rem; border-radius: .5rem; }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
     st.title("TaskPilot · GeoChange Agent")
-    st.caption("Bounded vegetation-change analysis with traceable execution and deterministic verification")
+    st.caption(
+        "Bounded vegetation-change analysis with traceable execution and deterministic verification"
+    )
     if st.session_state.get("taskpilot_identity") is None:
         if st.session_state.get("taskpilot_org_ids"):
             _organization_login()

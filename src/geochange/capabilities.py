@@ -11,14 +11,19 @@ from .aoi import resolve_aoi
 
 class ResolveAOICapability:
     metadata = CapabilityMetadata(
-        name="resolve_aoi", description="Resolve the controlled Wuhan East Lake AOI.",
-        read_only=True, deterministic=True, side_effect_free=True,
+        name="resolve_aoi",
+        description="Resolve the controlled Wuhan East Lake AOI.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         place = context.task_input.description or context.task_input.title
         aoi = resolve_aoi(place)
-        return ExecutionResult(step_position=step.position, success=True, output=aoi.model_dump_json())
+        return ExecutionResult(
+            step_position=step.position, success=True, output=aoi.model_dump_json()
+        )
 
 
 class GeoChangeCapabilitySet:

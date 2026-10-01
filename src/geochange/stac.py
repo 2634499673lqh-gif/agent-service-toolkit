@@ -52,14 +52,20 @@ def _item_from_feature(feature: dict[str, Any], period: Period) -> Sentinel2Item
     )
 
 
-def select_sentinel2(features: list[dict[str, Any]], period: Period, cloud_threshold: float) -> Sentinel2Item:
+def select_sentinel2(
+    features: list[dict[str, Any]], period: Period, cloud_threshold: float
+) -> Sentinel2Item:
     candidates: list[Sentinel2Item] = []
     for feature in features:
         try:
             item = _item_from_feature(feature, period)
         except (TypeError, ValueError):
             continue
-        if item.collection == STAC_COLLECTION and period.start <= item.acquisition_date <= period.end and item.cloud_cover <= cloud_threshold:
+        if (
+            item.collection == STAC_COLLECTION
+            and period.start <= item.acquisition_date <= period.end
+            and item.cloud_cover <= cloud_threshold
+        ):
             candidates.append(item)
     if not candidates:
         raise ValueError("no Sentinel-2 item satisfies the cloud threshold")
@@ -102,4 +108,10 @@ def search_sentinel2(
     return select_sentinel2(features, period, cloud_threshold)
 
 
-__all__ = ["STAC_COLLECTION", "STAC_ENDPOINT", "Sentinel2Item", "search_sentinel2", "select_sentinel2"]
+__all__ = [
+    "STAC_COLLECTION",
+    "STAC_ENDPOINT",
+    "Sentinel2Item",
+    "search_sentinel2",
+    "select_sentinel2",
+]

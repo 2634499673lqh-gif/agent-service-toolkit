@@ -43,10 +43,17 @@ def main() -> None:
     prepared = {}
     for period, scene in manifest["scenes"].items():
         item = json.loads(read(scene["stac_item_url"]))
-        if (item["id"], item["collection"], item["properties"]["datetime"],
-            item["properties"]["eo:cloud_cover"]) != (
-                scene["item_id"], scene["collection"], scene["acquisition_datetime"],
-                scene["cloud_cover"]):
+        if (
+            item["id"],
+            item["collection"],
+            item["properties"]["datetime"],
+            item["properties"]["eo:cloud_cover"],
+        ) != (
+            scene["item_id"],
+            scene["collection"],
+            scene["acquisition_datetime"],
+            scene["cloud_cover"],
+        ):
             raise ValueError("STAC scene metadata changed")
         arrays = {}
         for band in ("red", "nir"):
@@ -57,22 +64,29 @@ def main() -> None:
             radiometry = source["raster:bands"][0]
             if any(radiometry[key] != asset[key] for key in ("scale", "offset", "nodata")):
                 raise ValueError("source radiometry changed")
-            with urllib.request.urlopen(urllib.request.Request(asset["href"], method="HEAD"),
-                                        timeout=30) as response:
-                if (response.headers["ETag"].strip('"'), int(response.headers["Content-Length"])) != (
-                        asset["etag"], asset["content_length"]):
+            with urllib.request.urlopen(
+                urllib.request.Request(asset["href"], method="HEAD"), timeout=30
+            ) as response:
+                if (
+                    response.headers["ETag"].strip('"'),
+                    int(response.headers["Content-Length"]),
+                ) != (asset["etag"], asset["content_length"]):
                     raise ValueError("source COG identity changed")
             header = read(asset["href"], 0, 16_384)
             with tifffile.TiffFile(io.BytesIO(header)) as tiff:
                 page = tiff.pages[0]
-                if (list(page.shape) != asset["source_shape"]
+                if (
+                    list(page.shape) != asset["source_shape"]
                     or list(page.tags["ModelTiepointTag"].value) != asset["source_tiepoint"]
-                    or page.tags["ModelPixelScaleTag"].value[0] != scene["resolution_m"]):
+                    or page.tags["ModelPixelScaleTag"].value[0] != scene["resolution_m"]
+                ):
                     raise ValueError("source raster geometry changed")
                 tile_width = page.tags["TileWidth"].value
                 tile_height = page.tags["TileLength"].value
                 col, row = asset["window_pixel_origin"]
-                tile_index = (row // tile_height) * ((page.shape[1] + tile_width - 1) // tile_width) + col // tile_width
+                tile_index = (row // tile_height) * (
+                    (page.shape[1] + tile_width - 1) // tile_width
+                ) + col // tile_width
                 if tile_index != asset["tile_index"]:
                     raise ValueError("source tile geometry changed")
                 count = page.databytecounts[tile_index]
@@ -83,8 +97,12 @@ def main() -> None:
                 if decoded is None:
                     raise ValueError("source tile is empty")
                 height, width = scene["dimensions"]
-                crop = decoded[0, row % tile_height:row % tile_height + height,
-                               col % tile_width:col % tile_width + width, 0]
+                crop = decoded[
+                    0,
+                    row % tile_height : row % tile_height + height,
+                    col % tile_width : col % tile_width + width,
+                    0,
+                ]
                 if list(crop.shape) != scene["dimensions"] or crop.dtype != np.uint16:
                     raise ValueError("source crop is invalid")
                 arrays[band] = crop

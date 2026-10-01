@@ -276,7 +276,9 @@ class TaskPilotClient:
             "GET", self._resource_path(task_id, f"/runs/{run_id}/artifacts/{artifact_name}")
         )
         if response.headers.get("content-type", "").split(";", 1)[0] != "image/png":
-            raise TaskPilotClientError("The service returned an invalid artifact.", kind="malformed_response")
+            raise TaskPilotClientError(
+                "The service returned an invalid artifact.", kind="malformed_response"
+            )
         return response.content
 
 

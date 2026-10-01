@@ -119,7 +119,9 @@ class ContextBuilder:
                 "runtime_task_id": runtime_task_id,
                 "runtime_task_run_id": runtime_task_run_id,
                 "runtime_replan_count": runtime_replan_count,
-                "geochange_task": None if geochange_task is None else geochange_task.model_dump(mode="json"),
+                "geochange_task": None
+                if geochange_task is None
+                else geochange_task.model_dump(mode="json"),
                 "geochange_aoi_evidence": dict(geochange_aoi_evidence or {}),
                 "geochange_evidence": dict(geochange_evidence or {}),
                 "sources": [source.model_dump(mode="json") for source in validated_sources],

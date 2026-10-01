@@ -235,7 +235,9 @@ async def get_task_artifact(
     try:
         path = artifact_path(str(task_id), str(run_id), artifact_name)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL) from None
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
+        ) from None
     if not path.is_file() or not 0 < path.stat().st_size <= 2_000_000:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
     try:
@@ -244,7 +246,9 @@ async def get_task_artifact(
                 raise ValueError("artifact is not PNG")
             image.verify()
     except (OSError, ValueError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL) from None
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
+        ) from None
     return FileResponse(path, media_type="image/png", filename=path.name)
 
 
