@@ -34,6 +34,7 @@ from persistence.models import (
     TaskStatus,
     ToolCall,
     User,
+    _validate_result_metadata,
     utc_now,
 )
 from persistence.repositories import (
@@ -75,6 +76,37 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
     assert Approval.__table__.schema == "taskpilot"
     assert AgentRun.__table__.schema == "taskpilot"
     assert ToolCall.__table__.schema == "taskpilot"
+
+
+def test_result_metadata_accepts_bounded_geochange_product_projection() -> None:
+    value = _validate_result_metadata(
+        {
+            "schema_version": "taskpilot.runtime.v1",
+            "summary": "verified result",
+            "metrics": {"decline_percentage": 12.5},
+            "analysis_area": "wuhan_east_lake",
+            "analysis_periods": {
+                "period_a": "2023-07-01/2023-07-31",
+                "period_b": "2024-07-01/2024-07-31",
+            },
+            "data_source": "cached_real_sentinel2_fixture",
+            "provenance_summary": "verified cached raster",
+            "provenance": {"aoi_key": "wuhan_east_lake"},
+            "verifier_status": "passed",
+            "selected_scene_evidence": {"period_a_item_id": "scene-a"},
+        }
+    )
+    assert value is not None
+    assert value["analysis_area"] == "wuhan_east_lake"
+    with pytest.raises(ValueError, match="analysis_periods is invalid"):
+        _validate_result_metadata(
+            {
+                "schema_version": "taskpilot.runtime.v1",
+                "summary": "invalid",
+                "metrics": {},
+                "analysis_periods": {"period_a": "2023"},
+            }
+        )
 
 
 def test_approval_metadata_declares_frozen_identity_and_integrity_contract() -> None:

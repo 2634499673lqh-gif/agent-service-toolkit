@@ -32,6 +32,35 @@ _STATUS_LABELS = {
     "PASSED": "Passed",
 }
 
+# The API keeps stable English enum values.  These labels are deliberately kept
+# in the UI layer so neither the runtime nor the persistence contract has to
+# know about presentation language.
+_STATUS_LABELS_ZH = {
+    "DRAFT": "草稿",
+    "PENDING": "等待执行",
+    "QUEUED": "排队中",
+    "RUNNING": "执行中",
+    "SUCCEEDED": "已完成",
+    "FAILED": "失败",
+    "CANCELLED": "已取消",
+    "NOT_STARTED": "未开始",
+    "NOT_RUN": "未运行",
+    "PASSED": "已通过",
+}
+
+_STAGE_LABELS_ZH = {"planner": "规划", "execution": "执行", "verifier": "验证"}
+
+_METRIC_LABELS_ZH = {
+    "mean_ndvi_period_a": "时段 A 平均 NDVI",
+    "mean_ndvi_period_b": "时段 B 平均 NDVI",
+    "mean_delta_ndvi": "NDVI 变化",
+    "significant_decline_area_m2": "显著下降面积（平方米）",
+    "decline_percentage": "植被下降比例",
+    "valid_analysis_area_m2": "有效分析面积（平方米）",
+    "valid_pixels": "有效像元数",
+    "decline_threshold": "下降判定阈值",
+}
+
 
 def _clear_product_state() -> None:
     """Clear every Product credential, snapshot, navigation id and form value."""
@@ -85,7 +114,7 @@ def _handle_error(error: TaskPilotClientError) -> None:
 
     if error.kind == "unauthorized":
         _clear_product_state()
-        st.error("Your session has expired. Please sign in again.")
+        st.error("登录会话已过期，请重新登录。 Your session has expired. Please sign in again.")
         return
     st.error(str(error))
 
@@ -95,15 +124,20 @@ def _password_input(scope: str) -> tuple[str, str]:
 
     attempt = int(st.session_state.get(f"{scope}_attempt", 0))
     key = f"{scope}_password_{attempt}"
-    return key, st.text_input("Password", type="password", key=key)
+    return key, st.text_input("密码", type="password", key=key)
 
 
 def _login() -> None:
     st.subheader("Sign in to TaskPilot")
+    st.caption("登录分析工作台，查看和执行你的遥感分析任务。")
     with st.form("taskpilot_login", clear_on_submit=True):
-        email = st.text_input("Email", key="taskpilot_email")
+        email = st.text_input("邮箱", key="taskpilot_email")
         _, password = _password_input("taskpilot_login")
-        submitted = st.form_submit_button("Sign in")
+        submitted = st.form_submit_button(
+            "登录",
+            key="FormSubmitter:taskpilot_login-Sign in",
+            help="使用 TaskPilot 账号登录",
+        )
     if not submitted:
         return
     st.session_state.taskpilot_login_attempt = (
@@ -117,7 +151,7 @@ def _login() -> None:
         else:
             st.session_state.taskpilot_identity = _client().session()
             st.session_state.pop("taskpilot_org_ids", None)
-            st.success("Signed in.")
+            st.success("登录成功。")
             st.rerun()
     except TaskPilotClientError as error:
         _handle_error(error)
@@ -125,17 +159,21 @@ def _login() -> None:
 
 def _organization_login() -> None:
     ids: list[UUID] = st.session_state.get("taskpilot_org_ids", [])
-    st.subheader("Choose an organization")
+    st.subheader("选择工作空间")
+    st.caption("你的账号属于多个组织，请选择本次分析使用的工作空间。")
     choice = st.selectbox(
-        "Organization", options=ids, index=None, format_func=str, key="taskpilot_org_choice"
+        "工作空间", options=ids, index=None, format_func=str, key="taskpilot_org_choice"
     )
     with st.form("taskpilot_org_login", clear_on_submit=True):
-        st.text_input("Email", key="taskpilot_email_selection")
+        st.text_input("邮箱", key="taskpilot_email_selection")
         _, password = _password_input("taskpilot_org_login")
-        submitted = st.form_submit_button("Sign in to selected organization")
+        submitted = st.form_submit_button(
+            "登录所选工作空间",
+            key="FormSubmitter:taskpilot_org_login-Sign in to selected organization",
+        )
     if submitted:
         if choice is None:
-            st.error("Select an organization before signing in.")
+            st.error("请先选择工作空间。")
             return
         st.session_state.taskpilot_org_login_attempt = (
             int(st.session_state.get("taskpilot_org_login_attempt", 0)) + 1
@@ -145,7 +183,7 @@ def _organization_login() -> None:
                 st.session_state.get("taskpilot_email_selection", ""), password, choice
             )
             if result.requires_organization:
-                st.error("Organization selection was not accepted.")
+                st.error("工作空间选择未被接受，请重试。")
             else:
                 st.session_state.taskpilot_identity = _client().session()
                 st.session_state.pop("taskpilot_org_ids", None)
@@ -168,6 +206,13 @@ def _human_status(value: object) -> str:
     return _STATUS_LABELS.get(normalized, normalized.replace("_", " ").title())
 
 
+def _human_status_zh(value: object) -> str:
+    """Return a user-facing Chinese status while preserving API enum values."""
+
+    normalized = _run_status(value)
+    return _STATUS_LABELS_ZH.get(normalized, normalized.replace("_", " "))
+
+
 def _stage_status(stage_status: object) -> dict[str, str]:
     if not isinstance(stage_status, dict):
         return {}
@@ -175,6 +220,98 @@ def _stage_status(stage_status: object) -> dict[str, str]:
         stage: _human_status(stage_status.get(stage, "not_started"))
         for stage in ("planner", "execution", "verifier")
     }
+
+
+def _stage_status_zh(stage_status: object) -> dict[str, str]:
+    if not isinstance(stage_status, dict):
+        return {}
+    return {
+        stage: _human_status_zh(stage_status.get(stage, "not_started"))
+        for stage in ("planner", "execution", "verifier")
+    }
+
+
+def _period_label(period: object) -> str:
+    """Format a persisted period/evidence object without assuming one schema."""
+
+    if isinstance(period, dict):
+        start = period.get("start") or period.get("date")
+        end = period.get("end")
+        if start and end and str(start) != str(end):
+            return f"{start} 至 {end}"
+        if start:
+            return str(start)
+    if isinstance(period, str) and "/" in period:
+        start, end = period.split("/", 1)
+        return f"{start} 至 {end}"
+    return _display_value(period, "未记录")
+
+
+def _analysis_periods(metadata: dict[str, Any]) -> tuple[str, str]:
+    """Project persisted Period A/B fields, with scene dates as a safe fallback."""
+
+    evidence = metadata.get("selected_scene_evidence")
+    evidence = evidence if isinstance(evidence, dict) else {}
+    periods = metadata.get("analysis_periods")
+    periods = periods if isinstance(periods, dict) else {}
+    period_a = None
+    period_b = None
+    if periods:
+        period_a = periods.get("period_a")
+        period_b = periods.get("period_b")
+    if period_a is None:
+        period_a = evidence.get("period_a_date")
+    if period_b is None:
+        period_b = evidence.get("period_b_date")
+    return _period_label(period_a), _period_label(period_b)
+
+
+def _analysis_area(metadata: dict[str, Any]) -> str:
+    """Return the AOI identifier explicitly persisted in result metadata."""
+
+    value = metadata.get("analysis_area")
+    if isinstance(value, str) and value:
+        return value.replace("_", " ")
+    provenance = metadata.get("provenance")
+    if isinstance(provenance, dict):
+        value = provenance.get("aoi_key")
+        if isinstance(value, str) and value:
+            return value.replace("_", " ")
+    return "未记录"
+
+
+def _format_metric(key: str, value: object) -> str:
+    """Format common GeoChange metrics for a compact, readable summary."""
+
+    if value is None:
+        return "未记录"
+    if not isinstance(value, (int, float, str)):
+        return str(value)
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if key == "decline_percentage":
+        return f"{number:.1f}%"
+    if key in {"mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi", "decline_threshold"}:
+        return f"{number:.3f}"
+    if key.endswith("_m2"):
+        return f"{number:,.0f}"
+    if key == "valid_pixels":
+        return f"{number:,.0f}"
+    return f"{number:g}"
+
+
+def _provenance_label_zh(execution_mode: object) -> str:
+    mode = str(execution_mode or "unknown")
+    labels = {
+        "CACHED_REAL_SENTINEL2_RASTER": "真实 Sentinel-2 栅格（本地缓存计算）",
+        "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE": "实时 STAC 元数据 + 本地栅格计算",
+        "REAL_STAC_LOCAL_FIXTURE": "本地场景与栅格样例",
+        "CACHED_REAL_METADATA": "缓存的 Sentinel-2 场景数据",
+        "deterministic_fixture": "确定性本地样例",
+    }
+    return labels.get(mode, "数据来源未记录")
 
 
 def _runtime_profile(metadata: dict[str, Any]) -> dict[str, str]:
@@ -360,10 +497,10 @@ def _reconcile_approval_reads(
 def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]) -> None:
     """Render server-ordered runs and the selected run's evidence views."""
 
-    st.subheader("Runs")
+    st.subheader("执行记录")
     status = _run_status(task.get("status"))
     can_start = status in {"DRAFT", "FAILED"}
-    action_label = "Retry with new run" if status == "FAILED" else "Start run"
+    action_label = "重新执行" if status == "FAILED" else "开始分析"
     mutation_in_flight = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     if can_start:
         if st.button(action_label, key="taskpilot_start_run", disabled=mutation_in_flight):
@@ -396,8 +533,11 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
                 return
             finally:
                 st.session_state.taskpilot_mutation_in_flight = False
-    st.caption("Runs execute in the TaskPilot runtime. Refresh to reconcile the persisted state.")
-    if st.button("Refresh runs", key="taskpilot_refresh_runs"):
+    st.caption(
+        "执行记录由 TaskPilot 运行时产生；刷新后可查看最新的持久化状态。 "
+        "Runs execute in the TaskPilot runtime."
+    )
+    if st.button("刷新执行记录", key="taskpilot_refresh_runs"):
         st.rerun()
 
     try:
@@ -412,14 +552,14 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         _handle_error(error)
         return
     if not runs:
-        st.info("No runs yet. Start a run deliberately when the task is ready.")
+        st.info("暂时没有执行记录。确认分析范围后，点击“开始分析”。")
         return
 
     labels: dict[str, str] = {}
     for run in runs:
         run_id = str(run.get("id", ""))
         labels[run_id] = (
-            f"Run {run.get('run_number', '?')} · {_run_status(run.get('status'))} · "
+            f"Run {run.get('run_number', '?')} · 执行记录 · {_human_status_zh(run.get('status'))} · "
             f"{_display_value(run.get('created_at'))}"
         )
     selected = st.session_state.get("taskpilot_selected_run_id")
@@ -429,7 +569,7 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         selected = None
     index = list(labels).index(str(selected)) if selected is not None else None
     run_id = st.selectbox(
-        "Task run",
+        "执行记录",
         options=list(labels),
         index=index,
         format_func=lambda value: labels[value],
@@ -452,16 +592,16 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         _handle_error(error)
         return
 
-    st.markdown("### Execution status")
+    st.markdown("### 执行状态")
     overview = st.columns(4)
-    overview[0].metric("Task status", _human_status(task.get("status")))
-    overview[1].metric("Run status", _human_status(run.get("status")))
-    overview[2].metric("Attempt", _display_value(run.get("run_number")))
+    overview[0].metric("任务状态", _human_status_zh(task.get("status")))
+    overview[1].metric("执行状态", _human_status_zh(run.get("status")))
+    overview[2].metric("执行次数", _display_value(run.get("run_number")))
     overview[3].metric(
-        "Replans", _display_value((run.get("result_metadata") or {}).get("replan_count", 0))
+        "重新规划次数", _display_value((run.get("result_metadata") or {}).get("replan_count", 0))
     )
     st.caption(
-        f"Created {_display_value(run.get('created_at'))} · Updated {_display_value(run.get('updated_at'))}"
+        f"创建于 {_display_value(run.get('created_at'))} · 更新于 {_display_value(run.get('updated_at'))}"
     )
     run_status = _run_status(run.get("status"))
     if run_status == "RUNNING":
@@ -470,76 +610,108 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
         if attempts < _ACTIVE_POLL_MAX_ATTEMPTS:
             st.session_state[poll_key] = attempts + 1
             st.info(
-                f"Runtime is in progress. Checking for an update ({attempts + 1}/{_ACTIVE_POLL_MAX_ATTEMPTS})."
+                f"分析正在执行，正在检查最新状态（{attempts + 1}/{_ACTIVE_POLL_MAX_ATTEMPTS}）。"
             )
             time.sleep(_ACTIVE_POLL_INTERVAL_SECONDS)
             st.rerun()
-        st.warning(
-            "Automatic refresh stopped after a bounded number of checks. Use Refresh runs to continue."
-        )
+        st.warning("已完成本轮自动检查。点击“刷新执行记录”继续查看。")
     else:
         st.session_state.pop(_poll_attempt_key(str(run_id)), None)
     if run_status == "SUCCEEDED":
-        st.success("Run completed.")
+        st.success("分析已完成。")
     elif run_status == "FAILED":
-        st.error("Run failed. See the trace for bounded failure evidence.")
+        st.error("分析失败。可展开下方技术追踪查看受限的失败证据。")
     result_metadata = run.get("result_metadata")
     if isinstance(result_metadata, dict):
-        st.markdown("### Analysis result")
+        st.markdown("### 分析结果")
         if result_metadata.get("analysis_type") == "vegetation_change":
             metrics = result_metadata.get("metrics", {})
+            metrics = metrics if isinstance(metrics, dict) else {}
             mode = str(result_metadata.get("execution_mode") or "unknown")
-            provenance_label = _provenance_label(mode)
-            st.info(f"Data source: {provenance_label}")
+            data_source = result_metadata.get("data_source")
+            source_label = (
+                str(data_source)
+                if isinstance(data_source, str) and data_source
+                else _provenance_label_zh(mode)
+            )
+            st.info(f"数据来源：{source_label}")
+
+            # Start with the answer a non-technical user needs: where, when,
+            # and whether vegetation changed.  The persisted metadata remains
+            # the only source of truth; this is a display projection only.
+            period_a, period_b = _analysis_periods(result_metadata)
+            context_columns = st.columns(4)
+            context_columns[0].metric("分析区域", _analysis_area(result_metadata))
+            context_columns[1].metric("时段 A", period_a)
+            context_columns[2].metric("时段 B", period_b)
+            verifier = _human_status_zh(result_metadata.get("verifier_status"))
+            context_columns[3].metric("证据验证", verifier)
+
+            decline = metrics.get("decline_percentage")
+            delta = metrics.get("mean_delta_ndvi")
+            if decline is not None or delta is not None:
+                decline_text = _format_metric("decline_percentage", decline)
+                delta_text = _format_metric("mean_delta_ndvi", delta)
+                st.markdown("#### 结果解读")
+                st.write(
+                    f"本次分析覆盖 **{_analysis_area(result_metadata)}**，"
+                    f"比较 **{period_a}** 与 **{period_b}**。"
+                    f"平均 NDVI 变化为 **{delta_text}**，"
+                    f"显著下降比例为 **{decline_text}**。"
+                )
+                if isinstance(decline, (int, float)):
+                    st.progress(
+                        min(max(float(decline) / 100, 0.0), 1.0),
+                        text=f"植被下降比例：{decline_text}",
+                    )
+
             profile = _runtime_profile(result_metadata)
-            profile_columns = st.columns(4)
-            profile_columns[0].metric("Execution mode", profile["execution_mode"])
-            profile_columns[1].metric("Provider", profile["provider"])
-            profile_columns[2].metric("Model", profile["model"])
-            profile_columns[3].metric("Live provider", profile["live"])
-            stages = _stage_status(result_metadata.get("stage_status"))
+            with st.expander("运行信息", expanded=False):
+                profile_columns = st.columns(4)
+                profile_columns[0].metric("执行模式", profile["execution_mode"])
+                profile_columns[1].metric("模型提供方", profile["provider"])
+                profile_columns[2].metric("模型", profile["model"])
+                profile_columns[3].metric("实时提供方", profile["live"])
+            stages = _stage_status_zh(result_metadata.get("stage_status"))
             if stages:
-                st.markdown("#### Pipeline stages")
+                st.markdown("#### 分析流程")
                 stage_columns = st.columns(3)
                 for column, stage in zip(
                     stage_columns, ("planner", "execution", "verifier"), strict=True
                 ):
-                    column.metric(stage.title(), stages[stage])
-            st.caption(f"Verification: {_human_status(result_metadata.get('verifier_status'))}")
+                    column.metric(_STAGE_LABELS_ZH[stage], stages[stage])
             scene_labels = _scene_labels(result_metadata)
             if scene_labels:
-                st.markdown("#### Selected scenes")
+                st.markdown("#### 场景证据")
                 for scene in scene_labels:
-                    st.write(f"- {scene}")
+                    st.write(
+                        f"- {scene.replace('period_a', '时段 A').replace('period_b', '时段 B')}"
+                    )
             provenance = _provenance(result_metadata)
+            provenance_summary = result_metadata.get("provenance_summary")
+            if provenance or provenance_summary:
+                st.markdown("#### 数据与计算说明")
+                if isinstance(provenance_summary, str) and provenance_summary:
+                    st.write(_safe_text(provenance_summary))
             if provenance:
-                st.markdown("#### Provenance")
                 st.caption(
                     " · ".join(
                         f"{key.replace('_', ' ').title()}: {value}"
                         for key, value in provenance.items()
                     )
                 )
-            labels = {
-                "mean_ndvi_period_a": "Mean NDVI A",
-                "mean_ndvi_period_b": "Mean NDVI B",
-                "mean_delta_ndvi": "Mean delta",
-                "significant_decline_area_m2": "Decline area (m²)",
-                "decline_percentage": "Decline percentage",
-                "valid_analysis_area_m2": "Valid area (m²)",
-                "decline_threshold": "Decline threshold",
-            }
+            labels = _METRIC_LABELS_ZH
             cards = st.columns(3)
             for index, (key, label) in enumerate(labels.items()):
                 if key in metrics:
-                    cards[index % 3].metric(label, metrics[key])
-            with st.expander("Developer details", expanded=False):
+                    cards[index % 3].metric(label, _format_metric(key, metrics[key]))
+            with st.expander("技术证据（开发者视图）", expanded=False):
                 st.json(_safe_object(result_metadata))
-            st.markdown("#### NDVI comparison")
+            st.markdown("#### NDVI 前后对比")
             image_columns = st.columns(3)
             for column, (name, label) in zip(
                 image_columns,
-                (("ndvi_before", "Before"), ("ndvi_after", "After"), ("ndvi_change", "Change")),
+                (("ndvi_before", "分析前"), ("ndvi_after", "分析后"), ("ndvi_change", "变化结果")),
                 strict=True,
             ):
                 try:
@@ -547,18 +719,18 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
                         client.get_artifact(task_id, run_id, name), caption=f"NDVI {label}"
                     )
                 except TaskPilotClientError:
-                    column.info(f"NDVI {label} artifact unavailable.")
+                    column.info(f"NDVI {label} 图像暂不可用。")
             if result_metadata.get("summary"):
-                st.markdown("#### AI analysis")
+                st.markdown("#### 分析说明")
                 st.write(_safe_text(result_metadata.get("summary")))
         else:
             st.json(_safe_object(result_metadata))
     elif run_status in {"PENDING", "QUEUED"}:
-        st.info("No run result yet. Refresh to inspect persisted evidence.")
+        st.info("暂时还没有分析结果。刷新执行记录后可查看已保存的证据。")
     elif run_status == "FAILED":
-        st.error("The run failed. Persisted trace evidence may explain the bounded failure.")
+        st.error("执行记录显示分析失败；技术追踪可能包含受限的失败证据。")
     else:
-        st.info("No GeoChange result metadata is available for this historical run.")
+        st.info("这条历史执行记录没有可展示的 GeoChange 分析结果。")
     _render_approvals(client, task_id, run_id)
     _render_trace(client, task_id, run_id)
 
@@ -586,44 +758,46 @@ def _render_approval_detail(
         _handle_error(error)
         return
 
-    st.markdown("#### Approval details")
-    st.write(f"Action: {_display_value(approval.get('action_name'))}")
-    st.write(f"Action version: {_display_value(approval.get('action_version'))}")
-    st.write(f"Risk: {_display_value(approval.get('risk_level'))}")
-    st.write(f"Status: {str(approval.get('status', 'unknown')).upper()}")
-    st.write(f"Requester membership: {_display_value(approval.get('requester_membership_id'))}")
-    st.write(f"Decider membership: {_display_value(approval.get('decider_membership_id'))}")
-    st.write(f"Created: {_display_value(approval.get('created_at'))}")
-    st.write(f"Updated: {_display_value(approval.get('updated_at'))}")
-    st.write(f"Decided at: {_display_value(approval.get('decided_at'))}")
-    st.write(f"Decision reason: {_safe_text(approval.get('decision_reason'))}")
-    st.write(f"Replan count: {_display_value(approval.get('replan_count'))}")
-    st.write(f"Step position: {_display_value(approval.get('step_position'))}")
-    st.write("Proposed action (immutable):")
+    st.markdown("#### 审批详情")
+    st.write(f"动作：{_display_value(approval.get('action_name'))}")
+    st.write(f"动作版本：{_display_value(approval.get('action_version'))}")
+    st.write(f"风险等级：{_display_value(approval.get('risk_level'))}")
+    st.write(f"状态：{_human_status_zh(approval.get('status'))}")
+    st.write(f"申请成员：{_display_value(approval.get('requester_membership_id'))}")
+    st.write(f"决策成员：{_display_value(approval.get('decider_membership_id'))}")
+    st.write(f"创建于：{_display_value(approval.get('created_at'))}")
+    st.write(f"更新于：{_display_value(approval.get('updated_at'))}")
+    st.write(f"决策时间：{_display_value(approval.get('decided_at'))}")
+    st.write(f"决策理由：{_safe_text(approval.get('decision_reason'))}")
+    st.write(f"重新规划次数：{_display_value(approval.get('replan_count'))}")
+    st.write(f"步骤位置：{_display_value(approval.get('step_position'))}")
+    st.write("拟执行动作（不可变）：")
     proposed = approval.get("proposed_action")
     if isinstance(proposed, dict):
         st.json(_safe_object(proposed))
     else:
-        st.write("Unavailable / not observed")
+        st.write("未记录")
 
     role = str(st.session_state.get("taskpilot_identity", {}).get("role", "")).lower()
     pending = str(approval.get("status", "")).lower() == "pending"
     if role not in {"owner", "admin"}:
-        st.info("Members can inspect approvals but cannot decide them.")
+        st.info(
+            "成员可以查看审批，但没有决策权限。Members can inspect approvals but cannot decide them."
+        )
         return
     if not pending:
-        st.info("This approval is already decided.")
+        st.info("此审批已经完成决策。")
         return
 
     reason = st.text_area(
-        "Decision reason (optional, max 500 characters)",
+        "决策理由（可选，最多 500 个字符）",
         key=f"taskpilot_approval_reason_{approval_id}",
         max_chars=500,
     )
     disabled = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     approve, reject = st.columns(2)
-    approve_clicked = approve.button("Approve", key="taskpilot_approve", disabled=disabled)
-    reject_clicked = reject.button("Reject", key="taskpilot_reject", disabled=disabled)
+    approve_clicked = approve.button("同意", key="taskpilot_approve", disabled=disabled)
+    reject_clicked = reject.button("拒绝", key="taskpilot_reject", disabled=disabled)
     if not (approve_clicked or reject_clicked):
         return
 
@@ -637,7 +811,10 @@ def _render_approval_detail(
             st.warning("This approval was decided elsewhere. Current state was refreshed.")
         else:
             client.decide_approval(task_id, run_id, approval_id, decision, reason or None)
-            st.success("Approval decision recorded; it does not execute or resume this run.")
+            st.success(
+                "审批决定已记录；它不会直接执行或恢复这条执行记录。 "
+                "Approval decision recorded; it does not execute or resume this run."
+            )
         st.session_state.taskpilot_task = client.get_task(task_id)
         st.session_state.taskpilot_approvals = client.list_approvals(task_id, run_id)
         st.session_state.taskpilot_approval = client.get_approval(task_id, run_id, approval_id)
@@ -660,8 +837,8 @@ def _render_approval_detail(
 
 
 def _render_approvals(client: TaskPilotClient, task_id: str, run_id: str) -> None:
-    st.subheader("Approvals for selected run")
-    if st.button("Refresh approvals", key="taskpilot_refresh_approvals"):
+    st.subheader("本次执行的审批")
+    if st.button("刷新审批", key="taskpilot_refresh_approvals"):
         st.rerun()
     try:
         with st.spinner("Loading approvals..."):
@@ -675,7 +852,7 @@ def _render_approvals(client: TaskPilotClient, task_id: str, run_id: str) -> Non
         _handle_error(error)
         return
     if not approvals:
-        st.info("No approvals for this run.")
+        st.info("本次执行不需要审批。")
         return
     labels = {str(item.get("id")): _approval_label(item) for item in approvals}
     selected = st.session_state.get("taskpilot_selected_approval_id")
@@ -685,7 +862,7 @@ def _render_approvals(client: TaskPilotClient, task_id: str, run_id: str) -> Non
         selected = None
     index = list(labels).index(str(selected)) if selected is not None else None
     approval_id = st.selectbox(
-        "Approval",
+        "审批记录",
         options=list(labels),
         index=index,
         format_func=lambda value: labels[value],
@@ -697,16 +874,14 @@ def _render_approvals(client: TaskPilotClient, task_id: str, run_id: str) -> Non
 
 
 def _render_trace(client: TaskPilotClient, task_id: str, run_id: str) -> None:
-    with st.expander("Technical trace (developer)", expanded=False):
+    with st.expander("技术追踪（开发者视图）", expanded=False):
         _render_trace_details(client, task_id, run_id)
 
 
 def _render_trace_details(client: TaskPilotClient, task_id: str, run_id: str) -> None:
-    st.caption(
-        "Bounded execution evidence. Internal identifiers are shown here for debugging only."
-    )
-    limit = st.selectbox("Trace bound", options=[100, 500], key="taskpilot_trace_limit")
-    if st.button("Refresh trace", key="taskpilot_refresh_trace"):
+    st.caption("这里展示受限的执行证据；内部标识仅用于调试。")
+    limit = st.selectbox("追踪记录上限", options=[100, 500], key="taskpilot_trace_limit")
+    if st.button("刷新技术追踪", key="taskpilot_refresh_trace"):
         st.session_state.pop("taskpilot_trace", None)
     try:
         with st.spinner("Loading trace..."):
@@ -764,13 +939,50 @@ def _render_trace_details(client: TaskPilotClient, task_id: str, run_id: str) ->
                 st.rerun()
 
 
+def _render_dashboard_summary(tasks: list[dict[str, Any]]) -> None:
+    """Render the lightweight landing dashboard from the already-fetched tasks."""
+
+    counts = {
+        "total": len(tasks),
+        "active": sum(
+            _run_status(task.get("status")) in {"PENDING", "QUEUED", "RUNNING"} for task in tasks
+        ),
+        "completed": sum(_run_status(task.get("status")) == "SUCCEEDED" for task in tasks),
+        "draft": sum(_run_status(task.get("status")) == "DRAFT" for task in tasks),
+    }
+    dashboard = st.columns(4)
+    dashboard[0].metric("分析任务", counts["total"])
+    dashboard[1].metric("进行中", counts["active"])
+    dashboard[2].metric("已完成", counts["completed"])
+    dashboard[3].metric("待开始", counts["draft"])
+    if not tasks:
+        st.info(
+            "欢迎来到 AI 遥感分析工作台。创建第一个分析任务，系统会为你比较不同时段的植被变化。"
+            "（No tasks yet.）"
+        )
+    else:
+        st.caption("选择一个分析任务以查看执行状态、遥感结果和可追溯证据。")
+
+
 def _render_tasks(client: TaskPilotClient) -> None:
-    st.header("Your analysis tasks")
+    st.header("AI 遥感分析工作台")
+    st.caption("从分析区域和时间范围出发，查看可解释的 GeoChange 植被变化结果。")
     mutation_in_flight = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     with st.form("taskpilot_create"):
-        title = st.text_input("Title", key="taskpilot_new_title")
-        description = st.text_area("Description (optional)", key="taskpilot_new_description")
-        submitted = st.form_submit_button("Create task", disabled=mutation_in_flight)
+        st.markdown("#### 新建分析任务")
+        title = st.text_input(
+            "任务名称", key="taskpilot_new_title", placeholder="例如：东湖植被变化分析"
+        )
+        description = st.text_area(
+            "分析需求（可选）",
+            key="taskpilot_new_description",
+            placeholder="例如：比较 2023 年和 2024 年 7 月的 NDVI 变化。",
+        )
+        submitted = st.form_submit_button(
+            "创建分析任务",
+            key="FormSubmitter:taskpilot_create-Create task",
+            disabled=mutation_in_flight,
+        )
     if submitted:
         st.session_state.taskpilot_mutation_in_flight = True
         try:
@@ -792,16 +1004,16 @@ def _render_tasks(client: TaskPilotClient) -> None:
         finally:
             if "taskpilot_client" in st.session_state:
                 st.session_state.taskpilot_mutation_in_flight = False
-    st.button("Refresh tasks", key="taskpilot_refresh")
+    st.button("刷新分析任务", key="taskpilot_refresh")
     try:
-        with st.spinner("Loading tasks..."):
+        with st.spinner("正在加载分析任务…"):
             tasks = client.list_tasks()
         st.session_state.taskpilot_tasks = tasks
     except TaskPilotClientError as error:
         _handle_error(error)
         return
+    _render_dashboard_summary(tasks)
     if not tasks:
-        st.info("No tasks yet.")
         return
     labels = {str(task.get("id")): _task_value(task, "title", "Untitled task") for task in tasks}
     selected = st.session_state.get("taskpilot_selected_task_id")
@@ -811,12 +1023,12 @@ def _render_tasks(client: TaskPilotClient) -> None:
         selected = None
     index = list(labels).index(str(selected)) if selected is not None else None
     task_id = st.selectbox(
-        "Task",
+        "分析任务",
         options=list(labels),
         index=index,
         format_func=lambda value: labels[value],
         key="taskpilot_selected_task_id",
-        placeholder="Select a task",
+        placeholder="选择一个分析任务",
         on_change=clear_task_descendants,
     )
     if task_id is None:
@@ -830,14 +1042,17 @@ def _render_tasks(client: TaskPilotClient) -> None:
         if error.status_code == 404:
             clear_task_descendants()
             st.session_state.pop("taskpilot_selected_task_id", None)
-            st.info("That task is no longer available.")
+            st.info("该分析任务已不可用。")
         _handle_error(error)
         return
     st.subheader(_task_value(detail, "title", "Untitled task"))
-    st.markdown("#### Request")
-    st.write(_task_value(detail, "description", "No request description provided."))
+    st.markdown("#### 分析需求")
+    st.write(_task_value(detail, "description", "未提供分析需求。"))
     st.caption(
-        f"Task status: {_human_status(detail.get('status'))} · Created: {_task_value(detail, 'created_at')} · Updated: {_task_value(detail, 'updated_at')}"
+        f"任务状态：{_human_status_zh(detail.get('status'))} · "
+        f"Task status: {_human_status(detail.get('status'))} · "
+        f"创建于：{_task_value(detail, 'created_at')} · 更新于：{_task_value(detail, 'updated_at')} · "
+        f"Updated: {_task_value(detail, 'updated_at')}"
     )
     _render_run_view(client, str(task_id), detail)
 
@@ -855,10 +1070,8 @@ def render_product() -> None:
     """,
         unsafe_allow_html=True,
     )
-    st.title("TaskPilot · GeoChange Agent")
-    st.caption(
-        "Bounded vegetation-change analysis with traceable execution and deterministic verification"
-    )
+    st.title("TaskPilot · AI 遥感分析工作台")
+    st.caption("面向非技术用户的植被变化分析：结果、图像和证据一目了然。")
     if st.session_state.get("taskpilot_identity") is None:
         if st.session_state.get("taskpilot_org_ids"):
             _organization_login()
@@ -867,12 +1080,17 @@ def render_product() -> None:
         return
     with st.sidebar:
         identity = st.session_state.get("taskpilot_identity", {})
-        st.write(f"Organization: {identity.get('organization_id', '')}")
-        if st.button("Log out", key="taskpilot_logout"):
+        st.markdown("### 工作台导航")
+        st.write(f"当前工作空间：{identity.get('organization_id', '')}")
+        st.caption("分析任务 → 执行记录 → 分析结果 → 技术证据")
+        if st.button("退出登录", key="taskpilot_logout"):
             try:
                 client.logout()
             except TaskPilotClientError:
-                st.warning("Local session cleared; server sign-out could not be confirmed.")
+                st.warning(
+                    "本地会话已清除，但服务器退出状态暂时无法确认。"
+                    " Local session cleared; server sign-out could not be confirmed."
+                )
             finally:
                 _clear_product_state()
             st.rerun()
@@ -884,7 +1102,7 @@ def render_product() -> None:
             previous.get("organization_id"),
         ):
             _clear_product_state()
-            st.info("Account or organization changed. Please sign in again.")
+            st.info("账号或工作空间已变化，请重新登录。 Account or organization changed.")
             return
         st.session_state.taskpilot_identity = identity
         _render_tasks(client)

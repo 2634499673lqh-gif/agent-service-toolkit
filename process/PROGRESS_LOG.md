@@ -5627,3 +5627,44 @@ while all 226 tracked Python files were formatted. Formatting-only edits were
 AST-equivalent to their baseline. No production behavior, contract, dependency,
 authentication, migration semantics, or scope expansion was introduced by the
 status synchronization. No commit or push.
+
+### 2026-10-01 — Phase 14 Implementation 1: Product UI & Visualization Upgrade
+
+Upgraded the Streamlit Product workspace presentation without changing Agent
+Runtime, Planner, Executor, Verifier, evidence persistence, or database schema.
+`src/taskpilot_ui.py` now presents a Chinese AI remote-sensing dashboard with
+task counts, a guided task-creation form, localized task/run/status labels, and
+an answer-first GeoChange result view covering analysis area, comparison
+periods, NDVI statistics, decline interpretation, before/after/change images,
+scene evidence, provenance, and the retained technical trace/approval views.
+`src/streamlit_app.py` localizes the workspace selector while retaining the
+legacy chat route. Added focused projection tests for localized statuses,
+periods, areas, metrics, and provenance. No runtime or persistence behavior
+changed.
+
+Validation: Product Streamlit/AppTest and legacy app regression passed 45 tests;
+Ruff check and formatting passed for changed Python files. Application startup
+and authenticated task/run flows remain covered by the existing AppTest HTTP
+boundary. Remaining limitation: the UI renders the persisted AOI/period fields
+when present; older historical runs without those fields show “未记录”.
+
+Learner notes: the key concept is keeping the API's stable English enum and
+evidence contracts separate from localized UI projections. Read
+`src/taskpilot_ui.py`, `src/streamlit_app.py`, and `tests/app/test_taskpilot_ui.py`.
+Exercise: run one cached Sentinel-2 GeoChange task and explain the relationship
+between the three NDVI images, the metric cards, and the selected-scene evidence.
+Suggested next task: perform an independent Phase 14 UI review with a real
+authenticated Product smoke and visual screenshot check.
+
+### 2026-10-01 — Phase 14 Implementation 1 contract-alignment fix
+
+Strong Review identified that the first UI pass projected AOI and period values
+that were not part of the persisted result contract. The existing
+`GeoChangeResult` projection now carries bounded `analysis_area`, compact
+`analysis_periods`, `data_source`, `provenance_summary`, and `provenance`
+fields. The runtime terminal projection preserves these fields in the existing
+`result_metadata` JSON object, and its existing validator allowlist validates
+their size and shape without a migration or new table. Streamlit now reads
+only these persisted fields, with selected-scene dates as the existing safe
+fallback for older results. UI and GeoChange tests use realistic response
+shapes and cover both legacy metadata and enriched GeoChange results.

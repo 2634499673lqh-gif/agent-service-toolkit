@@ -14,7 +14,9 @@ def _response(method: str, url: str, data: object, status: int = 200) -> httpx.R
     return httpx.Response(status, json=data, request=httpx.Request(method, url))
 
 
-def _fixture(role: str = "member", task_status: str = "queued") -> dict[str, object]:
+def _fixture(
+    role: str = "member", task_status: str = "queued", include_result: bool = False
+) -> dict[str, object]:
     task_id, first_run, second_run, approval_id = map(str, (uuid4(), uuid4(), uuid4(), uuid4()))
     task = {
         "id": task_id,
@@ -42,6 +44,38 @@ def _fixture(role: str = "member", task_status: str = "queued") -> dict[str, obj
             "updated_at": "2026-09-26T10:03:00Z",
         },
     ]
+    if include_result:
+        runs[0]["result_metadata"] = {
+            "schema_version": "taskpilot.runtime.v1",
+            "analysis_type": "vegetation_change",
+            "analysis_area": "wuhan_east_lake",
+            "analysis_periods": {
+                "period_a": "2023-07-01/2023-07-31",
+                "period_b": "2024-07-01/2024-07-31",
+            },
+            "data_source": "cached_real_sentinel2_fixture",
+            "provenance_summary": "Verified AOI and cached Sentinel-2 fixture.",
+            "provenance": {
+                "aoi_key": "wuhan_east_lake",
+                "raster_source": "cached_real_sentinel2_fixture",
+            },
+            "metrics": {
+                "mean_ndvi_period_a": 0.6,
+                "mean_ndvi_period_b": 0.4,
+                "mean_delta_ndvi": -0.2,
+                "decline_percentage": 25.0,
+                "valid_analysis_area_m2": 1000,
+            },
+            "verifier_status": "passed",
+            "stage_status": {"planner": "passed", "execution": "passed", "verifier": "passed"},
+            "execution_mode": "CACHED_REAL_SENTINEL2_RASTER",
+            "selected_scene_evidence": {
+                "period_a_item_id": "scene-a",
+                "period_a_date": "2023-07-28",
+                "period_b_item_id": "scene-b",
+                "period_b_date": "2024-07-30",
+            },
+        }
     approval = {
         "id": approval_id,
         "task_run_id": first_run,
@@ -196,6 +230,17 @@ def test_run_history_preserves_server_order_and_trace_is_observational():
     assert not any("backend-secret" in item.value for item in at.markdown)
     assert not any("excluded" in item.value for item in at.markdown)
     assert any("Unavailable" in item.value for item in at.text)
+
+
+def test_enriched_geochange_result_renders_only_persisted_product_metadata():
+    fixture = _fixture(include_result=True)
+    with patch("httpx.request", side_effect=_request_handler(fixture)):
+        at = _login(AppTest.from_file("../../src/streamlit_app.py").run())
+        at.selectbox(key="taskpilot_selected_task_id").set_value(fixture["task_id"]).run()
+        at.selectbox(key="taskpilot_selected_run_id").set_value(fixture["runs"][0]["id"]).run()
+    assert any("wuhan east lake" in item.value for item in at.metric)
+    assert any("数据来源" in item.value for item in at.info)
+    assert any("Verified AOI and cached Sentinel-2 fixture." in item.value for item in at.markdown)
 
 
 def test_create_submit_is_disabled_while_mutation_is_in_flight():

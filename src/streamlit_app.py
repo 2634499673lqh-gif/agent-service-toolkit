@@ -24,8 +24,8 @@ from voice import VoiceManager
 # The app heavily uses AgentClient to interact with the agent's FastAPI endpoints.
 
 
-APP_TITLE = "Agent Service Toolkit"
-APP_ICON = "🧰"
+APP_TITLE = "TaskPilot · AI 遥感分析工作台"
+APP_ICON = "🛰️"
 USER_ID_COOKIE = "user_id"
 
 
@@ -644,7 +644,15 @@ async def handle_sub_agent_msgs(messages_agen, status, is_new):
 async def main() -> None:
     """Route between isolated Product and legacy chat sessions."""
     st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, menu_items={})
-    view = st.sidebar.radio("View", ["TaskPilot Product", "Legacy chat"], key="app_view")
+    view = st.sidebar.radio(
+        "工作台视图",
+        ["TaskPilot Product", "Legacy chat"],
+        format_func=lambda value: {
+            "TaskPilot Product": "TaskPilot 产品工作台",
+            "Legacy chat": "旧版对话（兼容模式）",
+        }.get(value, value),
+        key="app_view",
+    )
     if view == "Legacy chat" and st.session_state.get("app_previous_view") == "TaskPilot Product":
         from taskpilot_ui import _clear_product_state
 

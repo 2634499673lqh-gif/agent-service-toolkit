@@ -25,6 +25,14 @@ After sign-in, the Product view can:
 - start a run for a draft task or retry a failed task;
 - list and open the task's persisted TaskRuns.
 
+The current Product workspace is presented in Chinese as an AI remote-sensing
+analysis dashboard. Its landing metrics summarize total, active, completed,
+and draft analysis tasks. For a successful GeoChange run, the result view puts
+the analysis area, Period A/Period B, verifier state, NDVI statistics,
+vegetation-decline interpretation, and before/after/change imagery first. Scene
+selection and provenance are shown as an evidence summary, while the technical
+trace remains available in its collapsed developer view.
+
 The underlying protected API is `/api/v1/tasks` (`POST`/`GET`), `/api/v1/tasks/{task_id}` (`GET`), and `/api/v1/tasks/{task_id}/runs` plus `/runs/{run_id}` (`POST`/`GET`). A task or run outside the current organization is not exposed as a visible resource.
 
 Starting a run creates a persisted TaskRun and dispatches the bounded internal Planner/Executor/Verifier runtime through the process-local runtime bridge. The UI performs finite refresh checks while the run is active, then reads the persisted terminal result; it does not invent lifecycle state or results. There is no TaskStep view.

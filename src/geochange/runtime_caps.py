@@ -238,6 +238,13 @@ class SummarizeChangeRuntimeCapability(_Base):
             mode=mode,
             summary=summary,
             metrics=metrics,
+            analysis_area=task.aoi_key,
+            analysis_periods={
+                "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
+                "period_b": f"{task.period_b.start.isoformat()}/{task.period_b.end.isoformat()}",
+            },
+            data_source="cached_real_sentinel2_fixture",
+            provenance_summary="Verified AOI and cached Sentinel-2 fixture.",
             provenance={
                 "aoi_key": aoi_evidence["catalog_key"],
                 "aoi_crs": aoi_evidence["crs"],

@@ -9,9 +9,14 @@ import httpx
 from streamlit.testing.v1 import AppTest
 
 from taskpilot_ui import (
+    _analysis_area,
+    _analysis_periods,
+    _format_metric,
     _human_status,
+    _human_status_zh,
     _poll_attempt_key,
     _provenance_label,
+    _provenance_label_zh,
     _runtime_profile,
     _scene_labels,
     _stage_status,
@@ -43,11 +48,36 @@ def _login(at: AppTest, email: str = "person@example.com") -> AppTest:
 def test_product_status_projection_is_user_facing_and_bounded():
     assert _human_status("RUNNING") == "In progress"
     assert _human_status("not_run") == "Not run"
+    assert _human_status_zh("RUNNING") == "执行中"
     assert _stage_status({"planner": "passed", "execution": "running"}) == {
         "planner": "Passed",
         "execution": "In progress",
         "verifier": "Not started",
     }
+
+
+def test_product_geochange_summary_projections_are_localized_and_bounded():
+    metadata = {
+        "analysis_area": "wuhan_east_lake",
+        "analysis_periods": {
+            "period_a": "2023-07-01/2023-07-31",
+            "period_b": "2024-07-01/2024-07-31",
+        },
+        "data_source": "cached_real_sentinel2_fixture",
+        "provenance_summary": "verified cached fixture",
+        "provenance": {"aoi_key": "wuhan_east_lake", "raster_source": "cached_fixture"},
+    }
+    assert _analysis_area(metadata) == "wuhan east lake"
+    assert _analysis_area({"provenance": {"aoi_key": "wuhan_east_lake"}}) == "wuhan east lake"
+    assert _analysis_periods(metadata) == ("2023-07-01 至 2023-07-31", "2024-07-01 至 2024-07-31")
+    assert _format_metric("decline_percentage", 12.345) == "12.3%"
+    assert _format_metric("valid_analysis_area_m2", 62200) == "62,200"
+    assert _provenance_label_zh("CACHED_REAL_SENTINEL2_RASTER").startswith("真实 Sentinel-2")
+
+
+def test_product_result_projection_handles_legacy_metadata_without_optional_fields():
+    assert _analysis_area({}) == "未记录"
+    assert _analysis_periods({}) == ("未记录", "未记录")
 
 
 def test_product_runtime_and_scene_projection_uses_safe_metadata():

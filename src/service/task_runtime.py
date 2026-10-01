@@ -1221,6 +1221,18 @@ class TaskRuntimeService:
                         "replan_count": state.replan_count,
                     }
                 )
+                # GeoChangeResult carries a bounded product-facing projection.
+                # Preserve it in the existing result_metadata JSON object so the
+                # Product UI never reconstructs AOI or period data from task text.
+                for key in (
+                    "analysis_area",
+                    "analysis_periods",
+                    "data_source",
+                    "provenance_summary",
+                    "provenance",
+                ):
+                    if candidate.get(key):
+                        result_metadata[key] = candidate[key]
         # Candidate capability output cannot override the runtime's terminal
         # stage truth (especially after verifier rejection).
         result_metadata["verifier_status"] = stage_status["verifier"]

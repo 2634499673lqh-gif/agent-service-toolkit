@@ -46,6 +46,10 @@ class GeoChangeResult(BaseModel):
     mode: str = Field(max_length=40)
     summary: str = Field(max_length=500)
     metrics: dict[str, float | int | str | bool]
+    analysis_area: str = Field(default="", max_length=80)
+    analysis_periods: dict[str, str] = Field(default_factory=dict)
+    data_source: str = Field(default="", max_length=120)
+    provenance_summary: str = Field(default="", max_length=500)
     provenance: dict[str, str] = Field(default_factory=dict)
     artifacts: dict[str, str] = Field(default_factory=dict)
     verifier_status: Literal["passed", "failed"]

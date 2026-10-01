@@ -303,6 +303,11 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         "schema_version",
         "summary",
         "metrics",
+        "analysis_area",
+        "analysis_periods",
+        "data_source",
+        "provenance_summary",
+        "provenance",
         "verifier_status",
         "execution_mode",
         "analysis_type",
@@ -321,6 +326,22 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.schema_version is invalid")
     if not isinstance(value.get("summary"), str) or len(value["summary"]) > 500:
         raise ValueError("result_metadata.summary is invalid")
+    for key, limit in (
+        ("analysis_area", 80),
+        ("data_source", 120),
+        ("provenance_summary", 500),
+    ):
+        if key in value and (not isinstance(value[key], str) or len(value[key]) > limit):
+            raise ValueError(f"result_metadata.{key} is invalid")
+    if "analysis_periods" in value:
+        periods = value["analysis_periods"]
+        expected_period_keys = {"period_a", "period_b"}
+        if (
+            not isinstance(periods, dict)
+            or set(periods) != expected_period_keys
+            or any(not isinstance(item, str) or len(item) > 32 for item in periods.values())
+        ):
+            raise ValueError("result_metadata.analysis_periods is invalid")
     metrics = value.get("metrics")
     if not isinstance(metrics, dict) or any(
         not isinstance(key, str) or not isinstance(item, (int, float, str, bool))
@@ -358,6 +379,28 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
             or any(not isinstance(k, str) or not isinstance(v, str) for k, v in value[key].items())
         ):
             raise ValueError(f"result_metadata.{key} is invalid")
+    if "provenance" in value and (
+        not isinstance(value["provenance"], dict)
+        or len(value["provenance"]) > 16
+        or set(value["provenance"])
+        - {
+            "aoi_key",
+            "aoi_crs",
+            "aoi_source",
+            "raster_source",
+            "fixture_manifest",
+            "period_a_collection",
+            "period_b_collection",
+        }
+        or any(
+            not isinstance(key, str)
+            or not isinstance(item, str)
+            or len(key) > 80
+            or len(item) > 240
+            for key, item in value["provenance"].items()
+        )
+    ):
+        raise ValueError("result_metadata.provenance is invalid")
     sanitized = _validate_observability_json_object(value, "result_metadata")
     encoded = json.dumps(
         sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True
