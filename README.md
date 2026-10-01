@@ -46,7 +46,7 @@ The suite uses controlled arrays and no live provider or internet. It is not a p
 
 ## Current data mode
 
-The supported demo mode is `REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE`: Sentinel-2 metadata may be queried live, while raster pixels are controlled local fixture data. The MVP does not download or process live remote Sentinel raster/COG pixels.
+The supported demo mode is `CACHED_REAL_SENTINEL2_RASTER`: two small real Sentinel-2 B04/B08 crops are cached and provenance-bound; live STAC metadata may be queried for the same scenes, while the MVP does not download or process remote Sentinel raster/COG pixels per run.
 
 ## Security and multi-tenancy
 

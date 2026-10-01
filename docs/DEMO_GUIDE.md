@@ -23,5 +23,5 @@ Do not fabricate screenshots or commit files from `data/geochange-artifacts/`.
 5. Read the final explanation.
 6. Open the trace and point out Planner → tools → verifier → success.
 7. If enabled, show the single bounded replan.
-8. Explain that Sentinel-2 metadata may be live but raster pixels are a controlled local fixture.
+8. Explain that the run uses cached real Sentinel-2 Red/NIR pixels bound to two manifest-verified scenes; live STAC metadata is optional and never downloads a raster per run.
 9. Mention tenant-scoped artifact authorization and current MVP limitations.

@@ -123,14 +123,14 @@ async def run_geochange_evaluation() -> tuple[CaseResult, ...]:
             "terminal_correct": state.terminal_outcome == "SUCCEEDED",
             "task_parsed": state.geochange_task == task(),
         }))
-        configured = task(period_a={"start": "2022-05-01", "end": "2022-05-07"},
-                          period_b={"start": "2025-09-01", "end": "2025-09-07"},
-                          cloud_threshold=7, decline_threshold=-0.01)
+        configured = task(period_a={"start": "2023-07-01", "end": "2023-07-31"},
+                          period_b={"start": "2024-07-01", "end": "2024-07-31"},
+                          cloud_threshold=30, decline_threshold=-0.01)
         other, output, _, _ = await _execute(root, configured)
         evidence = output.get("selected_scene_evidence", {})
         cases.append(_case(CASE_IDS[1], {
-            "periods_propagated": evidence.get("period_a_date") == "2022-05-07" and evidence.get("period_b_date") == "2025-09-07",
-            "cloud_propagated": evidence.get("period_a_cloud_cover") == "7.0" and evidence.get("period_b_cloud_cover") == "7.0",
+            "periods_propagated": evidence.get("period_a_date") == "2023-07-28" and evidence.get("period_b_date") == "2024-07-30",
+            "cloud_propagated": evidence.get("period_a_cloud_cover") == "22.900553" and evidence.get("period_b_cloud_cover") == "8.247093",
             "threshold_propagated": output.get("metrics", {}).get("decline_threshold") == -0.01 and output.get("metrics", {}).get("decline_percentage") != payload.get("metrics", {}).get("decline_percentage"),
             "terminal_correct": other.terminal_outcome == "SUCCEEDED",
         }))
@@ -166,14 +166,14 @@ async def run_geochange_evaluation() -> tuple[CaseResult, ...]:
         }))
         incomplete, _, _, events = await _execute(root, incomplete=True)
         cases.append(_case(CASE_IDS[6], {
-            "verifier_correct": any(e.tool_status == "failed" and e.error_code == "geochange_quality_failed" for e in events),
+            "verifier_correct": any(e.tool_status == "failed" and e.error_code == "geochange_provenance_invalid" for e in events),
             "terminal_correct": incomplete.terminal_outcome == "FAILED",
         }))
         artifacts = payload.get("artifacts", {})
         artifact_dir = root / state.task_id / state.task_run_id
         cases.append(_case(CASE_IDS[7], {
             "artifact_complete": set(artifacts) == {"ndvi_before", "ndvi_after", "ndvi_change"} and all((artifact_dir / f"{name}.png").read_bytes().startswith(b"\x89PNG\r\n\x1a\n") for name in artifacts),
-            "evidence_complete": len(payload.get("selected_scene_evidence", {})) == 12 and bool(payload.get("metrics")) and bool(payload.get("summary")),
+            "evidence_complete": len(payload.get("selected_scene_evidence", {})) == 13 and bool(payload.get("metrics")) and bool(payload.get("summary")),
             "payload_bounded": len(json.dumps(payload)) <= 2000 and not any(key in payload for key in ("checkpoint", "raw_model", "raw_stac", "prompt", "path")),
         }))
     return tuple(sorted(cases, key=lambda case: case.case_id))

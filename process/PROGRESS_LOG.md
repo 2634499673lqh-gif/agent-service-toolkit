@@ -5347,3 +5347,73 @@ numeric-prefix trailing junk fail closed while valid decline syntax and server
 authority remain intact. Focused parser tests passed (17), with Ruff, Pyrefly,
 and diff checks passing. Batch B (`T141 → T142`) may begin. No production,
 test, migration, dependency, or Git state changes were made by review.
+
+
+### 2026-09-30 — Phase 13 Batch B implementation: T141 → T142
+
+Status: T141 and T142 are implemented and awaiting independent Strong Review.
+The feasibility gate verified two Earth Search Sentinel-2 L2A items for the
+bounded Wuhan East Lake request: `S2B_50RKU_20230728_1_L2A` (2023-07-28) and
+`S2A_50RKU_20240730_0_L2A` (2024-07-30). Each fixture is a 64×64 native 10 m
+uint16 B04/B08 crop in EPSG:32650 with exact STAC item, collection, date,
+asset URL/ETag/size, AOI, dimensions, radiometry, and SHA-256 in the manifest.
+The total raster fixture is below the 1 MB bound; source and Copernicus
+attribution/licensing constraints are recorded in `manifest.json` and
+`docs/GEOCHANGE_FIXTURE.md`.
+
+Runtime now verifies the pinned manifest and per-scene checksums, binds scene
+evidence to the fixture, masks nodata after source scale/offset conversion, and
+computes NDVI/delta/statistics and three PNGs from the cached real pixels. Any
+manifest, checksum, scene, period, AOI, asset, or binding mismatch fails closed.
+Live STAC remains opt-in metadata only and cannot select a different raster.
+
+Validation: the fixture/provenance tests passed (19), the full GeoChange tier
+passed (71), the affected runtime/service/evaluation regression passed
+`283 passed, 35 skipped`, and the provider-free evaluation passed 8/8. The
+PostgreSQL runtime tier passed 35 tests, including persisted cached-real result
+metadata, checkpoint provenance, three authenticated artifacts, and a foreign
+tenant rejection; the TaskRun/Task API tier passed 8 tests. The reproducibility
+script completed with 3,092,549 bounded source bytes. Ruff, Pyrefly, and diff
+checks pass. The broader historical PostgreSQL migration tier remains `24
+passed, 1 failed` on its known T144-owned stale `t034_observability` revision
+assertion; no fix was made. No migration, dependency, commit, or push was made.
+
+Learner focus: read `data/geochange-fixtures/real-sentinel2-v1/manifest.json`,
+`src/geochange/fixture.py`, `src/geochange/runtime_caps.py`, and
+`tests/geochange/test_fixture.py`. The main concept is provenance binding:
+metadata can describe a raster only when its immutable identity and checksum
+match the pixels actually processed. Exercise: flip one byte in either NPZ and
+run the focused fixture tests to observe the fail-closed checksum error. Do
+not worry about live COG window processing or worker infrastructure yet.
+
+### 2026-10-01 — Phase 13 Batch B focused corrective implementation
+
+Fixed the two T142 Strong Review blockers without changing the fixture contract.
+The verifier now independently recomputes cached real-pixel NDVI/statistics from
+`GeoChangeTask` and the pinned manifest, compares every persisted metric with
+zero relative tolerance, and rejects forged effective thresholds or statistics.
+It also renders the expected three PNGs through the existing deterministic
+pipeline, hashes them, and rejects valid but unrelated content for each artifact
+role while retaining path and tenant authorization checks.
+
+Added focused rejection coverage for forged metrics, thresholds, valid PNG
+replacement for `ndvi_before`, `ndvi_after`, and `ndvi_change`, plus an
+untampered fixture-backed success case. Validation: focused GeoChange tests
+passed 57; affected runtime/service regression passed 212 with 35 skips;
+deterministic evaluation passed 8/8; PostgreSQL runtime/API tier passed 43;
+Ruff, Pyrefly, and `git diff --check` passed. The known historical
+`t034_observability` migration assertion remains deferred to T144. No commit or
+push was made. T141/T142 remain IMPLEMENTED / AWAITING FOCUSED STRONG
+RE-REVIEW.
+
+### 2026-10-01 — Phase 13 Batch B focused Strong Re-review approval
+
+Status: T141 and T142 are COMPLETE / APPROVED; Batch B is COMPLETE / APPROVED.
+The two prior T142 blockers are closed. The verifier independently recomputes
+fixture-backed metrics, including the effective decline threshold, and rejects
+forged values. It independently renders and hashes all three deterministic PNG
+roles and rejects unrelated valid replacements. Focused evidence passed: GeoChange
+57 tests; affected runtime/service 186 passed, 35 skipped; deterministic
+evaluation 8/8; PostgreSQL runtime/API 43 passed; Ruff, Pyrefly, and diff checks
+passed. No production or test changes were made by review. Batch C (`T143 →
+T144`) may begin.

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from geochange import GeoChangeTask, compute_vegetation_change, resolve_aoi, run_local_analysis
+from geochange.fixture import compute_cached_change, scene_evidence
 from geochange.stac import select_sentinel2
 from geochange.summary import summarize_change
 from geochange.verifier import verify_change
@@ -180,6 +181,38 @@ def test_complete_verifier_rejects_required_contract_failures(tmp_path, mutate, 
         metrics=metrics,
     )
     assert result["code"] == expected_code
+
+
+def test_cached_real_sentinel_mode_requires_manifest_and_asset_binding(tmp_path):
+    task = _task()
+    evidence = scene_evidence(task)
+    computed = compute_cached_change(task, evidence, artifact_dir=tmp_path)
+    aoi, _, _ = _complete_evidence(task)
+    metrics = summarize_change(computed, task)
+    assert verify_change(
+        computed,
+        artifacts=computed.artifacts,
+        artifact_root=tmp_path,
+        task=task,
+        aoi_evidence=aoi,
+        scene_evidence=evidence,
+        execution_mode="CACHED_REAL_SENTINEL2_RASTER",
+        raster_source="cached_real_sentinel2_fixture",
+        metrics=metrics,
+    )["status"] == "passed"
+    evidence["fixture_manifest"] = "tampered"
+    result = verify_change(
+        computed,
+        artifacts=computed.artifacts,
+        artifact_root=tmp_path,
+        task=task,
+        aoi_evidence=aoi,
+        scene_evidence=evidence,
+        execution_mode="CACHED_REAL_SENTINEL2_RASTER",
+        raster_source="cached_real_sentinel2_fixture",
+        metrics=metrics,
+    )
+    assert result["code"] == "fixture_manifest_invalid"
 
 
 def test_verifier_rejects_missing_artifact_file(tmp_path):

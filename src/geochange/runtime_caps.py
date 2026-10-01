@@ -1,5 +1,6 @@
 """Capability adapters used by the existing runtime graph."""
 
+import hashlib
 import json
 from typing import Any
 
@@ -13,10 +14,10 @@ from schema.planner import PlanStep
 
 from .aoi import resolve_aoi
 from .artifacts import ARTIFACT_ROOT
+from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
 from .llm import GeoChangeLLM
 from .models import GeoChangeResult, GeoChangeTask
-from .raster import compute_vegetation_change
-from .stac import STAC_COLLECTION, search_sentinel2
+from .stac import search_sentinel2
 from .summary import summarize_change
 from .verifier import verify_change
 
@@ -28,30 +29,33 @@ def _task(context: Any) -> GeoChangeTask:
     return task
 
 
-def _scene_evidence(task: GeoChangeTask) -> dict[str, str]:
-    cloud = str(min(20.0, task.cloud_threshold))
-    return {
-        "period_a_item_id": f"S2B_50RKU_{task.period_a.end:%Y%m%d}_0_L2A",
-        "period_a_date": task.period_a.end.isoformat(),
-        "period_a_cloud_cover": cloud,
-        "period_a_collection": STAC_COLLECTION,
-        "period_a_red": "red",
-        "period_a_nir": "nir",
-        "period_b_item_id": f"S2A_50RKU_{task.period_b.end:%Y%m%d}_0_L2A",
-        "period_b_date": task.period_b.end.isoformat(),
-        "period_b_cloud_cover": cloud,
-        "period_b_collection": STAC_COLLECTION,
-        "period_b_red": "red",
-        "period_b_nir": "nir",
-    }
+def _live_scene_evidence(task: GeoChangeTask, item_a: Any, item_b: Any) -> dict[str, str]:
+    evidence = scene_evidence(task)
+    for period, item in (("a", item_a), ("b", item_b)):
+        evidence.update(
+            {
+                f"period_{period}_item_id": item.item_id,
+                f"period_{period}_date": item.acquisition_date.isoformat(),
+                f"period_{period}_cloud_cover": str(item.cloud_cover),
+                f"period_{period}_collection": item.collection,
+                f"period_{period}_red": hashlib.sha256(item.red_asset.encode()).hexdigest(),
+                f"period_{period}_nir": hashlib.sha256(item.nir_asset.encode()).hexdigest(),
+            }
+        )
+    return evidence
 
 
 class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
+        output = json.dumps(payload, separators=(",", ":"))
+        if len(output) > 2000:
+            return ExecutionResult(step_position=step.position, success=False,
+                                   error_code="geochange_output_oversized",
+                                   error_message="GeoChange output exceeds the bounded limit")
         return ExecutionResult(
             step_position=step.position,
             success=True,
-            output=json.dumps(payload, separators=(",", ":"))[:2000],
+            output=output,
         )
 
 
@@ -101,16 +105,9 @@ class SearchSentinel2RuntimeCapability(_Base):
                     else "stac_default_quality_violation"
                 )
                 return ExecutionResult(step_position=step.position, success=False, error_code=code, error_message="selected imagery exceeds the validated cloud threshold")
-            evidence = {
-                "period_a_item_id": item_a.item_id, "period_a_date": item_a.acquisition_date.isoformat(),
-                "period_a_cloud_cover": str(item_a.cloud_cover), "period_a_collection": item_a.collection,
-                "period_a_red": "validated", "period_a_nir": "validated",
-                "period_b_item_id": item_b.item_id, "period_b_date": item_b.acquisition_date.isoformat(),
-                "period_b_cloud_cover": str(item_b.cloud_cover), "period_b_collection": item_b.collection,
-                "period_b_red": "validated", "period_b_nir": "validated",
-            }
+            evidence = _live_scene_evidence(task, item_a, item_b)
         else:
-            evidence = _scene_evidence(task)
+            evidence = scene_evidence(task)
         return self._result(step, evidence)
 
 
@@ -121,9 +118,17 @@ class ComputeVegetationRuntimeCapability(_Base):
     )
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
-        red_a = np.array([[1.0, 1.0], [2.0, 2.0]])
-        nir_a = np.array([[3.0, 1.0], [4.0, 2.0]])
-        change = compute_vegetation_change(red_a, nir_a, red_a * 1.2, nir_a)
+        task = _task(context)
+        evidence = dict(getattr(context, "geochange_evidence", {}) or {})
+        try:
+            change = compute_cached_change(task, evidence)
+        except ValueError as error:
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_provenance_invalid",
+                error_message=str(error)[:200],
+            )
         return self._result(step, {"valid_pixels": int(change.valid_mask.sum()), "mean_delta_ndvi": float(np.nanmean(change.delta))})
 
 
@@ -135,20 +140,15 @@ class SummarizeChangeRuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
-        red_a = np.array([[1.0, 1.0], [2.0, 2.0]])
-        nir_a = np.array([[3.0, 1.0], [4.0, 2.0]])
         artifact_root = ARTIFACT_ROOT / str(context.runtime_task_id or "runtime") / str(context.runtime_task_run_id or "current")
-        change = compute_vegetation_change(red_a, nir_a, red_a * 1.2, nir_a, artifact_dir=artifact_root)
         scene_evidence = dict(getattr(context, "geochange_evidence", {}) or {})
+        try:
+            change = compute_cached_change(task, scene_evidence, artifact_dir=artifact_root)
+        except ValueError as error:
+            return ExecutionResult(step_position=step.position, success=False, error_code="geochange_provenance_invalid", error_message=str(error)[:200])
         aoi_evidence = dict(getattr(context, "geochange_aoi_evidence", {}) or {})
         metrics = summarize_change(change, task)
-        mode = (
-            "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE"
-            if settings.GEOCHANGE_LIVE_STAC
-            else "CACHED_REAL_METADATA"
-            if task.data_mode == "cached_real_metadata"
-            else "REAL_STAC_LOCAL_FIXTURE"
-        )
+        mode = EXECUTION_MODE
         verification = verify_change(
             change,
             artifacts=change.artifacts,
@@ -157,7 +157,7 @@ class SummarizeChangeRuntimeCapability(_Base):
             aoi_evidence=aoi_evidence,
             scene_evidence=scene_evidence,
             execution_mode=mode,
-            raster_source="local_real_raster_fixture",
+            raster_source="cached_real_sentinel2_fixture",
             metrics=metrics,
         )
         if verification["status"] != "passed":
@@ -179,7 +179,8 @@ class SummarizeChangeRuntimeCapability(_Base):
                 "aoi_key": aoi_evidence["catalog_key"],
                 "aoi_crs": aoi_evidence["crs"],
                 "aoi_source": aoi_evidence["source"],
-                "raster_source": "local_real_raster_fixture",
+                "raster_source": "cached_real_sentinel2_fixture",
+                "fixture_manifest": scene_evidence["fixture_manifest"],
                 "period_a_collection": scene_evidence["period_a_collection"],
                 "period_b_collection": scene_evidence["period_b_collection"],
             },
