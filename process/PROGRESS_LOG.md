@@ -5811,3 +5811,113 @@ Result: READY FOR FOCUSED PLANNING STRONG RE-REVIEW. ADR-014 remains Proposed / 
 Independent Strong Review approved the ADR-014 design. Updated the current status to Accepted / frozen and marked Implementation 3A READY FOR IMPLEMENTATION. Implementations 3B and 3C remain BLOCKED pending B03/B11, SCL/cloud-shadow, checksum/provenance, grid/resampling, and scientific validation evidence. Historical review findings remain preserved; no technical contract or scope was changed.
 
 Result: ADR-014 ACCEPTED / FROZEN; 3A READY FOR IMPLEMENTATION; 3B/3C BLOCKED.
+
+### 2026-10-02 — Phase 14 Implementation 3A — Static Skill boundary and NDVI compatibility
+
+Added the code-owned `vegetation_change`/`NDVI` Skill specification with one
+allowlisted capability order and result artifact contract. Confirmed-intent
+starts and resumes derive the Skill from the validated Task record; Planner,
+replan, current-step dispatch, checkpoint plans, and result payloads are now
+validated against it. Checkpoint state remains recovery-only and no Skill field
+was added to historical state. The existing NULL-intent path keeps its legacy
+capability selection behavior.
+
+Files changed: `src/geochange/skill.py`, `src/runtime/graph.py`,
+`src/service/task_runtime.py`, `tests/geochange/test_skill.py`.
+
+Validation: focused Skill/runtime/GeoChange/conversation tests passed (132);
+Ruff, Ruff format, Pyrefly, shared Runtime regressions, and `git diff --check`
+remain part of the implementation validation. PostgreSQL evidence is reported
+only if the repository test environment exposes a safe database.
+
+Learner notes: the important boundary is that a persisted, validated intent
+selects one static server-owned contract, while checkpoints carry execution
+state only. Read `src/geochange/skill.py`, `src/runtime/graph.py`,
+`src/service/task_runtime.py`, and `tests/geochange/test_skill.py`. Exercise:
+change one confirmed planner step to another capability and observe the
+terminal `skill_plan_invalid` failure. Do not worry about NDWI/NDBI yet; their
+data and scientific gates remain blocked.
+
+Result: BATCH READY FOR STRONG REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix
+
+Completed the two Strong Review blocker corrections. `SkillSpec.validate_result`
+now validates the complete terminal NDVI payload at the final summarize step:
+schema/type, required finite metrics and ranges, trusted periods/area/threshold,
+provenance, exact artifact references, verifier status, and unauthorized fields.
+Intermediate capability outputs remain subject only to their existing bounded
+capability contract. Replan failure now routes directly to terminal instead of
+executing the previous plan after an unauthorized replacement is rejected.
+
+Added behavioral graph tests for incomplete terminal output and unauthorized
+replan escape. Existing legacy and recovery tests remain unchanged and green.
+
+Validation: affected GeoChange/Runtime/service suites passed (291 passed, 35
+PostgreSQL tests skipped because no safe database was configured); Ruff, Ruff
+format, Pyrefly, and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A terminal result bypass fix
+
+Closed the remaining terminal validation bypasses. Confirmed GeoChange
+summarize outputs now always pass the shared terminal validator when successful;
+non-JSON, non-object, incomplete, or invalid results fail with
+`skill_result_invalid`. Confirmed resume finalization revalidates stored
+successful `execution_result` values against the persisted intent, canonical AOI
+and pinned scene evidence before lifecycle persistence, so forged provenance
+cannot enter `TaskRun.result_metadata`.
+
+Added actual graph and TaskRuntimeService tests for non-JSON start output,
+invalid terminal schemas, forged stored resume results, mutually consistent
+forgeries, valid confirmed start/resume, and legacy/tampered-plan regressions.
+
+Validation: affected GeoChange/Runtime/service suites passed (307 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix round 3
+
+Closed checkpoint evidence-trust gaps. For confirmed NDVI Tasks, TaskRuntime
+now reconstructs canonical AOI and pinned fixture scene evidence from the
+validated confirmed intent on every resume. Checkpoint evidence is accepted
+only when it matches those server-derived values; complete scene evidence is
+revalidated with the existing fixture `validate_binding` before downstream
+execution. The graph independently repeats canonical evidence validation at
+the terminal result boundary, preventing mutually consistent forged
+checkpoint/result values from passing.
+
+New confirmed-intent terminal results require `execution_mode` and
+`selected_scene_evidence`; both are strictly typed, bounded, and matched to
+trusted evidence. Added real TaskRuntime tests for successful confirmed
+resume, forged AOI/scene checkpoint evidence, tampered plans, and legacy
+compatibility, plus adversarial matching-forgery coverage.
+
+Validation: affected GeoChange/Runtime/service suites passed (305 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix round 2
+
+Bound terminal NDVI provenance to server-authorized Runtime evidence. Result
+validation now checks AOI provenance against resolved AOI evidence, fixture and
+scene provenance against the server-selected scene evidence, and validates
+execution mode and selected-scene evidence types, bounds and exact content.
+Added adversarial checks for wrong AOI, scene identity, execution mode and
+malformed scene evidence.
+
+Added real TaskRuntimeService-path tests for confirmed-intent start Skill
+derivation and confirmed resume rejection of a tampered checkpoint plan. The
+existing historical checkpoint and NULL-intent recovery tests remain green.
+Added a valid full NDVI graph success regression.
+
+Validation: affected GeoChange/Runtime/service suites passed (300 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.

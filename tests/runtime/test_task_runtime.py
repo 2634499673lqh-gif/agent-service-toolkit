@@ -9,6 +9,8 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from geochange.fixture import scene_evidence
+from geochange.skill import resolve_skill
 from persistence.models import Task, TaskRun, TaskRunStatus, TaskStatus
 from runtime import (
     AgentState,
@@ -20,10 +22,13 @@ from runtime import (
     PlannerNode,
     PlannerRequest,
     RuntimeFailure,
+    RuntimeGraphContext,
     VerifierNode,
     VerifierRequest,
     build_runtime_graph,
 )
+from schema.confirmed_intent import ConfirmedIntent
+from schema.planner import Plan
 from service.task_lifecycle import TaskLifecycleConflictError
 from service.task_runtime import (
     TaskRuntimeConflictError,
@@ -63,6 +68,23 @@ def _business_pair(status: TaskRunStatus) -> tuple[Task, TaskRun]:
         status=TaskStatus.QUEUED if status is TaskRunStatus.PENDING else TaskStatus.RUNNING,
     )
     run = TaskRun(id=RUN_ID, task_id=TASK_ID, run_number=1, status=status)
+    return task, run
+
+
+def _confirmed_business_pair(status: TaskRunStatus) -> tuple[Task, TaskRun]:
+    task, run = _business_pair(status)
+    task.confirmed_intent = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "wuhan_east_lake",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+        "parameters": {
+            "source": "Sentinel-2",
+            "cloud_threshold": 30.0,
+            "decline_threshold": -0.2,
+        },
+    }
     return task, run
 
 
@@ -193,6 +215,254 @@ async def test_capability_retry_uses_dispatcher_context_and_same_task_run() -> N
     assert all(not hasattr(context, "organization_id") for context in capability.contexts)
     assert lifecycle.begin_run.await_count == 1
     assert lifecycle.succeed_run.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmed_intent_start_derives_static_skill_before_execution() -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.PENDING)
+
+    async def malicious_planner(request: PlannerRequest) -> object:
+        return {"steps": [{"position": 1, "instruction": "foreign_skill_step"}]}
+
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver, planner=PlannerNode(malicious_planner))
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.failure is not None
+    assert result.state.failure.code == "skill_plan_invalid"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_intent_start_valid_ndvi_succeeds() -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.PENDING)
+    saver = MemorySaver()
+    service = TaskRuntimeService(saver)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "SUCCEEDED"
+    assert result.state.terminal_outcome == "SUCCEEDED"
+    assert lifecycle.succeed_run.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmed_resume_rejects_tampered_checkpoint_plan() -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.RUNNING)
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver, interrupt_before=["executor"])
+    tampered = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="vegetation_change NDVI Wuhan East Lake",
+        description=json.dumps(task.confirmed_intent, separators=(",", ":")),
+    ).model_copy(
+        update={
+            "plan": Plan.model_validate(
+                {
+                    "steps": [
+                        {"position": 1, "instruction": "resolve_aoi"},
+                        {"position": 2, "instruction": "foreign_skill_step"},
+                        {"position": 3, "instruction": "compute_vegetation_change"},
+                        {"position": 4, "instruction": "summarize_change"},
+                    ]
+                }
+            )
+        }
+    )
+    await graph.ainvoke(
+        tampered.checkpoint_data(), config={"configurable": {"thread_id": THREAD_ID}}
+    )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.failure is not None
+    assert result.state.failure.code == "checkpoint_corrupt"
+
+
+@pytest.mark.parametrize("forged_field", ["aoi", "scene"])
+@pytest.mark.asyncio
+async def test_confirmed_resume_rejects_forged_checkpoint_evidence(forged_field: str) -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.RUNNING)
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver, interrupt_before=["executor"])
+    intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+    runtime_task = intent.runtime_task()
+    aoi_evidence = {
+        "catalog_key": "wuhan_east_lake",
+        "crs": "EPSG:4326",
+        "source": "taskpilot.geochange.catalog.v1",
+    }
+    scene = scene_evidence(runtime_task)
+    if forged_field == "aoi":
+        aoi_evidence["catalog_key"] = "forged_aoi"
+    else:
+        scene["fixture_manifest"] = "f" * 64
+    checkpoint_state = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="vegetation_change NDVI Wuhan East Lake",
+        description=runtime_task.model_dump_json(),
+    ).model_copy(
+        update={
+            "geochange_task": runtime_task,
+            "geochange_aoi_evidence": aoi_evidence,
+            "geochange_evidence": scene,
+            "plan": Plan.model_validate(
+                {
+                    "steps": [
+                        {"position": 1, "instruction": "resolve_aoi"},
+                        {"position": 2, "instruction": "search_sentinel2"},
+                        {"position": 3, "instruction": "compute_vegetation_change"},
+                        {"position": 4, "instruction": "summarize_change"},
+                    ]
+                }
+            ),
+            "plan_position": 3,
+        }
+    )
+    await graph.ainvoke(
+        checkpoint_state.checkpoint_data(),
+        config={"configurable": {"thread_id": THREAD_ID}},
+    )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.failure is not None
+    assert result.state.failure.code == "checkpoint_corrupt"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_intent_resume_rederives_skill_and_succeeds() -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.RUNNING)
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver, interrupt_before=["verifier"])
+    intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+    initial = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="vegetation_change NDVI Wuhan East Lake",
+        description=intent.runtime_task().model_dump_json(),
+    ).model_copy(update={"geochange_task": intent.runtime_task()})
+    await graph.ainvoke(
+        initial.checkpoint_data(),
+        config={"configurable": {"thread_id": THREAD_ID}},
+        context=RuntimeGraphContext(skill=resolve_skill("vegetation_change", "NDVI")),
+    )
+    for _ in range(3):
+        await graph.ainvoke(
+            None,
+            config={"configurable": {"thread_id": THREAD_ID}},
+            context=RuntimeGraphContext(skill=resolve_skill("vegetation_change", "NDVI")),
+        )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "SUCCEEDED"
+    assert result.state.terminal_outcome == "SUCCEEDED"
+    assert lifecycle.succeed_run.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmed_resume_revalidates_stored_execution_result() -> None:
+    task, run = _confirmed_business_pair(TaskRunStatus.RUNNING)
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver)
+    intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+    runtime_task = intent.runtime_task()
+    forged_result = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="vegetation_change NDVI Wuhan East Lake",
+        description=runtime_task.model_dump_json(),
+    ).model_copy(
+        update={
+            "geochange_task": runtime_task,
+            "geochange_aoi_evidence": {
+                "catalog_key": "wuhan_east_lake",
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+            "geochange_evidence": scene_evidence(runtime_task),
+            "plan": Plan.model_validate(
+                {
+                    "steps": [
+                        {"position": 1, "instruction": "resolve_aoi"},
+                        {"position": 2, "instruction": "search_sentinel2"},
+                        {"position": 3, "instruction": "compute_vegetation_change"},
+                        {"position": 4, "instruction": "summarize_change"},
+                    ]
+                }
+            ),
+            "plan_position": 3,
+            "execution_result": ExecutionResult(
+                step_position=4,
+                success=True,
+                output="forged non-json terminal result",
+            ),
+        }
+    )
+    await graph.ainvoke(
+        forged_result.checkpoint_data(),
+        config={"configurable": {"thread_id": THREAD_ID}},
+    )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.failure is not None
+    assert result.state.failure.code == "skill_result_invalid"
+    assert lifecycle.succeed_run.await_count == 0
 
 
 class _ReplanThenSucceedCapability:

@@ -14,6 +14,12 @@ from core.llm import get_model
 from core.settings import settings
 from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
+from geochange.skill import (
+    VEGETATION_CHANGE_NDVI,
+    SkillSpec,
+    SkillValidationError,
+    validate_terminal_result,
+)
 from schema.planner import PlanStep
 
 from .capabilities import DeterministicFixtureCapability
@@ -148,6 +154,7 @@ class RuntimeGraphContext(BaseModel):
     approval_gate: ApprovalGate | None = None
     observation_sink: RuntimeObservationSink | None = None
     request_id: UUID | None = None
+    skill: SkillSpec | None = None
 
 
 class _DefaultPlannerModel:
@@ -156,10 +163,8 @@ class _DefaultPlannerModel:
         if any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖")):
             return {
                 "steps": [
-                    {"position": 1, "instruction": "resolve_aoi"},
-                    {"position": 2, "instruction": "search_sentinel2"},
-                    {"position": 3, "instruction": "compute_vegetation_change"},
-                    {"position": 4, "instruction": "summarize_change"},
+                    {"position": position, "instruction": capability}
+                    for position, capability in enumerate(VEGETATION_CHANGE_NDVI.capabilities, 1)
                 ]
             }
         return {
@@ -259,6 +264,8 @@ def build_runtime_graph(
         request_id = getattr(runtime_context, "request_id", None)
         try:
             plan = await planner_node(state.task_input)
+            if runtime_context is not None and runtime_context.skill is not None:
+                runtime_context.skill.validate_plan(plan)
             if _is_geochange_request(state.task_input):
                 if geochange_task is None:
                     if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
@@ -271,6 +278,13 @@ def build_runtime_graph(
                     raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
+            if observation_sink is not None:
+                await observation_sink.record(
+                    _planner_observation(state, request_id, started_at, failure)
+                )
+            return {"failure": failure}
+        except SkillValidationError:
+            failure = _failure(failure_classifier, "skill_plan_invalid")
             if observation_sink is not None:
                 await observation_sink.record(
                     _planner_observation(state, request_id, started_at, failure)
@@ -364,12 +378,19 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "capability_context_invalid")}
         selected_capability = capability_name
         instruction_name = step.instruction.strip().split()[0]
-        if instruction_name in {
-            "resolve_aoi",
-            "search_sentinel2",
-            "compute_vegetation_change",
-            "summarize_change",
-        }:
+        if runtime_context is not None and runtime_context.skill is not None:
+            try:
+                selected_capability = runtime_context.skill.validate_step(
+                    step, plan_position=state.plan_position
+                )
+            except SkillValidationError:
+                failure = _failure(failure_classifier, "skill_step_invalid")
+                await observe(agent_status="failed", context=context, error=failure)
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "failure": failure,
+                }
+        elif instruction_name in VEGETATION_CHANGE_NDVI.capabilities:
             if not isinstance(capability_dispatcher.metadata_for(instruction_name), RuntimeFailure):
                 selected_capability = instruction_name
         metadata = capability_dispatcher.metadata_for(selected_capability)
@@ -498,6 +519,41 @@ def build_runtime_graph(
                 "execution_result": result.model_dump(mode="json"),
                 "failure": failure,
             }
+        if (
+            selected_capability == "summarize_change"
+            and runtime_context is not None
+            and runtime_context.skill is not None
+            and result.success
+        ):
+            try:
+                candidate = json.loads(result.output or "")
+            except (TypeError, ValueError):
+                candidate = None
+            try:
+                if state.geochange_task is None:
+                    raise ValueError("trusted GeoChange task is missing")
+                validate_terminal_result(
+                    runtime_context.skill,
+                    candidate,
+                    task=state.geochange_task,
+                    aoi_evidence=state.geochange_aoi_evidence,
+                    scene_evidence_values=state.geochange_evidence,
+                )
+            except (SkillValidationError, ValueError, TypeError):
+                failure = _failure(failure_classifier, "skill_result_invalid")
+                await observe(
+                    agent_status="failed",
+                    context=context,
+                    tool_status="failed",
+                    result=result.model_dump(mode="json"),
+                    error=failure,
+                    tool_name=selected_capability,
+                )
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "execution_result": result.model_dump(mode="json"),
+                    "failure": failure,
+                }
         if not result.success:
             failure = failure_classifier.classify(
                 result.error_code or "executor_failed", result.error_message
@@ -581,7 +637,10 @@ def build_runtime_graph(
             "verification": None,
         }
 
-    async def replan_step(state: AgentState) -> dict[str, object]:
+    async def replan_step(
+        state: AgentState,
+        runtime: Runtime[RuntimeGraphContext],
+    ) -> dict[str, object]:
         if state.failure is None:
             return {"failure": _failure(failure_classifier, "replan_without_failure")}
         decision = consume_replan(state.failure, state.replan_count)
@@ -589,6 +648,9 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "replan_budget_exhausted")}
         try:
             replacement_plan = await planner_node(state.task_input)
+            runtime_context = getattr(runtime, "context", None)
+            if runtime_context is not None and runtime_context.skill is not None:
+                runtime_context.skill.validate_plan(replacement_plan)
             previous = ReplanState(
                 plan=state.plan,
                 plan_position=state.plan_position,
@@ -601,6 +663,8 @@ def build_runtime_graph(
             replacement = apply_replacement_plan(previous, replacement_plan, decision)
         except PlannerOutputInvalidError as error:
             return {"failure": _failure(failure_classifier, error.code)}
+        except SkillValidationError:
+            return {"failure": _failure(failure_classifier, "skill_plan_invalid")}
         except Exception:
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
         return {
@@ -669,6 +733,9 @@ def build_runtime_graph(
             return "replan"
         return "terminal"
 
+    def route_after_replan(state: AgentState) -> Literal["executor", "terminal"]:
+        return "terminal" if state.failure is not None else "executor"
+
     builder = StateGraph(AgentState, context_schema=RuntimeGraphContext)
     builder.add_node("planner", plan_initial)
     builder.add_node("executor", execute_step)
@@ -708,7 +775,11 @@ def build_runtime_graph(
         },
     )
     builder.add_edge(RETRY_NODE, "executor")
-    builder.add_edge(REPLAN_NODE, "executor")
+    builder.add_conditional_edges(
+        REPLAN_NODE,
+        route_after_replan,
+        {"executor": "executor", "terminal": TERMINAL_NODE},
+    )
     builder.add_edge("advance", "executor")
     builder.add_edge("succeed", END)
     builder.add_edge(TERMINAL_NODE, END)
