@@ -1,3 +1,29 @@
+### 2026-10-02 — Phase 14 3B exploratory addendum blocker fix
+
+Revised `process/ADR-014-3B-EXPLORATORY-ADDENDUM.md` with an explicit scope-revision table and a complete proposed exploratory NDWI contract. The proposal now explicitly defers water-class and water-area thresholds, prohibits confirmed water-area/expansion claims, retains all B03/B08/SCL, provenance, mask, Runtime-security and NDVI compatibility requirements, and keeps 3C blocked.
+
+The implementation-ready contract freezes the future `water_change`/`NDWI` Skill sequence, strict confirmed-intent branch, server-owned v5 fixture, scale/offset and SCL nearest-neighbour rules, common-valid mask, continuous-only metrics, `ndwi_*` artifact allowlist, provenance bindings, fail-closed Verifier/lifecycle conditions, and one complete future acceptance batch. No ADR-014, production code, tests, fixtures or Runtime behavior changed.
+
+Result: 3B EXPLORATORY ADDENDUM BLOCKERS FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 3B scientific gate closure sprint
+
+Assessed independent reference options and added deterministic exploratory validation in `scripts/validate_ndwi_science.py`. Copernicus Water Bodies (100 m monthly) and Dynamic World (10 m model predictions) were documented as unsuitable for this batch as date-matched independent ground truth. Per-period confusion matrices, quadrant checks, common-valid change sensitivity, and low-reflectance handling are now reproducible.
+
+Period A has 218 valid pixels and period B 355, with 160 common valid pixels. At NDWI 0.20, SCL comparison F1 is 0.304 (A) and 0.531 (B); common-area candidate water-pixel deltas range from 82 to -1 across tested thresholds. No consistent, independently validated classification or change threshold exists. Added `process/ADR-014-3B-EXPLORATORY-ADDENDUM.md` as a proposed, non-executable scope-reduction option.
+
+Validation: 67 affected GeoChange tests passed; Ruff, Ruff format, Pyrefly, and `git diff --check` passed. NDVI and Runtime behavior remain unchanged.
+
+Result: 3B SCIENCE INSUFFICIENT — EXPLORATORY NDWI ADR ADDENDUM READY FOR REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3B evidence/data preparation
+
+Prepared independent `geochange.real-sentinel2-ndwi.v1` data under `data/geochange-fixtures/real-sentinel2-ndwi-v5/` with bounded B03/B08/SCL reads, copied STAC snapshots, checksums, target-grid metadata, and explicit scene-footprint coverage masks. Added `scripts/prepare_geochange_ndwi_fixture.py`, focused integrity/mask/provenance tests, and `process/PHASE_14_3B_EVIDENCE.md`. Existing NDVI v1 data and runtime behavior are unchanged.
+
+Validation: 66 affected GeoChange tests passed; Ruff, Ruff format, Pyrefly, and `git diff --check` passed. The period B footprint mismatch is resolved by explicit coverage masking. SCL consistency produced a weak candidate threshold near 0.20, but independent scientific validation of water-class and change thresholds remains outstanding; NDWI Runtime is not activated.
+
+Result: 3B EVIDENCE BLOCKED — SPECIFIC REMAINING GAPS.
+
 ### 2026-09-25 — T107 Phase 8 Final Audit
 
 Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
@@ -5921,3 +5947,28 @@ PostgreSQL tests skipped because no safe disposable database was configured).
 Ruff, Ruff format, Pyrefly and `git diff --check` passed.
 
 Result: READY FOR FOCUSED STRONG RE-REVIEW.
+### 2026-10-02 — Phase 14 Implementation 3B exploratory NDWI workflow
+
+Implemented the approved limited exploratory `water_change` / `NDWI` workflow. Added strict confirmed-intent and Skill pairing, deterministic v5 fixture computation with common-valid masks, NDWI artifacts and provenance, graph capability routing, terminal validation, authorized artifact names, conversation parsing, and a UI projection that labels results exploratory and never claims confirmed water area or expansion. Existing NDVI fixtures and behavior remain compatible.
+
+Validation: focused NDWI, Skill, capability, conversation and TaskRuntime tests passed (63 passed); exploratory graph execution and terminal evidence checks pass. Remaining full-suite, static and diff checks are run for this batch. ADR-014 remains frozen and 3C/NDBI remains out of scope.
+
+Result: 3B EXPLORATORY NDWI WORKFLOW IMPLEMENTED; READY FOR STRONG REVIEW.
+### 2026-10-02 — Phase 14 3B consolidated Strong Review blocker fix
+
+Extended the bounded TaskRun result metadata validator for the approved exploratory `water_change` / `NDWI` projection, including the exact five continuous metrics and `ndwi_*` artifact references while rejecting unknown indicators and water-area claims. Corrected checkpoint resume binding to select the server-owned NDWI fixture binder after confirmed-intent validation, and extended the Product Client artifact allowlist for the three NDWI maps.
+
+Added real TaskRuntime persistence and resume coverage, forged-evidence fail-closed coverage, Product Client artifact tests, and a disposable PostgreSQL integration test covering NDWI execution, metadata reload, artifact authorization, and cross-tenant rejection. Docker PostgreSQL was started without volume deletion; `taskpilot_test` was used as the disposable database.
+
+Validation: focused tests passed; PostgreSQL runtime suite passed (36 passed); full regression with live PostgreSQL reached 972 passed, 4 skipped, with one pre-existing migration-audit failure in `test_scenario_a_langgraph_then_taskpilot_and_downgrade` expecting t035 while current repository migrations reach t036. Ruff, Pyrefly, lock check and diff check passed.
+
+Result: PHASE 14 3B BLOCKERS FIXED; LIVE POSTGRESQL VERIFIED; READY FOR FOCUSED STRONG RE-REVIEW.
+### 2026-10-02 — Phase 14 3B final focused blocker fix
+
+Made the exploratory NDWI summary server-authoritative. The Runtime generates one deterministic summary from the verified continuous metrics; terminal Skill validation and bounded `TaskRun.result_metadata` validation require the exact summary, fixed exploratory data source and fixed provenance wording. Forged expansion, contraction and water-area claims therefore fail before successful persistence, while NDVI summary behavior remains unchanged.
+
+Updated the pre-existing PostgreSQL migration audit expectation from the repository's stale t035 default to the actual t036 `confirmed_intent` head, including the confirmed-intent column and check constraint while preserving historical upgrade/downgrade assertions. No migration file was changed.
+
+Validation: adversarial NDWI tests, NDVI regressions and persistence tests passed; live PostgreSQL tests passed; full regression passed (976 passed, 4 skipped). Ruff, Pyrefly, lock check and diff check passed.
+
+Result: 3B FINAL BLOCKER FIXED; READY FOR FOCUSED STRONG RE-REVIEW.

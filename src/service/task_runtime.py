@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from geochange.aoi import resolve_aoi
 from geochange.fixture import scene_evidence, validate_binding
+from geochange.ndwi import scene_evidence as ndwi_scene_evidence
+from geochange.ndwi import validate_binding as validate_ndwi_binding
 from geochange.skill import (
     SkillSpec,
     SkillValidationError,
@@ -324,11 +326,15 @@ class TaskRuntimeService:
                     "crs": aoi.crs,
                     "source": aoi.source,
                 }
-                canonical_scene_evidence = scene_evidence(confirmed_task)
+                canonical_scene_evidence = (
+                    ndwi_scene_evidence(confirmed_task)
+                    if selected_skill.result_type == "water_change"
+                    else scene_evidence(confirmed_task)
+                )
                 # Planner/capability text is derived from the validated intent,
                 # independently of mutable presentation title/description.
                 task_snapshot = (
-                    "vegetation_change NDVI Wuhan East Lake",
+                    f"{confirmed_task.analysis_type} {confirmed_task.indicator} Wuhan East Lake",
                     confirmed_task.model_dump_json(),
                 )
             except ValueError:
@@ -1312,7 +1318,8 @@ class TaskRuntimeService:
             ):
                 result_metadata.update(
                     {
-                        "analysis_type": "vegetation_change",
+                        "analysis_type": candidate.get("analysis_type", "vegetation_change"),
+                        "indicator": candidate.get("indicator"),
                         "summary": candidate.get("summary", result_metadata["summary"]),
                         "execution_mode": candidate.get("execution_mode", "REAL_STAC_LOCAL_RASTER"),
                         "metrics": candidate["metrics"],
@@ -1427,7 +1434,10 @@ def _validate_checkpoint_geochange_evidence(
     if require_complete:
         if scene != canonical_scene_evidence:
             raise ValueError("checkpoint scene evidence is incomplete")
-        validate_binding(task, scene)
+        if getattr(task, "analysis_type", None) == "water_change":
+            validate_ndwi_binding(task, scene)
+        else:
+            validate_binding(task, scene)
 
 
 __all__ = [

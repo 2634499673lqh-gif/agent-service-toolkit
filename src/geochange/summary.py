@@ -11,7 +11,10 @@ def summarize_change(change: VegetationChange, task: GeoChangeTask) -> dict[str,
     delta = change.delta[mask]
     a = change.ndvi_a[mask]
     b = change.ndvi_b[mask]
-    decline_pixels = int(np.count_nonzero(delta <= task.decline_threshold))
+    if task.decline_threshold is None:
+        raise ValueError("NDVI summary requires a decline threshold")
+    decline_threshold = task.decline_threshold
+    decline_pixels = int(np.count_nonzero(delta <= decline_threshold))
     valid_pixels = int(mask.sum())
     area = valid_pixels * change.pixel_area_m2
     decline_area = decline_pixels * change.pixel_area_m2
@@ -24,7 +27,7 @@ def summarize_change(change: VegetationChange, task: GeoChangeTask) -> dict[str,
         "mean_delta_ndvi": float(np.mean(delta)),
         "significant_decline_area_m2": decline_area,
         "decline_percentage": percentage,
-        "decline_threshold": task.decline_threshold,
+        "decline_threshold": decline_threshold,
     }
     if not all(np.isfinite(float(value)) for value in values.values()):
         raise ValueError("summary contains a non-finite value")

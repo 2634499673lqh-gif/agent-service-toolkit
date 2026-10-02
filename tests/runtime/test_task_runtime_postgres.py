@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection, sql
 from psycopg.rows import dict_row
@@ -451,8 +452,6 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
                 task_id, run_id, artifact, principal=principal, session=session
             )
             assert response.media_type == "image/png"
-        from fastapi import HTTPException
-
         foreign = replace(principal, organization_id=uuid4())
         with pytest.raises(HTTPException) as error:
             await get_task_artifact(
@@ -465,6 +464,67 @@ async def test_postgres_cached_real_geochange_result_checkpoint_and_artifact_aut
         checkpoint.checkpoint["channel_values"]["geochange_evidence"]["fixture_manifest"]
         == MANIFEST_SHA256
     )
+
+
+@pytest.mark.asyncio
+async def test_postgres_confirmed_ndwi_persists_metadata_and_authorizes_artifacts(
+    seeded_task,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    session_factory, saver, organization_id, task_id, user_id = seeded_task
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_STAC", False)
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_LLM", False)
+    monkeypatch.setattr(settings, "USE_FAKE_MODEL", True)
+    monkeypatch.setattr(runtime_caps, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
+    async with session_factory() as session:
+        task = await session.get_one(Task, task_id)
+        task.confirmed_intent = {
+            "analysis_type": "water_change",
+            "indicator": "NDWI",
+            "analysis_area": "wuhan_east_lake",
+            "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+            "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+            "parameters": {"source": "Sentinel-2", "cloud_threshold": 30.0},
+        }
+        await session.commit()
+    run_id = await _start_run(session_factory, task_id, organization_id)
+    async with session_factory() as session:
+        result = await TaskRuntimeService(saver).execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+    assert result.terminal_outcome == "SUCCEEDED"
+    principal = await _principal_for(session_factory, user_id, organization_id)
+    async with session_factory() as session:
+        run = await session.get_one(TaskRun, run_id)
+        assert run.result_metadata is not None
+        assert run.result_metadata["analysis_type"] == "water_change"
+        assert run.result_metadata["indicator"] == "NDWI"
+        assert set(run.result_metadata["metrics"]) == {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndwi_period_a",
+            "mean_ndwi_period_b",
+            "mean_delta_ndwi",
+        }
+        for artifact in ("ndwi_before", "ndwi_after", "ndwi_change"):
+            response = await get_task_artifact(
+                task_id, run_id, artifact, principal=principal, session=session
+            )
+            assert response.media_type == "image/png"
+        with pytest.raises(HTTPException) as error:
+            await get_task_artifact(
+                task_id,
+                run_id,
+                "ndwi_before",
+                principal=replace(principal, organization_id=uuid4()),
+                session=session,
+            )
+        assert error.value.status_code == 404
 
 
 @pytest.mark.asyncio

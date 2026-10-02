@@ -8,11 +8,29 @@ from typing import Final
 from geochange.aoi import resolve_aoi
 from geochange.fixture import scene_evidence, validate_binding
 from geochange.models import GeoChangeTask
+from geochange.ndwi import scene_evidence as ndwi_scene_evidence
+from geochange.ndwi import validate_binding as validate_ndwi_binding
 from schema.planner import Plan, PlanStep
 
 
 class SkillValidationError(ValueError):
     """A planner, checkpoint, or result value violates the selected Skill."""
+
+
+def exploratory_ndwi_summary(metrics: Mapping[str, object]) -> str:
+    """Build the only server-authorized summary for exploratory NDWI."""
+
+    period_a = metrics["mean_ndwi_period_a"]
+    period_b = metrics["mean_ndwi_period_b"]
+    if not isinstance(period_a, (int, float)) or not isinstance(period_b, (int, float)):
+        raise SkillValidationError("NDWI summary metrics are invalid")
+    return (
+        "Exploratory NDWI comparison: mean NDWI changed from "
+        f"{period_a:.3f} to "
+        f"{period_b:.3f}; "
+        "continuous index statistics over the common-valid pixels only; "
+        "this does not establish confirmed water area or expansion/contraction."
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,7 +117,7 @@ class SkillSpec:
             or payload["verifier_status"] != "passed"
         ):
             raise SkillValidationError("terminal result type or verifier status is invalid")
-        if "indicator" in payload and payload["indicator"] != self.indicator:
+        if payload.get("indicator") is not None and payload["indicator"] != self.indicator:
             raise SkillValidationError(
                 "terminal result indicator does not match the selected Skill"
             )
@@ -129,6 +147,7 @@ class SkillSpec:
                 "REAL_STAC_LIVE_METADATA_LOCAL_FIXTURE",
                 "REAL_STAC_LOCAL_FIXTURE",
                 "CACHED_REAL_METADATA",
+                "CACHED_REAL_SENTINEL2_NDWI_FIXTURE",
             }
         ):
             raise SkillValidationError("terminal execution mode is invalid")
@@ -171,19 +190,39 @@ class SkillSpec:
                 raise SkillValidationError(f"terminal metric {name} is invalid")
         if not isinstance(metrics["valid_pixels"], int) or metrics["valid_pixels"] <= 0:
             raise SkillValidationError("terminal valid pixel count is invalid")
-        if not all(
-            -1.00001 <= metrics[name] <= 1.00001
-            for name in ("mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi")
-        ):
-            raise SkillValidationError("terminal NDVI range is invalid")
-        if (
-            metrics["valid_analysis_area_m2"] <= 0
-            or metrics["significant_decline_area_m2"] < 0
-            or metrics["significant_decline_area_m2"] > metrics["valid_analysis_area_m2"]
-            or not 0 <= metrics["decline_percentage"] <= 100
-            or not -1 <= metrics["decline_threshold"] <= 0
-        ):
-            raise SkillValidationError("terminal NDVI area or threshold is invalid")
+        if self.result_type == "vegetation_change":
+            if not all(
+                -1.00001 <= metrics[name] <= 1.00001
+                for name in ("mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi")
+            ):
+                raise SkillValidationError("terminal NDVI range is invalid")
+            if (
+                metrics["valid_analysis_area_m2"] <= 0
+                or metrics["significant_decline_area_m2"] < 0
+                or metrics["significant_decline_area_m2"] > metrics["valid_analysis_area_m2"]
+                or not 0 <= metrics["decline_percentage"] <= 100
+                or not -1 <= metrics["decline_threshold"] <= 0
+            ):
+                raise SkillValidationError("terminal NDVI area or threshold is invalid")
+        else:
+            if (
+                not all(
+                    -1.00001 <= metrics[name] <= 1.00001
+                    for name in ("mean_ndwi_period_a", "mean_ndwi_period_b")
+                )
+                or not -2.00001 <= metrics["mean_delta_ndwi"] <= 2.00001
+            ):
+                raise SkillValidationError("terminal NDWI range is invalid")
+            if metrics["valid_analysis_area_m2"] <= 0:
+                raise SkillValidationError("terminal NDWI area is invalid")
+            if (
+                payload["mode"] != "CACHED_REAL_SENTINEL2_NDWI_FIXTURE"
+                or payload["data_source"] != "cached_real_sentinel2_ndwi_fixture"
+                or payload["provenance_summary"]
+                != "Exploratory NDWI over verified common-valid Sentinel-2 coverage."
+                or payload["summary"] != exploratory_ndwi_summary(metrics)
+            ):
+                raise SkillValidationError("terminal NDWI summary is not server-authorized")
         if task is not None:
             expected_periods = {
                 "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
@@ -191,7 +230,10 @@ class SkillSpec:
             }
             if payload["analysis_area"] != task.aoi_key or periods != expected_periods:
                 raise SkillValidationError("terminal result does not match trusted intent")
-            if metrics["decline_threshold"] != task.decline_threshold:
+            if (
+                self.result_type == "vegetation_change"
+                and metrics["decline_threshold"] != task.decline_threshold
+            ):
                 raise SkillValidationError("terminal threshold does not match trusted intent")
         if aoi_evidence is not None:
             if (
@@ -228,12 +270,17 @@ def validate_terminal_result(
         "crs": aoi.crs,
         "source": aoi.source,
     }
-    canonical_scene = scene_evidence(task)
+    canonical_scene = (
+        ndwi_scene_evidence(task) if skill.result_type == "water_change" else scene_evidence(task)
+    )
     if dict(aoi_evidence) != canonical_aoi:
         raise SkillValidationError("AOI evidence is not server-authorized")
     if dict(scene_evidence_values) != canonical_scene:
         raise SkillValidationError("scene evidence is not server-authorized")
-    validate_binding(task, dict(scene_evidence_values))
+    if skill.result_type == "water_change":
+        validate_ndwi_binding(task, dict(scene_evidence_values))
+    else:
+        validate_binding(task, dict(scene_evidence_values))
     skill.validate_result(
         payload,
         task=task,
@@ -275,21 +322,51 @@ VEGETATION_CHANGE_NDVI: Final[SkillSpec] = SkillSpec(
     ),
 )
 
+WATER_CHANGE_NDWI: Final[SkillSpec] = SkillSpec(
+    analysis_type="water_change",
+    indicator="NDWI",
+    capabilities=(
+        "resolve_aoi",
+        "search_sentinel2",
+        "compute_water_change",
+        "summarize_change",
+    ),
+    result_type="water_change",
+    artifact_names=("ndwi_before", "ndwi_after", "ndwi_change"),
+    required_metrics=(
+        "valid_pixels",
+        "valid_analysis_area_m2",
+        "mean_ndwi_period_a",
+        "mean_ndwi_period_b",
+        "mean_delta_ndwi",
+    ),
+    required_provenance=(
+        "aoi_key",
+        "aoi_crs",
+        "aoi_source",
+        "raster_source",
+        "fixture_manifest",
+        "period_a_collection",
+        "period_b_collection",
+    ),
+)
+
 
 def resolve_skill(analysis_type: str, indicator: str) -> SkillSpec:
     """Resolve only the frozen supported analysis/indicator pairing."""
-    if (analysis_type, indicator) != (
-        VEGETATION_CHANGE_NDVI.analysis_type,
-        VEGETATION_CHANGE_NDVI.indicator,
-    ):
-        raise SkillValidationError("analysis type or indicator is unsupported")
-    return VEGETATION_CHANGE_NDVI
+    pair = (analysis_type, indicator)
+    if pair == (VEGETATION_CHANGE_NDVI.analysis_type, VEGETATION_CHANGE_NDVI.indicator):
+        return VEGETATION_CHANGE_NDVI
+    if pair == (WATER_CHANGE_NDWI.analysis_type, WATER_CHANGE_NDWI.indicator):
+        return WATER_CHANGE_NDWI
+    raise SkillValidationError("analysis type or indicator is unsupported")
 
 
 __all__ = [
     "SkillSpec",
     "SkillValidationError",
     "VEGETATION_CHANGE_NDVI",
+    "WATER_CHANGE_NDWI",
     "resolve_skill",
     "validate_terminal_result",
 ]

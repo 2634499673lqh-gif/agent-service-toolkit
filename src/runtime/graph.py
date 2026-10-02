@@ -16,6 +16,7 @@ from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
 from geochange.skill import (
     VEGETATION_CHANGE_NDVI,
+    WATER_CHANGE_NDWI,
     SkillSpec,
     SkillValidationError,
     validate_terminal_result,
@@ -160,11 +161,28 @@ class RuntimeGraphContext(BaseModel):
 class _DefaultPlannerModel:
     async def __call__(self, request: Any) -> object:
         text = f"{request.task_input.title} {request.task_input.description or ''}".casefold()
-        if any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖")):
+        skill = (
+            WATER_CHANGE_NDWI
+            if any(token in text for token in ("water", "ndwi", "水体", "水域"))
+            else VEGETATION_CHANGE_NDVI
+        )
+        if any(
+            token in text
+            for token in (
+                "vegetation",
+                "ndvi",
+                "east lake",
+                "东湖",
+                "water",
+                "ndwi",
+                "水体",
+                "水域",
+            )
+        ):
             return {
                 "steps": [
                     {"position": position, "instruction": capability}
-                    for position, capability in enumerate(VEGETATION_CHANGE_NDVI.capabilities, 1)
+                    for position, capability in enumerate(skill.capabilities, 1)
                 ]
             }
         return {
@@ -266,7 +284,7 @@ def build_runtime_graph(
             plan = await planner_node(state.task_input)
             if runtime_context is not None and runtime_context.skill is not None:
                 runtime_context.skill.validate_plan(plan)
-            if _is_geochange_request(state.task_input):
+            if geochange_task is not None or _is_geochange_request(state.task_input):
                 if geochange_task is None:
                     if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
                         geochange_task = await GeoChangeLLM(
@@ -274,7 +292,7 @@ def build_runtime_graph(
                         ).parse_task(state.task_input.description or state.task_input.title)
                     else:
                         geochange_task = _offline_geochange_task(state.task_input)
-                if geochange_task.analysis_type != "vegetation_change":
+                if geochange_task.analysis_type not in {"vegetation_change", "water_change"}:
                     raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
@@ -390,7 +408,10 @@ def build_runtime_graph(
                     "capability_context": context.model_dump(mode="json"),
                     "failure": failure,
                 }
-        elif instruction_name in VEGETATION_CHANGE_NDVI.capabilities:
+        elif (
+            instruction_name in VEGETATION_CHANGE_NDVI.capabilities
+            or instruction_name in WATER_CHANGE_NDWI.capabilities
+        ):
             if not isinstance(capability_dispatcher.metadata_for(instruction_name), RuntimeFailure):
                 selected_capability = instruction_name
         metadata = capability_dispatcher.metadata_for(selected_capability)
@@ -814,7 +835,10 @@ def _planner_observation(
 
 def _is_geochange_request(task_input: Any) -> bool:
     text = f"{task_input.title} {task_input.description or ''}".casefold()
-    return any(token in text for token in ("vegetation", "ndvi", "east lake", "东湖"))
+    return any(
+        token in text
+        for token in ("vegetation", "ndvi", "east lake", "东湖", "water", "ndwi", "水体", "水域")
+    )
 
 
 def _default_geochange_task() -> GeoChangeTask:
@@ -830,9 +854,17 @@ def _offline_geochange_task(task_input: Any) -> GeoChangeTask:
     source_text = f"{task_input.title} {task_input.description or ''}"
     explicit = extract_explicit_parameters(source_text)
     updates: dict[str, object] = {}
+    is_water = any(token in source_text.casefold() for token in ("water", "ndwi", "水体", "水域"))
+    if is_water:
+        updates.update(
+            analysis_type="water_change",
+            indicator="NDWI",
+            decline_threshold=None,
+            decline_threshold_source=None,
+        )
     if explicit.cloud_threshold is not None:
         updates.update(cloud_threshold=explicit.cloud_threshold, cloud_threshold_source="user_text")
-    if explicit.decline_threshold is not None:
+    if explicit.decline_threshold is not None and not is_water:
         updates.update(
             decline_threshold=explicit.decline_threshold,
             decline_threshold_source="user_text",

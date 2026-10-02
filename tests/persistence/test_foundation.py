@@ -109,6 +109,53 @@ def test_result_metadata_accepts_bounded_geochange_product_projection() -> None:
         )
 
 
+def test_result_metadata_accepts_only_the_exploratory_ndwi_projection() -> None:
+    value = _validate_result_metadata(
+        {
+            "schema_version": "taskpilot.runtime.v1",
+            "summary": (
+                "Exploratory NDWI comparison: mean NDWI changed from 0.100 to 0.200; "
+                "continuous index statistics over the common-valid pixels only; "
+                "this does not establish confirmed water area or expansion/contraction."
+            ),
+            "analysis_type": "water_change",
+            "indicator": "NDWI",
+            "metrics": {
+                "valid_pixels": 160,
+                "valid_analysis_area_m2": 16000.0,
+                "mean_ndwi_period_a": 0.1,
+                "mean_ndwi_period_b": 0.2,
+                "mean_delta_ndwi": 0.1,
+            },
+            "artifact_references": {
+                "ndwi_before": "ndwi_before",
+                "ndwi_after": "ndwi_after",
+                "ndwi_change": "ndwi_change",
+            },
+            "verifier_status": "passed",
+            "data_source": "cached_real_sentinel2_ndwi_fixture",
+            "provenance_summary": "Exploratory NDWI over verified common-valid Sentinel-2 coverage.",
+        }
+    )
+    assert value is not None
+    with pytest.raises(ValueError, match="NDWI metrics"):
+        _validate_result_metadata(
+            {
+                "schema_version": "taskpilot.runtime.v1",
+                "summary": "invalid",
+                "analysis_type": "water_change",
+                "indicator": "NDWI",
+                "metrics": {"water_area_m2": 0},
+                "artifact_references": {
+                    "ndwi_before": "ndwi_before",
+                    "ndwi_after": "ndwi_after",
+                    "ndwi_change": "ndwi_change",
+                },
+                "verifier_status": "passed",
+            }
+        )
+
+
 def test_approval_metadata_declares_frozen_identity_and_integrity_contract() -> None:
     table = Approval.__table__
     assert set(table.c.keys()) == {

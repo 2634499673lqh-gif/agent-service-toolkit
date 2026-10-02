@@ -86,7 +86,8 @@ T032_REVISION = "t032_task_run"
 T033_REVISION = "t033_approval"
 T034_REVISION = "t034_observability"
 T035_REVISION = "t035_task_run_result"
-EXPECTED_REVISION = T035_REVISION
+T036_REVISION = "t036_confirmed_intent"
+EXPECTED_REVISION = T036_REVISION
 
 
 def _configured_test_url() -> str:
@@ -197,9 +198,14 @@ async def _assert_taskpilot_schema(
     expected_tables: set[str] | None = None,
 ) -> None:
     if approvals_expected is None:
-        approvals_expected = expected_revision in {T033_REVISION, T034_REVISION, T035_REVISION}
+        approvals_expected = expected_revision in {
+            T033_REVISION,
+            T034_REVISION,
+            T035_REVISION,
+            T036_REVISION,
+        }
     if observability_expected is None:
-        observability_expected = expected_revision in {T034_REVISION, T035_REVISION}
+        observability_expected = expected_revision in {T034_REVISION, T035_REVISION, T036_REVISION}
     async with engine.connect() as connection:
         schemas = set(await connection.run_sync(lambda conn: inspect(conn).get_schema_names()))
         tables = set(
@@ -354,7 +360,13 @@ async def _assert_taskpilot_schema(
         if sessions_expected:
             expected_tables.add("auth_sessions")
         expected_tables.add("tasks")
-        if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION, T035_REVISION}:
+        if expected_revision in {
+            T032_REVISION,
+            T033_REVISION,
+            T034_REVISION,
+            T035_REVISION,
+            T036_REVISION,
+        }:
             expected_tables.add("task_runs")
         if approvals_expected:
             expected_tables.add("approvals")
@@ -495,6 +507,7 @@ async def _assert_taskpilot_schema(
         T033_REVISION,
         T034_REVISION,
         T035_REVISION,
+        T036_REVISION,
     }:
         assert tasks_relation == "taskpilot.tasks"
         task_columns = {
@@ -503,7 +516,7 @@ async def _assert_taskpilot_schema(
                 lambda conn: inspect(conn).get_columns("tasks", schema="taskpilot")
             )
         }
-        assert set(task_columns) == {
+        expected_task_columns = {
             "id",
             "organization_id",
             "created_by_user_id",
@@ -513,6 +526,9 @@ async def _assert_taskpilot_schema(
             "created_at",
             "updated_at",
         }
+        if expected_revision == T036_REVISION:
+            expected_task_columns.add("confirmed_intent")
+        assert set(task_columns) == expected_task_columns
         assert str(task_columns["id"]["type"]) == "UUID"
         assert str(task_columns["organization_id"]["type"]) == "UUID"
         assert str(task_columns["created_by_user_id"]["type"]) == "UUID"
@@ -520,13 +536,19 @@ async def _assert_taskpilot_schema(
         assert task_columns["status"]["nullable"] is False
         assert task_columns["created_at"]["type"].timezone is True
         assert task_columns["updated_at"]["type"].timezone is True
+        if expected_revision == T036_REVISION:
+            assert task_columns["confirmed_intent"]["nullable"] is True
         task_checks = await task_connection.run_sync(
             lambda conn: inspect(conn).get_check_constraints("tasks", schema="taskpilot")
         )
         assert {constraint["name"] for constraint in task_checks} == {
             "ck_tasks_task_title_not_blank",
             "ck_tasks_task_status_valid",
-        }
+        } | (
+            {"ck_tasks_task_confirmed_intent_bounds"}
+            if expected_revision == T036_REVISION
+            else set()
+        )
         task_indexes = await task_connection.run_sync(
             lambda conn: inspect(conn).get_indexes("tasks", schema="taskpilot")
         )
@@ -555,7 +577,13 @@ async def _assert_taskpilot_schema(
         text("SELECT to_regclass(:qualified_name)"),
         {"qualified_name": "taskpilot.task_runs"},
     )
-    if expected_revision in {T032_REVISION, T033_REVISION, T034_REVISION, T035_REVISION}:
+    if expected_revision in {
+        T032_REVISION,
+        T033_REVISION,
+        T034_REVISION,
+        T035_REVISION,
+        T036_REVISION,
+    }:
         assert task_runs_relation == "taskpilot.task_runs"
         task_run_columns = {
             column["name"]: column
@@ -571,7 +599,7 @@ async def _assert_taskpilot_schema(
             "created_at",
             "updated_at",
         }
-        if expected_revision == T035_REVISION:
+        if expected_revision in {T035_REVISION, T036_REVISION}:
             expected_task_run_columns.add("result_metadata")
         assert set(task_run_columns) == expected_task_run_columns
         assert str(task_run_columns["id"]["type"]) == "UUID"
@@ -588,7 +616,7 @@ async def _assert_taskpilot_schema(
             "ck_task_runs_task_run_number_positive",
             "ck_task_runs_task_run_status_valid",
         }
-        if expected_revision == T035_REVISION:
+        if expected_revision in {T035_REVISION, T036_REVISION}:
             expected_task_run_checks.add("ck_task_runs_task_run_result_metadata_bounds")
         assert {constraint["name"] for constraint in task_run_checks} == expected_task_run_checks
         task_run_unique_constraints = await task_connection.run_sync(

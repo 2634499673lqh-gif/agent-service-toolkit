@@ -311,6 +311,7 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         "verifier_status",
         "execution_mode",
         "analysis_type",
+        "indicator",
         "selected_scene_evidence",
         "artifact_references",
         "replan_count",
@@ -348,8 +349,78 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         for key, item in metrics.items()
     ):
         raise ValueError("result_metadata.metrics is invalid")
-    if "analysis_type" in value and value["analysis_type"] != "vegetation_change":
+    analysis_type = value.get("analysis_type")
+    indicator = value.get("indicator")
+    if analysis_type is not None and analysis_type not in {"vegetation_change", "water_change"}:
         raise ValueError("result_metadata.analysis_type is invalid")
+    if indicator is not None and indicator not in {"NDVI", "NDWI"}:
+        raise ValueError("result_metadata.indicator is invalid")
+    if analysis_type == "vegetation_change" and indicator not in {None, "NDVI"}:
+        raise ValueError("result_metadata vegetation indicator is invalid")
+    if analysis_type == "water_change":
+        if indicator != "NDWI":
+            raise ValueError("result_metadata water indicator is invalid")
+        if set(value.get("metrics", {})) != {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndwi_period_a",
+            "mean_ndwi_period_b",
+            "mean_delta_ndwi",
+        }:
+            raise ValueError("result_metadata NDWI metrics are invalid")
+        ndwi_metrics = value["metrics"]
+        if (
+            not isinstance(ndwi_metrics["valid_pixels"], int)
+            or isinstance(ndwi_metrics["valid_pixels"], bool)
+            or ndwi_metrics["valid_pixels"] <= 0
+            or any(
+                not isinstance(ndwi_metrics[name], (int, float))
+                or isinstance(ndwi_metrics[name], bool)
+                or not math.isfinite(float(ndwi_metrics[name]))
+                for name in (
+                    "valid_analysis_area_m2",
+                    "mean_ndwi_period_a",
+                    "mean_ndwi_period_b",
+                    "mean_delta_ndwi",
+                )
+            )
+            or ndwi_metrics["valid_analysis_area_m2"] <= 0
+            or not -1.00001 <= ndwi_metrics["mean_ndwi_period_a"] <= 1.00001
+            or not -1.00001 <= ndwi_metrics["mean_ndwi_period_b"] <= 1.00001
+            or not -2.00001 <= ndwi_metrics["mean_delta_ndwi"] <= 2.00001
+        ):
+            raise ValueError("result_metadata NDWI metric values are invalid")
+        if set(value.get("artifact_references", {})) != {
+            "ndwi_before",
+            "ndwi_after",
+            "ndwi_change",
+        }:
+            raise ValueError("result_metadata NDWI artifacts are invalid")
+        if any(
+            value.get("artifact_references", {}).get(name) != name
+            for name in ("ndwi_before", "ndwi_after", "ndwi_change")
+        ):
+            raise ValueError("result_metadata NDWI artifact references are invalid")
+        expected_summary = (
+            "Exploratory NDWI comparison: mean NDWI changed from "
+            f"{ndwi_metrics['mean_ndwi_period_a']:.3f} to "
+            f"{ndwi_metrics['mean_ndwi_period_b']:.3f}; "
+            "continuous index statistics over the common-valid pixels only; "
+            "this does not establish confirmed water area or expansion/contraction."
+        )
+        if value.get("summary") != expected_summary:
+            raise ValueError("result_metadata NDWI summary is not server-authorized")
+        if value.get("data_source") != "cached_real_sentinel2_ndwi_fixture":
+            raise ValueError("result_metadata NDWI data source is invalid")
+        if value.get("provenance_summary") != (
+            "Exploratory NDWI over verified common-valid Sentinel-2 coverage."
+        ):
+            raise ValueError("result_metadata NDWI provenance summary is invalid")
+        if any(
+            key in value.get("metrics", {})
+            for key in ("water_area", "water_area_m2", "expansion", "contraction")
+        ):
+            raise ValueError("result_metadata contains unauthorized water-area claims")
     if "replan_count" in value and not isinstance(value["replan_count"], int):
         raise ValueError("result_metadata.replan_count is invalid")
     if "stage_status" in value:

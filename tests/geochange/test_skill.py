@@ -5,10 +5,13 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from geochange.models import GeoChangeTask
+from geochange.ndwi import scene_evidence as ndwi_scene_evidence
 from geochange.skill import (
     VEGETATION_CHANGE_NDVI,
+    WATER_CHANGE_NDWI,
     SkillValidationError,
     resolve_skill,
+    validate_terminal_result,
 )
 from runtime import (
     AgentState,
@@ -43,7 +46,7 @@ def test_ndvi_skill_is_static_and_ordered() -> None:
 
 @pytest.mark.parametrize(
     "analysis_type,indicator",
-    [("water_change", "NDWI"), ("vegetation_change", "NDWI"), ("urban_change", "NDBI")],
+    [("vegetation_change", "NDWI"), ("urban_change", "NDBI")],
 )
 def test_unknown_or_cross_skill_pairing_is_rejected(analysis_type: str, indicator: str) -> None:
     with pytest.raises(SkillValidationError):
@@ -347,6 +350,81 @@ async def test_valid_ndvi_graph_execution_reaches_success() -> None:
     )
     assert result["terminal_outcome"] == "SUCCEEDED"
     assert result["verification"]["verdict"] == "PASS"
+
+
+@pytest.mark.asyncio
+async def test_exploratory_ndwi_graph_execution_reaches_success() -> None:
+    graph = build_runtime_graph(MemorySaver())
+    state = AgentState.initial(
+        task_id=UUID("22222222-2222-4222-8222-222222222222"),
+        task_run_id=UUID("33333333-3333-4333-8333-333333333333"),
+        title="water change",
+        description="NDWI",
+    )
+    result = await graph.ainvoke(
+        state.checkpoint_data(),
+        config={"configurable": {"thread_id": "valid-ndwi"}},
+        context=RuntimeGraphContext(skill=WATER_CHANGE_NDWI),
+    )
+    assert result["terminal_outcome"] == "SUCCEEDED"
+    payload = json.loads(result["execution_result"]["output"])
+    assert payload["analysis_type"] == "water_change"
+    assert set(payload["metrics"]) == {
+        "valid_pixels",
+        "valid_analysis_area_m2",
+        "mean_ndwi_period_a",
+        "mean_ndwi_period_b",
+        "mean_delta_ndwi",
+    }
+    assert "confirmed water" in payload["summary"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "forged_summary",
+    [
+        "Confirmed water expansion detected.",
+        "Confirmed water contraction detected.",
+        "Confirmed water-area increase detected.",
+    ],
+)
+async def test_ndwi_terminal_validation_rejects_unverified_scientific_claims(
+    forged_summary: str,
+) -> None:
+    graph = build_runtime_graph(MemorySaver())
+    state = AgentState.initial(
+        task_id=UUID("22222222-2222-4222-8222-222222222222"),
+        task_run_id=UUID("33333333-3333-4333-8333-333333333333"),
+        title="water change",
+        description="NDWI",
+    )
+    result = await graph.ainvoke(
+        state.checkpoint_data(),
+        config={"configurable": {"thread_id": f"forged-ndwi-{hash(forged_summary)}"}},
+        context=RuntimeGraphContext(skill=WATER_CHANGE_NDWI),
+    )
+    payload = json.loads(result["execution_result"]["output"])
+    payload["summary"] = forged_summary
+    task = GeoChangeTask(
+        analysis_type="water_change",
+        indicator="NDWI",
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+        decline_threshold=None,
+        decline_threshold_source=None,
+    )
+    with pytest.raises(SkillValidationError, match="summary"):
+        validate_terminal_result(
+            WATER_CHANGE_NDWI,
+            payload,
+            task=task,
+            aoi_evidence={
+                "catalog_key": "wuhan_east_lake",
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+            scene_evidence_values=ndwi_scene_evidence(task),
+        )
 
 
 @pytest.mark.asyncio

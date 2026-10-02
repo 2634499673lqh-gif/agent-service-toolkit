@@ -46,7 +46,7 @@ def proposal_from_message(message: str) -> TaskProposal:
         period_a = Period(start=dates[0], end=dates[1])
         period_b = Period(start=dates[2], end=dates[3])
     if "水" in text and "植被" not in text and "NDVI" not in text.upper():
-        analysis_type, indicator = "water_change", "water_index"
+        analysis_type, indicator = "water_change", "NDWI"
     else:
         analysis_type, indicator = "vegetation_change", "NDVI"
     area_label = area or "未指定区域"

@@ -10,6 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from geochange.fixture import scene_evidence
+from geochange.ndwi import scene_evidence as ndwi_scene_evidence
 from geochange.skill import resolve_skill
 from persistence.models import Task, TaskRun, TaskRunStatus, TaskStatus
 from runtime import (
@@ -34,6 +35,7 @@ from service.task_runtime import (
     TaskRuntimeConflictError,
     TaskRuntimeNotFoundError,
     TaskRuntimeService,
+    _validate_checkpoint_geochange_evidence,
 )
 
 ORG = UUID("11111111-1111-4111-8111-111111111111")
@@ -84,6 +86,19 @@ def _confirmed_business_pair(status: TaskRunStatus) -> tuple[Task, TaskRun]:
             "cloud_threshold": 30.0,
             "decline_threshold": -0.2,
         },
+    }
+    return task, run
+
+
+def _confirmed_water_pair(status: TaskRunStatus) -> tuple[Task, TaskRun]:
+    task, run = _business_pair(status)
+    task.confirmed_intent = {
+        "analysis_type": "water_change",
+        "indicator": "NDWI",
+        "analysis_area": "wuhan_east_lake",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+        "parameters": {"source": "Sentinel-2", "cloud_threshold": 30.0},
     }
     return task, run
 
@@ -403,6 +418,87 @@ async def test_confirmed_intent_resume_rederives_skill_and_succeeds() -> None:
     assert result.terminal_outcome == "SUCCEEDED"
     assert result.state.terminal_outcome == "SUCCEEDED"
     assert lifecycle.succeed_run.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_confirmed_ndwi_resume_rebinds_pinned_evidence_and_succeeds() -> None:
+    task, run = _confirmed_water_pair(TaskRunStatus.RUNNING)
+    saver = MemorySaver()
+    graph = build_runtime_graph(saver, interrupt_before=["verifier"])
+    intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+    runtime_task = intent.runtime_task()
+    initial = AgentState.initial(
+        task_id=TASK_ID,
+        task_run_id=RUN_ID,
+        title="water_change NDWI Wuhan East Lake",
+        description=runtime_task.model_dump_json(),
+    ).model_copy(
+        update={
+            "geochange_task": runtime_task,
+            "geochange_aoi_evidence": {
+                "catalog_key": "wuhan_east_lake",
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+            "geochange_evidence": ndwi_scene_evidence(runtime_task),
+        }
+    )
+    await graph.ainvoke(
+        initial.checkpoint_data(),
+        config={"configurable": {"thread_id": THREAD_ID}},
+        context=RuntimeGraphContext(skill=resolve_skill("water_change", "NDWI")),
+    )
+    for _ in range(3):
+        await graph.ainvoke(
+            None,
+            config={"configurable": {"thread_id": THREAD_ID}},
+            context=RuntimeGraphContext(skill=resolve_skill("water_change", "NDWI")),
+        )
+    service = TaskRuntimeService(saver, graph=graph)
+    fake_runs = FakeRuns(task, run)
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=fake_runs),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+    ):
+        result = await service.execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+    assert result.terminal_outcome == "SUCCEEDED"
+    assert result.state.verification is not None
+    assert result.state.verification.verdict == "PASS"
+
+
+def test_forged_ndwi_checkpoint_evidence_fails_closed() -> None:
+    task, _ = _confirmed_water_pair(TaskRunStatus.RUNNING)
+    runtime_task = ConfirmedIntent.model_validate(task.confirmed_intent).runtime_task()
+    forged = ndwi_scene_evidence(runtime_task)
+    forged["fixture_manifest"] = "f" * 64
+    state = AgentState.initial(
+        task_id=TASK_ID, task_run_id=RUN_ID, title="water", description="NDWI"
+    ).model_copy(
+        update={
+            "geochange_evidence": forged,
+            "geochange_aoi_evidence": {
+                "catalog_key": "wuhan_east_lake",
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+            "plan_position": 3,
+        }
+    )
+    with pytest.raises(ValueError, match="scene evidence"):
+        _validate_checkpoint_geochange_evidence(
+            state,
+            {
+                "catalog_key": "wuhan_east_lake",
+                "crs": "EPSG:4326",
+                "source": "taskpilot.geochange.catalog.v1",
+            },
+            ndwi_scene_evidence(runtime_task),
+            require_complete=True,
+            task=runtime_task,
+        )
 
 
 @pytest.mark.asyncio

@@ -191,3 +191,24 @@ def test_trace_limit_is_frozen_and_malformed_payload_is_rejected():
         with pytest.raises(TaskPilotClientError, match="invalid response") as error:
             client.get_trace(uuid4(), uuid4(), limit=100)
     assert "not a trace list" not in str(error.value)
+
+
+@pytest.mark.parametrize("artifact_name", ["ndwi_before", "ndwi_after", "ndwi_change"])
+def test_product_client_allows_exploratory_ndwi_artifacts(artifact_name: str) -> None:
+    client = TaskPilotClient("http://test", token="secret")
+    task_id, run_id = uuid4(), uuid4()
+    image = httpx.Response(
+        200,
+        content=b"png",
+        headers={"content-type": "image/png"},
+        request=httpx.Request("GET", "http://test/api"),
+    )
+    with patch("httpx.request", return_value=image) as request:
+        assert client.get_artifact(task_id, run_id, artifact_name) == b"png"
+    assert artifact_name in request.call_args.args[1]
+
+
+def test_product_client_rejects_unknown_artifact() -> None:
+    client = TaskPilotClient("http://test", token="secret")
+    with pytest.raises(ValueError, match="unsupported artifact"):
+        client.get_artifact(uuid4(), uuid4(), "../../secret")
