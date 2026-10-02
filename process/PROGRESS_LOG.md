@@ -5793,3 +5793,21 @@ Added focused tests for punctuation-aware area extraction, complete
 confirmation status, incomplete confirmation clarification, and no-resource
 creation behavior. The trusted `Task.confirmed_intent` and Runtime authority
 model are unchanged.
+
+### 2026-10-02 — Phase 14 Implementation 3 design freeze correction
+
+Added proposed `process/ADR-014.md` after the initial planning report received Planning Strong Review NOT APPROVED. The document freezes the minimum static Skill and Runtime boundary, strict analysis-specific intent compatibility, shared bounded results/artifacts, fail-closed routing, and acceptance gates for 3A/3B/3C. Existing fixture inspection confirms only B04/B08 evidence; B03/B11/SCL data, checksums, masks, grid/resampling rules, and scientific thresholds remain explicit prerequisites for 3B/3C. No production code, tests, migrations, dependencies, or runtime behavior changed.
+
+Result: READY FOR PLANNING STRONG REVIEW. ADR-014 remains Proposed / Pending Review; Implementation 3A is not authorized by this document alone.
+
+### 2026-10-02 — ADR-014 focused documentation correction
+
+Resolved the three remaining planning blockers without changing scope. ADR-014 now states that the server derives Skill from validated `Task.confirmed_intent` on every start/resume, checkpoints cannot authorize Skills or capabilities, and one static specification owns all Skill constraints. It explicitly preserves strict routing for confirmed-intent Tasks, the existing NULL-intent legacy path, historical checkpoints without new Skill fields, NDVI behavior, and recovery compatibility. Batch 3A now lists the required unknown/cross-Skill, order, replan, resume, malicious Planner, capability-output, and legacy recovery acceptance tests. Batch 3B/3C evidence gates remain unchanged.
+
+Result: READY FOR FOCUSED PLANNING STRONG RE-REVIEW. ADR-014 remains Proposed / Pending Review; no production code or tests changed.
+
+### 2026-10-02 — ADR-014 approval status synchronization
+
+Independent Strong Review approved the ADR-014 design. Updated the current status to Accepted / frozen and marked Implementation 3A READY FOR IMPLEMENTATION. Implementations 3B and 3C remain BLOCKED pending B03/B11, SCL/cloud-shadow, checksum/provenance, grid/resampling, and scientific validation evidence. Historical review findings remain preserved; no technical contract or scope was changed.
+
+Result: ADR-014 ACCEPTED / FROZEN; 3A READY FOR IMPLEMENTATION; 3B/3C BLOCKED.

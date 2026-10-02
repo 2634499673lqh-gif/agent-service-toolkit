@@ -636,3 +636,13 @@ canonical technical DAG. At that point T138 remained pending focused re-review.
 The focused Planning Strong Re-review closed all three blockers. ADR-013 is
 Accepted / frozen, T138 is COMPLETE / APPROVED, Phase 13 Planning is
 APPROVED / FROZEN, and the next executable work is Batch A: T139 → T140.
+
+## Phase 14 Implementation 3 design freeze — ADR-014 (2026-10-02)
+
+The first Implementation 3 planning report received Planning Strong Review NOT APPROVED. Added proposed ADR-014 to freeze the static Skill mapping, Runtime reuse, strict intent compatibility, shared result/artifact rules, and 3A/3B/3C gates. Repository evidence confirms the existing fixture contains only B04/B08 at 10 m on EPSG:32650 with 64x64 windows; B03, B11, and SCL/cloud-shadow assets are absent. NDWI/NDBI therefore remain blocked by explicit data, provenance, grid/resampling, and scientific-validation gates. No production code, tests, migrations, dependencies, or runtime behavior changed. ADR-014 remains Proposed / Pending Planning Strong Review.
+
+The focused documentation correction makes Skill authority explicit: every start/resume derives Skill from validated `Task.confirmed_intent`; checkpoints carry recovery state only and cannot authorize Skills/capabilities. Confirmed-intent tasks use strict routing, while NULL-intent legacy tasks and historical checkpoints retain their existing path without new Skill fields. Batch 3A now has explicit rejection and authority-preservation acceptance cases, including malicious Planner output, replan escape, resume mutation, capability output, and legacy recovery.
+
+## Phase 14 ADR-014 approval status synchronization — 2026-10-02
+
+Independent Strong Review approved ADR-014. The status is now Accepted / frozen; Implementation 3A is READY FOR IMPLEMENTATION; Implementations 3B and 3C remain BLOCKED pending their existing scientific and data evidence gates. Historical NOT APPROVED findings and focused documentation corrections remain preserved above. No technical contract, scope, production code, test, migration, dependency, or DAG decision changed.
