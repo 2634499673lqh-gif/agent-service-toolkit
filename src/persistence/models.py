@@ -351,9 +351,13 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.metrics is invalid")
     analysis_type = value.get("analysis_type")
     indicator = value.get("indicator")
-    if analysis_type is not None and analysis_type not in {"vegetation_change", "water_change"}:
+    if analysis_type is not None and analysis_type not in {
+        "vegetation_change",
+        "water_change",
+        "urban_change",
+    }:
         raise ValueError("result_metadata.analysis_type is invalid")
-    if indicator is not None and indicator not in {"NDVI", "NDWI"}:
+    if indicator is not None and indicator not in {"NDVI", "NDWI", "NDBI"}:
         raise ValueError("result_metadata.indicator is invalid")
     if analysis_type == "vegetation_change" and indicator not in {None, "NDVI"}:
         raise ValueError("result_metadata vegetation indicator is invalid")
@@ -421,6 +425,75 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
             for key in ("water_area", "water_area_m2", "expansion", "contraction")
         ):
             raise ValueError("result_metadata contains unauthorized water-area claims")
+    if analysis_type == "urban_change":
+        if indicator != "NDBI":
+            raise ValueError("result_metadata urban indicator is invalid")
+        expected_metrics = {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndbi_period_a",
+            "mean_ndbi_period_b",
+            "mean_delta_ndbi",
+        }
+        if set(value.get("metrics", {})) != expected_metrics:
+            raise ValueError("result_metadata NDBI metrics are invalid")
+        ndbi_metrics = value["metrics"]
+        if (
+            not isinstance(ndbi_metrics["valid_pixels"], int)
+            or isinstance(ndbi_metrics["valid_pixels"], bool)
+            or ndbi_metrics["valid_pixels"] <= 0
+            or any(
+                not isinstance(ndbi_metrics[name], (int, float))
+                or isinstance(ndbi_metrics[name], bool)
+                or not math.isfinite(float(ndbi_metrics[name]))
+                for name in (
+                    "valid_analysis_area_m2",
+                    "mean_ndbi_period_a",
+                    "mean_ndbi_period_b",
+                    "mean_delta_ndbi",
+                )
+            )
+            or ndbi_metrics["valid_analysis_area_m2"] <= 0
+            or not -1.00001 <= ndbi_metrics["mean_ndbi_period_a"] <= 1.00001
+            or not -1.00001 <= ndbi_metrics["mean_ndbi_period_b"] <= 1.00001
+            or not -2.00001 <= ndbi_metrics["mean_delta_ndbi"] <= 2.00001
+        ):
+            raise ValueError("result_metadata NDBI metric values are invalid")
+        if set(value.get("artifact_references", {})) != {
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
+        } or any(
+            value.get("artifact_references", {}).get(name) != name
+            for name in ("ndbi_before", "ndbi_after", "ndbi_change")
+        ):
+            raise ValueError("result_metadata NDBI artifacts are invalid")
+        expected_summary = (
+            "Exploratory NDBI index comparison: mean NDBI changed from "
+            f"{ndbi_metrics['mean_ndbi_period_a']:.3f} to "
+            f"{ndbi_metrics['mean_ndbi_period_b']:.3f}; "
+            "continuous index statistics over the common-valid pixels only; "
+            "this does not establish confirmed built-up area or urban expansion."
+        )
+        if value.get("summary") != expected_summary:
+            raise ValueError("result_metadata NDBI summary is not server-authorized")
+        if value.get("data_source") != "cached_real_sentinel2_ndbi_fixture":
+            raise ValueError("result_metadata NDBI data source is invalid")
+        if value.get("provenance_summary") != (
+            "Exploratory NDBI over verified common-valid Sentinel-2 coverage; B11 native resolution is 20 m."
+        ):
+            raise ValueError("result_metadata NDBI provenance summary is invalid")
+        if any(
+            key in value.get("metrics", {})
+            for key in (
+                "built_up_area",
+                "built_up_area_m2",
+                "urban_expansion",
+                "urban_contraction",
+                "construction_land_conversion",
+            )
+        ):
+            raise ValueError("result_metadata contains unauthorized urban claims")
     if "replan_count" in value and not isinstance(value["replan_count"], int):
         raise ValueError("result_metadata.replan_count is invalid")
     if "stage_status" in value:

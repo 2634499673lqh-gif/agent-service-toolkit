@@ -17,6 +17,16 @@ from .artifacts import ARTIFACT_ROOT
 from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
 from .llm import GeoChangeLLM
 from .models import GeoChangeResult, GeoChangeTask
+from .ndbi import (
+    EXECUTION_MODE as NDBI_EXECUTION_MODE,
+)
+from .ndbi import (
+    compute_cached_urban_change,
+    summarize_urban_change,
+)
+from .ndbi import (
+    scene_evidence as ndbi_scene_evidence,
+)
 from .ndwi import (
     compute_cached_water_change,
     summarize_water_change,
@@ -24,7 +34,7 @@ from .ndwi import (
 from .ndwi import (
     scene_evidence as ndwi_scene_evidence,
 )
-from .skill import exploratory_ndwi_summary
+from .skill import exploratory_ndbi_summary, exploratory_ndwi_summary
 from .stac import search_sentinel2
 from .summary import summarize_change
 from .verifier import verify_change
@@ -105,7 +115,7 @@ class SearchSentinel2RuntimeCapability(_Base):
                 error_code="geochange_quality_failed",
                 error_message="initial imagery candidate failed the bounded quality rule",
             )
-        if settings.GEOCHANGE_LIVE_STAC and task.analysis_type != "water_change":
+        if settings.GEOCHANGE_LIVE_STAC and task.analysis_type == "vegetation_change":
             aoi = resolve_aoi(task.aoi_key)
             # Earth Search ranks by provider order; query the bounded maximum
             # cloud range, then apply the validated task threshold to evidence.
@@ -148,11 +158,12 @@ class SearchSentinel2RuntimeCapability(_Base):
                 )
             evidence = _live_scene_evidence(task, item_a, item_b)
         else:
-            evidence = (
-                ndwi_scene_evidence(task)
-                if task.analysis_type == "water_change"
-                else scene_evidence(task)
-            )
+            if task.analysis_type == "water_change":
+                evidence = ndwi_scene_evidence(task)
+            elif task.analysis_type == "urban_change":
+                evidence = ndbi_scene_evidence(task)
+            else:
+                evidence = scene_evidence(task)
         return self._result(step, evidence)
 
 
@@ -212,6 +223,36 @@ class ComputeWaterRuntimeCapability(_Base):
             {
                 "valid_pixels": int(change.valid_mask.sum()),
                 "mean_delta_ndwi": float(np.nanmean(change.delta)),
+            },
+        )
+
+
+class ComputeUrbanRuntimeCapability(_Base):
+    metadata = CapabilityMetadata(
+        name="compute_urban_change",
+        description="Compute deterministic exploratory NDBI change.",
+        read_only=True,
+        deterministic=True,
+        side_effect_free=True,
+    )
+
+    async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
+        task = _task(context)
+        evidence = dict(getattr(context, "geochange_evidence", {}) or {})
+        try:
+            change = compute_cached_urban_change(task, evidence)
+        except ValueError as error:
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_provenance_invalid",
+                error_message=str(error)[:200],
+            )
+        return self._result(
+            step,
+            {
+                "valid_pixels": int(change.valid_mask.sum()),
+                "mean_delta_ndbi": float(np.nanmean(change.delta)),
             },
         )
 
@@ -279,6 +320,56 @@ class SummarizeChangeRuntimeCapability(_Base):
             payload.update(
                 {
                     "execution_mode": "CACHED_REAL_SENTINEL2_NDWI_FIXTURE",
+                    "selected_scene_evidence": scene_evidence,
+                }
+            )
+            return self._result(step, payload)
+        if task.analysis_type == "urban_change":
+            try:
+                change = compute_cached_urban_change(
+                    task, scene_evidence, artifact_dir=artifact_root
+                )
+                metrics = summarize_urban_change(change)
+            except ValueError as error:
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="geochange_provenance_invalid",
+                    error_message=str(error)[:200],
+                )
+            aoi_evidence = dict(getattr(context, "geochange_aoi_evidence", {}) or {})
+            payload = GeoChangeResult(
+                indicator="NDBI",
+                analysis_type="urban_change",
+                mode=NDBI_EXECUTION_MODE,
+                summary=exploratory_ndbi_summary(metrics),
+                metrics=metrics,
+                analysis_area=task.aoi_key,
+                analysis_periods={
+                    "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
+                    "period_b": f"{task.period_b.start.isoformat()}/{task.period_b.end.isoformat()}",
+                },
+                data_source="cached_real_sentinel2_ndbi_fixture",
+                provenance_summary="Exploratory NDBI over verified common-valid Sentinel-2 coverage; B11 native resolution is 20 m.",
+                provenance={
+                    "aoi_key": aoi_evidence["catalog_key"],
+                    "aoi_crs": aoi_evidence["crs"],
+                    "aoi_source": aoi_evidence["source"],
+                    "raster_source": "cached_real_sentinel2_ndbi_fixture",
+                    "fixture_manifest": scene_evidence["fixture_manifest"],
+                    "period_a_collection": scene_evidence["period_a_collection"],
+                    "period_b_collection": scene_evidence["period_b_collection"],
+                },
+                artifacts={
+                    "ndbi_before": "ndbi_before",
+                    "ndbi_after": "ndbi_after",
+                    "ndbi_change": "ndbi_change",
+                },
+                verifier_status="passed",
+            ).model_dump(mode="json")
+            payload.update(
+                {
+                    "execution_mode": NDBI_EXECUTION_MODE,
                     "selected_scene_evidence": scene_evidence,
                 }
             )
@@ -372,6 +463,7 @@ def runtime_capabilities() -> dict[str, object]:
         "search_sentinel2": SearchSentinel2RuntimeCapability(),
         "compute_vegetation_change": ComputeVegetationRuntimeCapability(),
         "compute_water_change": ComputeWaterRuntimeCapability(),
+        "compute_urban_change": ComputeUrbanRuntimeCapability(),
         "summarize_change": SummarizeChangeRuntimeCapability(),
     }
 

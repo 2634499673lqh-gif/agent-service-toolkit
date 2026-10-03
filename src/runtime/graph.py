@@ -15,6 +15,7 @@ from core.settings import settings
 from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
 from geochange.skill import (
+    URBAN_CHANGE_NDBI,
     VEGETATION_CHANGE_NDVI,
     WATER_CHANGE_NDWI,
     SkillSpec,
@@ -164,6 +165,8 @@ class _DefaultPlannerModel:
         skill = (
             WATER_CHANGE_NDWI
             if any(token in text for token in ("water", "ndwi", "水体", "水域"))
+            else URBAN_CHANGE_NDBI
+            if any(token in text for token in ("urban", "ndbi", "built-up", "建成区", "城市"))
             else VEGETATION_CHANGE_NDVI
         )
         if any(
@@ -177,6 +180,11 @@ class _DefaultPlannerModel:
                 "ndwi",
                 "水体",
                 "水域",
+                "urban",
+                "ndbi",
+                "built-up",
+                "建成区",
+                "城市",
             )
         ):
             return {
@@ -292,7 +300,11 @@ def build_runtime_graph(
                         ).parse_task(state.task_input.description or state.task_input.title)
                     else:
                         geochange_task = _offline_geochange_task(state.task_input)
-                if geochange_task.analysis_type not in {"vegetation_change", "water_change"}:
+                if geochange_task.analysis_type not in {
+                    "vegetation_change",
+                    "water_change",
+                    "urban_change",
+                }:
                     raise ValueError("unsupported GeoChange analysis type")
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
@@ -837,7 +849,20 @@ def _is_geochange_request(task_input: Any) -> bool:
     text = f"{task_input.title} {task_input.description or ''}".casefold()
     return any(
         token in text
-        for token in ("vegetation", "ndvi", "east lake", "东湖", "water", "ndwi", "水体", "水域")
+        for token in (
+            "vegetation",
+            "ndvi",
+            "east lake",
+            "东湖",
+            "water",
+            "ndwi",
+            "水体",
+            "水域",
+            "urban",
+            "ndbi",
+            "built-up",
+            "建成区",
+        )
     )
 
 
@@ -855,10 +880,20 @@ def _offline_geochange_task(task_input: Any) -> GeoChangeTask:
     explicit = extract_explicit_parameters(source_text)
     updates: dict[str, object] = {}
     is_water = any(token in source_text.casefold() for token in ("water", "ndwi", "水体", "水域"))
+    is_urban = any(
+        token in source_text.casefold() for token in ("urban", "ndbi", "built-up", "建成区", "城市")
+    )
     if is_water:
         updates.update(
             analysis_type="water_change",
             indicator="NDWI",
+            decline_threshold=None,
+            decline_threshold_source=None,
+        )
+    elif is_urban:
+        updates.update(
+            analysis_type="urban_change",
+            indicator="NDBI",
             decline_threshold=None,
             decline_threshold_source=None,
         )

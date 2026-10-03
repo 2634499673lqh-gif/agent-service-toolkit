@@ -24,8 +24,10 @@ class GeoChangeTask(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    analysis_type: Literal["vegetation_change", "water_change"] = "vegetation_change"
-    indicator: Literal["NDVI", "NDWI"] = "NDVI"
+    analysis_type: Literal["vegetation_change", "water_change", "urban_change"] = (
+        "vegetation_change"
+    )
+    indicator: Literal["NDVI", "NDWI", "NDBI"] = "NDVI"
     version: Literal["1"] = "1"
     aoi_key: Literal["wuhan_east_lake"] = "wuhan_east_lake"
     period_a: Period
@@ -43,12 +45,19 @@ class GeoChangeTask(BaseModel):
         if (self.analysis_type, self.indicator) not in {
             ("vegetation_change", "NDVI"),
             ("water_change", "NDWI"),
+            ("urban_change", "NDBI"),
         }:
             raise ValueError("analysis type and indicator do not match")
-        if self.analysis_type == "water_change" and self.decline_threshold is not None:
-            raise ValueError("water_change cannot carry an NDVI decline threshold")
-        if self.analysis_type == "water_change" and self.decline_threshold_source is not None:
-            raise ValueError("water_change cannot carry an NDVI threshold source")
+        if (
+            self.analysis_type in {"water_change", "urban_change"}
+            and self.decline_threshold is not None
+        ):
+            raise ValueError("non-NDVI analysis cannot carry an NDVI decline threshold")
+        if (
+            self.analysis_type in {"water_change", "urban_change"}
+            and self.decline_threshold_source is not None
+        ):
+            raise ValueError("non-NDVI analysis cannot carry an NDVI threshold source")
         return self
 
 
@@ -56,8 +65,10 @@ class GeoChangeResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal["geochange.v1"] = "geochange.v1"
-    analysis_type: Literal["vegetation_change", "water_change"] = "vegetation_change"
-    indicator: Literal["NDVI", "NDWI"] | None = None
+    analysis_type: Literal["vegetation_change", "water_change", "urban_change"] = (
+        "vegetation_change"
+    )
+    indicator: Literal["NDVI", "NDWI", "NDBI"] | None = None
     mode: str = Field(max_length=40)
     summary: str = Field(max_length=500)
     metrics: dict[str, float | int | str | bool]

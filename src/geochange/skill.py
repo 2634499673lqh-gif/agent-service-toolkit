@@ -8,6 +8,8 @@ from typing import Final
 from geochange.aoi import resolve_aoi
 from geochange.fixture import scene_evidence, validate_binding
 from geochange.models import GeoChangeTask
+from geochange.ndbi import scene_evidence as ndbi_scene_evidence
+from geochange.ndbi import validate_binding as validate_ndbi_binding
 from geochange.ndwi import scene_evidence as ndwi_scene_evidence
 from geochange.ndwi import validate_binding as validate_ndwi_binding
 from schema.planner import Plan, PlanStep
@@ -30,6 +32,21 @@ def exploratory_ndwi_summary(metrics: Mapping[str, object]) -> str:
         f"{period_b:.3f}; "
         "continuous index statistics over the common-valid pixels only; "
         "this does not establish confirmed water area or expansion/contraction."
+    )
+
+
+def exploratory_ndbi_summary(metrics: Mapping[str, object]) -> str:
+    """Build the only server-authorized summary for exploratory NDBI."""
+
+    period_a = metrics["mean_ndbi_period_a"]
+    period_b = metrics["mean_ndbi_period_b"]
+    if not isinstance(period_a, (int, float)) or not isinstance(period_b, (int, float)):
+        raise SkillValidationError("NDBI summary metrics are invalid")
+    return (
+        "Exploratory NDBI index comparison: mean NDBI changed from "
+        f"{period_a:.3f} to {period_b:.3f}; "
+        "continuous index statistics over the common-valid pixels only; "
+        "this does not establish confirmed built-up area or urban expansion."
     )
 
 
@@ -148,6 +165,7 @@ class SkillSpec:
                 "REAL_STAC_LOCAL_FIXTURE",
                 "CACHED_REAL_METADATA",
                 "CACHED_REAL_SENTINEL2_NDWI_FIXTURE",
+                "CACHED_REAL_SENTINEL2_NDBI_FIXTURE",
             }
         ):
             raise SkillValidationError("terminal execution mode is invalid")
@@ -204,7 +222,7 @@ class SkillSpec:
                 or not -1 <= metrics["decline_threshold"] <= 0
             ):
                 raise SkillValidationError("terminal NDVI area or threshold is invalid")
-        else:
+        elif self.result_type == "water_change":
             if (
                 not all(
                     -1.00001 <= metrics[name] <= 1.00001
@@ -223,6 +241,25 @@ class SkillSpec:
                 or payload["summary"] != exploratory_ndwi_summary(metrics)
             ):
                 raise SkillValidationError("terminal NDWI summary is not server-authorized")
+        else:
+            if (
+                not all(
+                    -1.00001 <= metrics[name] <= 1.00001
+                    for name in ("mean_ndbi_period_a", "mean_ndbi_period_b")
+                )
+                or not -2.00001 <= metrics["mean_delta_ndbi"] <= 2.00001
+            ):
+                raise SkillValidationError("terminal NDBI range is invalid")
+            if metrics["valid_analysis_area_m2"] <= 0:
+                raise SkillValidationError("terminal NDBI area is invalid")
+            if (
+                payload["mode"] != "CACHED_REAL_SENTINEL2_NDBI_FIXTURE"
+                or payload["data_source"] != "cached_real_sentinel2_ndbi_fixture"
+                or payload["provenance_summary"]
+                != "Exploratory NDBI over verified common-valid Sentinel-2 coverage; B11 native resolution is 20 m."
+                or payload["summary"] != exploratory_ndbi_summary(metrics)
+            ):
+                raise SkillValidationError("terminal NDBI summary is not server-authorized")
         if task is not None:
             expected_periods = {
                 "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
@@ -271,7 +308,11 @@ def validate_terminal_result(
         "source": aoi.source,
     }
     canonical_scene = (
-        ndwi_scene_evidence(task) if skill.result_type == "water_change" else scene_evidence(task)
+        ndwi_scene_evidence(task)
+        if skill.result_type == "water_change"
+        else ndbi_scene_evidence(task)
+        if skill.result_type == "urban_change"
+        else scene_evidence(task)
     )
     if dict(aoi_evidence) != canonical_aoi:
         raise SkillValidationError("AOI evidence is not server-authorized")
@@ -279,6 +320,8 @@ def validate_terminal_result(
         raise SkillValidationError("scene evidence is not server-authorized")
     if skill.result_type == "water_change":
         validate_ndwi_binding(task, dict(scene_evidence_values))
+    elif skill.result_type == "urban_change":
+        validate_ndbi_binding(task, dict(scene_evidence_values))
     else:
         validate_binding(task, dict(scene_evidence_values))
     skill.validate_result(
@@ -351,6 +394,35 @@ WATER_CHANGE_NDWI: Final[SkillSpec] = SkillSpec(
     ),
 )
 
+URBAN_CHANGE_NDBI: Final[SkillSpec] = SkillSpec(
+    analysis_type="urban_change",
+    indicator="NDBI",
+    capabilities=(
+        "resolve_aoi",
+        "search_sentinel2",
+        "compute_urban_change",
+        "summarize_change",
+    ),
+    result_type="urban_change",
+    artifact_names=("ndbi_before", "ndbi_after", "ndbi_change"),
+    required_metrics=(
+        "valid_pixels",
+        "valid_analysis_area_m2",
+        "mean_ndbi_period_a",
+        "mean_ndbi_period_b",
+        "mean_delta_ndbi",
+    ),
+    required_provenance=(
+        "aoi_key",
+        "aoi_crs",
+        "aoi_source",
+        "raster_source",
+        "fixture_manifest",
+        "period_a_collection",
+        "period_b_collection",
+    ),
+)
+
 
 def resolve_skill(analysis_type: str, indicator: str) -> SkillSpec:
     """Resolve only the frozen supported analysis/indicator pairing."""
@@ -359,6 +431,8 @@ def resolve_skill(analysis_type: str, indicator: str) -> SkillSpec:
         return VEGETATION_CHANGE_NDVI
     if pair == (WATER_CHANGE_NDWI.analysis_type, WATER_CHANGE_NDWI.indicator):
         return WATER_CHANGE_NDWI
+    if pair == (URBAN_CHANGE_NDBI.analysis_type, URBAN_CHANGE_NDBI.indicator):
+        return URBAN_CHANGE_NDBI
     raise SkillValidationError("analysis type or indicator is unsupported")
 
 
@@ -367,6 +441,8 @@ __all__ = [
     "SkillValidationError",
     "VEGETATION_CHANGE_NDVI",
     "WATER_CHANGE_NDWI",
+    "URBAN_CHANGE_NDBI",
+    "exploratory_ndbi_summary",
     "resolve_skill",
     "validate_terminal_result",
 ]

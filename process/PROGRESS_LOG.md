@@ -5972,3 +5972,122 @@ Updated the pre-existing PostgreSQL migration audit expectation from the reposit
 Validation: adversarial NDWI tests, NDVI regressions and persistence tests passed; live PostgreSQL tests passed; full regression passed (976 passed, 4 skipped). Ruff, Pyrefly, lock check and diff check passed.
 
 Result: 3B FINAL BLOCKER FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 / 3C accelerated NDBI evidence and design batch
+
+Prepared an independent `real-sentinel2-ndbi-v1` fixture without modifying the
+approved NDWI v5 fixture. The preparation script uses bounded HTTP Range reads
+for real B11 tiles from the existing two Sentinel-2 STAC snapshots, records
+ETag/Content-Length/source grid/radiometry/nodata, preserves STAC snapshots and
+license attribution, and binds fixture, crop and manifest SHA-256 values.
+
+Verified the aligned EPSG:32650 transforms: B08 is native 10 m and B11 is
+native 20 m. The evidence freezes nearest-neighbour 2×2 block expansion to a
+24×24 target grid, categorical SCL expansion, footprint coverage, nodata and
+common-valid masking. Deterministic NDBI evidence contains 338/395 valid
+period pixels, 322 common-valid pixels, mean period values -0.2691168 and
+-0.1286449 on the common mask, and mean delta 0.1404719. Candidate threshold
+counts are reported only as exploratory sensitivity; no built-up threshold or
+urban-expansion claim is authorized.
+
+Added `process/PHASE_14_3C_EVIDENCE.md` and the complete
+`process/ADR-014-3C-EXPLORATORY-ADDENDUM.md`, whose status is
+`PROPOSED / PENDING INDEPENDENT REVIEW`. No NDBI Runtime, UI, artifact serving,
+migration or PostgreSQL implementation was started.
+
+Files changed: `scripts/prepare_geochange_ndbi_fixture.py`,
+`scripts/validate_ndbi_science.py`,
+`data/geochange-fixtures/real-sentinel2-ndbi-v1/`,
+`tests/geochange/test_ndbi_evidence.py`, the 3C evidence report, the 3C
+exploratory addendum proposal, and this progress log.
+
+Learner notes: the key boundary is that a 20 m band can be aligned to a 10 m
+analysis grid without creating new 10 m information, and an index change is
+not a validated land-cover change. Read the preparation script, the manifest,
+`scripts/validate_ndbi_science.py`, and both 3C process documents. Exercise:
+change the candidate threshold in the validator and observe how counts move
+while the continuous NDBI metrics stay fixed. Do not worry about implementing
+the NDBI Runtime until the addendum receives independent approval.
+
+Result: 3C EVIDENCE AND DESIGN READY FOR ONE GATE REVIEW.
+
+### 2026-10-02 — Phase 14 / 3C focused evidence integrity blocker fix
+
+Resolved both Strong Review blockers at the evidence trust boundary. The NDBI
+scientific entry point now pins code-owned SHA-256 values for the manifest,
+both NDBI NPZ files, both STAC snapshots, the reused NDWI manifest and both
+reused NDWI NPZ files. Digests are checked before raster loading; a mutable
+manifest or regenerated sidecar cannot establish trust.
+
+Validation now binds the actual inputs to the manifest/STAC contracts for item,
+date, collection, source CRS/dimensions/transform/resolution, radiometry,
+nodata, crop geometry, target-grid alignment, SCL mapping, coverage, arrays,
+checksums and provenance. The NDBI B08/SCL/coverage arrays are compared with
+the pinned NDWI v5 arrays, and all calculations use manifest scale/offset
+values.
+
+Added adversarial entry-point tests for manifest CRS/transform mutations,
+changed B11 pixels, changed STAC, missing files, changed NDWI manifest or
+reused pixels, B11 transform/resolution/scale/offset/nodata, array geometry and
+coverage. The original fixture continues to produce 338/395 period-valid
+pixels, 322 common-valid pixels and mean delta NDBI 0.1404719.
+
+Validation: NDBI and NDWI evidence tests passed (18), affected GeoChange and
+offline authority tests passed (45), Ruff/Ruff format, Pyrefly, Markdown lint
+and `git diff --check` passed. No PostgreSQL or NDBI Runtime work was started.
+
+Result: 3C EVIDENCE INTEGRITY BLOCKERS FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-03 — Phase 14 Implementation 3C exploratory NDBI workflow
+
+Implemented the approved limited `urban_change`/`NDBI` workflow end to end. The
+runtime derives the strict server-owned pairing and capability sequence,
+validates the pinned real Sentinel-2 evidence before computation, persists the
+bounded five-metric result, serves only the three NDBI artifacts with tenant
+isolation, and renders an exploratory UI summary without built-up or urban
+expansion claims. The default deterministic planner now recognizes the new
+skill, while NDVI and NDWI paths remain compatible.
+
+Files changed include `src/geochange/ndbi.py`, the confirmed-intent, model,
+skill, runtime capability, graph, task-runtime, persistence, artifact/client,
+conversation and UI modules, plus NDBI workflow and PostgreSQL integration
+tests. Validation included focused GeoChange tests, affected runtime/service
+regression, live PostgreSQL persistence and artifact authorization, Ruff,
+Pyrefly, lock consistency and diff checks.
+
+Known limitation: this remains continuous-index evidence only. Thresholded
+built-up classification, confirmed built-up area, urban expansion and generic
+GIS workflows remain deferred by the approved addendum.
+
+Learner notes: the main concept is keeping a trusted evidence binder separate
+from planner text and treating NDBI as an exploratory continuous index. Read
+`src/geochange/ndbi.py`, `src/geochange/skill.py`, `src/geochange/runtime_caps.py`,
+`src/service/task_runtime.py`, and the NDBI workflow tests. Exercise: trace one
+NDBI artifact request from the tenant check to the generated PNG. Do not worry
+yet about calibrated land-cover thresholds or live Sentinel-2 search.
+
+Result: IMPLEMENTATION 3C COMPLETE — READY FOR CONSOLIDATED STRONG REVIEW.
+
+### 2026-10-03 — 3C focused PostgreSQL resume acceptance fix
+
+Added dedicated live PostgreSQL coverage for the two remaining 3C acceptance
+gaps. `test_postgres_confirmed_ndbi_checkpoint_resume_succeeds` builds a real
+NDBI checkpoint with `AsyncPostgresSaver`, resumes it through
+`TaskRuntimeService`, reloads SUCCEEDED state and metadata, and verifies all
+three tenant-authorized artifacts. `test_postgres_ndbi_resume_rejects_forged_stored_execution_result`
+tampers with the persisted terminal execution result before production resume;
+the forged exploratory claim fails closed and no successful NDBI metadata is
+stored.
+
+The focused tests and the complete PostgreSQL runtime suite passed against the
+disposable test database. No production code, migrations, fixtures or ADR
+boundaries changed in this fix.
+
+Learner notes: a checkpoint is durable runtime state, so resume tests must
+create the interruption with the real PostgreSQL saver and then invoke the
+normal TaskRuntimeService path. Read the two new tests and
+`src/service/task_runtime.py`. Exercise: change the forged summary or scene
+binding and observe which terminal boundary rejects it. Do not worry yet about
+changing the checkpoint schema.
+
+Result: 3C POSTGRESQL RESUME ACCEPTANCE COMPLETE — READY FOR FOCUSED STRONG RE-REVIEW.

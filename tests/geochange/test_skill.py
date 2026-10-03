@@ -46,7 +46,7 @@ def test_ndvi_skill_is_static_and_ordered() -> None:
 
 @pytest.mark.parametrize(
     "analysis_type,indicator",
-    [("vegetation_change", "NDWI"), ("urban_change", "NDBI")],
+    [("vegetation_change", "NDWI"), ("urban_change", "NDVI")],
 )
 def test_unknown_or_cross_skill_pairing_is_rejected(analysis_type: str, indicator: str) -> None:
     with pytest.raises(SkillValidationError):

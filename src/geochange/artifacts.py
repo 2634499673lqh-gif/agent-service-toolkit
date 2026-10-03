@@ -8,6 +8,9 @@ ALLOWED_ARTIFACTS = frozenset(
         "ndwi_before",
         "ndwi_after",
         "ndwi_change",
+        "ndbi_before",
+        "ndbi_after",
+        "ndbi_change",
     }
 )
 ARTIFACT_ROOT = Path("data/geochange-artifacts").resolve()

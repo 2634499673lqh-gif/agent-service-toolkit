@@ -290,6 +290,9 @@ class TaskPilotClient:
             "ndwi_before",
             "ndwi_after",
             "ndwi_change",
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
         }:
             raise ValueError("unsupported artifact")
         return f"{self.base_url}{self._resource_path(task_id, f'/runs/{run_id}/artifacts/{artifact_name}')}"
@@ -302,6 +305,9 @@ class TaskPilotClient:
             "ndwi_before",
             "ndwi_after",
             "ndwi_change",
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
         }:
             raise ValueError("unsupported artifact")
         response = self._request(

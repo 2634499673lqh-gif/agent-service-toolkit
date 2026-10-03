@@ -23,15 +23,24 @@ class WaterIntentParameters(BaseModel):
     cloud_threshold: float = Field(default=30.0, ge=0, le=100, allow_inf_nan=False)
 
 
+class UrbanIntentParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["Sentinel-2"] = "Sentinel-2"
+    cloud_threshold: float = Field(default=30.0, ge=0, le=100, allow_inf_nan=False)
+
+
 class ConfirmedIntent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    analysis_type: Literal["vegetation_change", "water_change"]
-    indicator: Literal["NDVI", "NDWI"]
+    analysis_type: Literal["vegetation_change", "water_change", "urban_change"]
+    indicator: Literal["NDVI", "NDWI", "NDBI"]
     analysis_area: Literal["武汉东湖", "wuhan_east_lake"]
     period_a: Period
     period_b: Period
-    parameters: IntentParameters | WaterIntentParameters = Field(default_factory=IntentParameters)
+    parameters: IntentParameters | WaterIntentParameters | UrbanIntentParameters = Field(
+        default_factory=IntentParameters
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -40,10 +49,12 @@ class ConfirmedIntent(BaseModel):
             return data
         values = dict(data)
         raw = values.get("parameters")
-        if isinstance(raw, (IntentParameters, WaterIntentParameters)):
+        if isinstance(raw, (IntentParameters, WaterIntentParameters, UrbanIntentParameters)):
             return values
         if values.get("analysis_type") == "water_change":
             values["parameters"] = WaterIntentParameters.model_validate(raw or {})
+        elif values.get("analysis_type") == "urban_change":
+            values["parameters"] = UrbanIntentParameters.model_validate(raw or {})
         else:
             values["parameters"] = IntentParameters.model_validate(raw or {})
         return values
@@ -60,6 +71,9 @@ class ConfirmedIntent(BaseModel):
         elif (self.analysis_type, self.indicator) == ("water_change", "NDWI"):
             if not isinstance(self.parameters, WaterIntentParameters):
                 raise ValueError("NDWI intent parameters are invalid")
+        elif (self.analysis_type, self.indicator) == ("urban_change", "NDBI"):
+            if not isinstance(self.parameters, UrbanIntentParameters):
+                raise ValueError("NDBI intent parameters are invalid")
         else:
             raise ValueError("analysis type and indicator do not match")
         return self

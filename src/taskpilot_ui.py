@@ -62,6 +62,9 @@ _METRIC_LABELS_ZH = {
     "mean_ndwi_period_a": "时段 A 平均 NDWI",
     "mean_ndwi_period_b": "时段 B 平均 NDWI",
     "mean_delta_ndwi": "NDWI 变化",
+    "mean_ndbi_period_a": "时段 A 平均 NDBI",
+    "mean_ndbi_period_b": "时段 B 平均 NDBI",
+    "mean_delta_ndbi": "NDBI 变化",
 }
 
 
@@ -779,6 +782,60 @@ def _render_run_view(client: TaskPilotClient, task_id: str, task: dict[str, Any]
                     )
                 except TaskPilotClientError:
                     column.info(f"NDWI {label} 图像暂不可用。")
+            if result_metadata.get("summary"):
+                st.markdown("#### 分析说明")
+                st.write(_safe_text(result_metadata.get("summary")))
+        elif result_metadata.get("analysis_type") == "urban_change":
+            metrics = result_metadata.get("metrics", {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+            st.warning("探索性 NDBI 结果：用于指数对比，不代表已确认建成区或城市扩张。")
+            st.info("数据来源：已验证的本地 Sentinel-2 NDBI fixture；B11 原生分辨率为 20 m。")
+            period_a, period_b = _analysis_periods(result_metadata)
+            context_columns = st.columns(4)
+            context_columns[0].metric("分析区域", _analysis_area(result_metadata))
+            context_columns[1].metric("时段 A", period_a)
+            context_columns[2].metric("时段 B", period_b)
+            context_columns[3].metric(
+                "证据验证", _human_status_zh(result_metadata.get("verifier_status"))
+            )
+            delta = metrics.get("mean_delta_ndbi")
+            if isinstance(delta, (int, float)):
+                direction = "上升" if delta > 0 else "下降" if delta < 0 else "无变化"
+                st.write(
+                    f"平均 NDBI 变化为 **{_format_metric('mean_delta_ndbi', delta)}**（{direction}）。"
+                )
+            cards = st.columns(3)
+            for index, key in enumerate(
+                (
+                    "valid_pixels",
+                    "valid_analysis_area_m2",
+                    "mean_ndbi_period_a",
+                    "mean_ndbi_period_b",
+                    "mean_delta_ndbi",
+                )
+            ):
+                if key in metrics:
+                    cards[index % 3].metric(
+                        _METRIC_LABELS_ZH[key], _format_metric(key, metrics[key])
+                    )
+            provenance_summary = result_metadata.get("provenance_summary")
+            if isinstance(provenance_summary, str) and provenance_summary:
+                st.caption(_safe_text(provenance_summary))
+            with st.expander("技术证据（开发者视图）", expanded=False):
+                st.json(_safe_object(result_metadata))
+            st.markdown("#### NDBI 前后对比")
+            image_columns = st.columns(3)
+            for column, (name, label) in zip(
+                image_columns,
+                (("ndbi_before", "分析前"), ("ndbi_after", "分析后"), ("ndbi_change", "变化结果")),
+                strict=True,
+            ):
+                try:
+                    column.image(
+                        client.get_artifact(task_id, run_id, name), caption=f"NDBI {label}"
+                    )
+                except TaskPilotClientError:
+                    column.info(f"NDBI {label} 图像暂不可用。")
             if result_metadata.get("summary"):
                 st.markdown("#### 分析说明")
                 st.write(_safe_text(result_metadata.get("summary")))

@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.settings import settings
 from geochange import runtime_caps
 from geochange.fixture import EXECUTION_MODE, MANIFEST_SHA256
+from geochange.skill import URBAN_CHANGE_NDBI
 from persistence.engine import create_async_engine
 from persistence.models import (
     AgentRun,
@@ -48,9 +49,11 @@ from runtime import (
     DeterministicExecutor,
     ExecutionResult,
     PlannerNode,
+    RuntimeGraphContext,
     VerifierNode,
     build_runtime_graph,
 )
+from schema.confirmed_intent import ConfirmedIntent
 from schema.planner import Plan
 from service.approval_service import (
     ApprovalConflictError,
@@ -525,6 +528,235 @@ async def test_postgres_confirmed_ndwi_persists_metadata_and_authorizes_artifact
                 session=session,
             )
         assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_postgres_confirmed_ndbi_persists_metadata_and_authorizes_artifacts(
+    seeded_task,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    session_factory, saver, organization_id, task_id, user_id = seeded_task
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_STAC", False)
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_LLM", False)
+    monkeypatch.setattr(settings, "USE_FAKE_MODEL", True)
+    monkeypatch.setattr(runtime_caps, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
+    async with session_factory() as session:
+        task = await session.get_one(Task, task_id)
+        task.confirmed_intent = {
+            "analysis_type": "urban_change",
+            "indicator": "NDBI",
+            "analysis_area": "wuhan_east_lake",
+            "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+            "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+            "parameters": {"source": "Sentinel-2", "cloud_threshold": 30.0},
+        }
+        await session.commit()
+    run_id = await _start_run(session_factory, task_id, organization_id)
+    async with session_factory() as session:
+        result = await TaskRuntimeService(saver).execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+    assert result.terminal_outcome == "SUCCEEDED", result.state.failure
+    principal = await _principal_for(session_factory, user_id, organization_id)
+    async with session_factory() as session:
+        run = await session.get_one(TaskRun, run_id)
+        assert run.result_metadata is not None
+        assert run.result_metadata["analysis_type"] == "urban_change"
+        assert run.result_metadata["indicator"] == "NDBI"
+        assert set(run.result_metadata["metrics"]) == {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndbi_period_a",
+            "mean_ndbi_period_b",
+            "mean_delta_ndbi",
+        }
+        assert run.result_metadata["metrics"]["valid_pixels"] == 322
+        for artifact in ("ndbi_before", "ndbi_after", "ndbi_change"):
+            response = await get_task_artifact(
+                task_id, run_id, artifact, principal=principal, session=session
+            )
+            assert response.media_type == "image/png"
+        with pytest.raises(HTTPException) as error:
+            await get_task_artifact(
+                task_id,
+                run_id,
+                "ndbi_before",
+                principal=replace(principal, organization_id=uuid4()),
+                session=session,
+            )
+        assert error.value.status_code == 404
+
+
+async def _prepare_ndbi_postgres_resume_checkpoint(seeded_task):
+    session_factory, saver, organization_id, task_id, _user_id = seeded_task
+    intent_data = {
+        "analysis_type": "urban_change",
+        "indicator": "NDBI",
+        "analysis_area": "wuhan_east_lake",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+        "parameters": {"source": "Sentinel-2", "cloud_threshold": 30.0},
+    }
+    async with session_factory() as session:
+        task = await session.get_one(Task, task_id)
+        assert task is not None
+        task.confirmed_intent = intent_data
+        await session.commit()
+    run_id = await _begin_run(session_factory, task_id, organization_id)
+    intent = ConfirmedIntent.model_validate(intent_data)
+    confirmed_task = intent.runtime_task()
+    thread_id = f"taskpilot-run:{run_id}"
+    graph = build_runtime_graph(saver, interrupt_before=["verifier"])
+    initial = AgentState.initial(
+        task_id=task_id,
+        task_run_id=run_id,
+        title="urban_change NDBI Wuhan East Lake",
+        description=confirmed_task.model_dump_json(),
+    ).model_copy(update={"geochange_task": confirmed_task})
+    config = {"configurable": {"thread_id": thread_id}}
+    await graph.ainvoke(
+        initial.checkpoint_data(),
+        config=config,
+        context=RuntimeGraphContext(skill=URBAN_CHANGE_NDBI),
+    )
+    checkpoint_state = None
+    for _ in range(4):
+        checkpoint = await saver.aget_tuple(config)
+        assert checkpoint is not None
+        checkpoint_state = TaskRuntimeService(saver)._state_from_checkpoint(
+            checkpoint,
+            thread_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+        output = checkpoint_state.execution_result.output or ""
+        if (
+            checkpoint_state.geochange_evidence.get("fixture_manifest")
+            and "analysis_type" in output
+            and "urban_change" in output
+        ):
+            break
+        await graph.ainvoke(
+            None, config=config, context=RuntimeGraphContext(skill=URBAN_CHANGE_NDBI)
+        )
+    assert checkpoint_state is not None
+    assert checkpoint_state.execution_result is not None
+    assert len(checkpoint_state.geochange_evidence.get("fixture_manifest", "")) == 64, {
+        "plan": None if checkpoint_state.plan is None else checkpoint_state.plan.model_dump(),
+        "position": checkpoint_state.plan_position,
+        "aoi": checkpoint_state.geochange_aoi_evidence,
+        "evidence": checkpoint_state.geochange_evidence,
+        "output": checkpoint_state.execution_result.output,
+        "failure": checkpoint_state.failure,
+    }
+    return (
+        session_factory,
+        saver,
+        organization_id,
+        task_id,
+        run_id,
+        thread_id,
+        build_runtime_graph(saver),
+        checkpoint_state,
+    )
+
+
+@pytest.mark.asyncio
+async def test_postgres_confirmed_ndbi_checkpoint_resume_succeeds(
+    seeded_task, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(runtime_caps, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
+    (
+        session_factory,
+        saver,
+        organization_id,
+        task_id,
+        run_id,
+        thread_id,
+        graph,
+        checkpoint_state,
+    ) = await _prepare_ndbi_postgres_resume_checkpoint(seeded_task)
+    async with session_factory() as session:
+        result = await TaskRuntimeService(saver, graph=graph).execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+
+    assert result.terminal_outcome == "SUCCEEDED", result.state.failure
+    assert result.checkpoint_thread_id == thread_id
+    assert result.state.geochange_task is not None
+    assert result.state.geochange_task.indicator == "NDBI"
+    assert result.state.execution_result is not None
+    assert "analysis_type" in (result.state.execution_result.output or "")
+    assert "urban_change" in (result.state.execution_result.output or "")
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.SUCCEEDED,
+        TaskRunStatus.SUCCEEDED,
+    )
+    async with session_factory() as session:
+        run = await session.get_one(TaskRun, run_id)
+        assert run.result_metadata is not None
+        assert run.result_metadata["analysis_type"] == "urban_change"
+        assert run.result_metadata["metrics"]["valid_pixels"] == 322
+        assert len(run.result_metadata["selected_scene_evidence"]["fixture_manifest"]) == 64
+        principal = await _principal_for(session_factory, seeded_task[4], organization_id)
+        for artifact in ("ndbi_before", "ndbi_after", "ndbi_change"):
+            response = await get_task_artifact(
+                task_id, run_id, artifact, principal=principal, session=session
+            )
+            assert response.media_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_postgres_ndbi_resume_rejects_forged_stored_execution_result(seeded_task):
+    (
+        session_factory,
+        saver,
+        organization_id,
+        task_id,
+        run_id,
+        thread_id,
+        graph,
+        checkpoint_state,
+    ) = await _prepare_ndbi_postgres_resume_checkpoint(seeded_task)
+    assert checkpoint_state.execution_result is not None
+    forged_payload = json.loads(checkpoint_state.execution_result.output or "{}")
+    forged_payload["summary"] = "Confirmed urban expansion detected."
+    forged_execution = checkpoint_state.execution_result.model_copy(
+        update={"output": json.dumps(forged_payload)}
+    )
+    await graph.aupdate_state(
+        {"configurable": {"thread_id": thread_id}},
+        {"execution_result": forged_execution.model_dump(mode="json")},
+    )
+
+    async with session_factory() as session:
+        result = await TaskRuntimeService(saver, graph=graph).execute_run(
+            session,
+            organization_id=organization_id,
+            task_id=task_id,
+            task_run_id=run_id,
+        )
+
+    assert result.terminal_outcome == "FAILED"
+    assert result.state.failure is not None
+    assert await _read_run(session_factory, task_id, run_id) == (
+        TaskStatus.FAILED,
+        TaskRunStatus.FAILED,
+    )
+    async with session_factory() as session:
+        run = await session.get_one(TaskRun, run_id)
+        assert run.result_metadata is not None
+        assert run.result_metadata.get("analysis_type") != "urban_change"
+        assert run.result_metadata.get("indicator") != "NDBI"
 
 
 @pytest.mark.asyncio

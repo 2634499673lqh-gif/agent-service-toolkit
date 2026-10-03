@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from geochange.aoi import resolve_aoi
 from geochange.fixture import scene_evidence, validate_binding
+from geochange.ndbi import scene_evidence as ndbi_scene_evidence
+from geochange.ndbi import validate_binding as validate_ndbi_binding
 from geochange.ndwi import scene_evidence as ndwi_scene_evidence
 from geochange.ndwi import validate_binding as validate_ndwi_binding
 from geochange.skill import (
@@ -329,6 +331,8 @@ class TaskRuntimeService:
                 canonical_scene_evidence = (
                     ndwi_scene_evidence(confirmed_task)
                     if selected_skill.result_type == "water_change"
+                    else ndbi_scene_evidence(confirmed_task)
+                    if selected_skill.result_type == "urban_change"
                     else scene_evidence(confirmed_task)
                 )
                 # Planner/capability text is derived from the validated intent,
@@ -1436,6 +1440,8 @@ def _validate_checkpoint_geochange_evidence(
             raise ValueError("checkpoint scene evidence is incomplete")
         if getattr(task, "analysis_type", None) == "water_change":
             validate_ndwi_binding(task, scene)
+        elif getattr(task, "analysis_type", None) == "urban_change":
+            validate_ndbi_binding(task, scene)
         else:
             validate_binding(task, scene)
 
