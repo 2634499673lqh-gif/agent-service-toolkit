@@ -27,6 +27,12 @@ class GeoChangeMapResponse(BaseModel):
     data_source: str
     bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
     crs: str | None = None
+    native_bounds: dict[str, list[float]]
+    raster_dimensions: dict[str, list[int]]
+    scene_identity: dict[str, str]
+    target_transform: list[float] | None = None
+    fixture_version: str
     valid_value_summary: dict[str, Any] | None = None
     artifacts: dict[str, str] = {}
+    artifact_urls: dict[str, str] = {}
     scientific_limit: str

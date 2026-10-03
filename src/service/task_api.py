@@ -10,6 +10,8 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from geochange.artifacts import artifact_path
+from geochange.provenance import trusted_map_metadata
+from persistence.repositories import TaskRepository
 from schema.geochange_api import GeoChangeMapResponse
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
 from schema.task_run_api import TaskRunResponse
@@ -206,7 +208,8 @@ async def get_task_run_map(
     principal: PrincipalDependency,
     session: TaskSessionDependency,
 ) -> GeoChangeMapResponse:
-    run = await TaskRunService(session).get_run(principal, task_id, run_id)
+    run_service = TaskRunService(session)
+    run = await run_service.get_run(principal, task_id, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=RESOURCE_NOT_FOUND_DETAIL)
     if run.status.value != "succeeded":
@@ -214,9 +217,10 @@ async def get_task_run_map(
     metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
     if metadata.get("verifier_status") != "passed":
         raise HTTPException(status_code=409, detail="分析结果尚未验证")
-    indicator = metadata.get("indicator")
+    task = await TaskRepository(session).get_in_principal_tenant(task_id, principal.organization_id)
+    intent = task.confirmed_intent if task is not None else None
+    indicator = intent.get("indicator") if isinstance(intent, dict) else metadata.get("indicator")
     periods = metadata.get("analysis_periods")
-    provenance = metadata.get("provenance")
     if not isinstance(indicator, str) or indicator not in _SCIENTIFIC_LIMITS:
         raise HTTPException(status_code=422, detail="分析结果缺少可信指标")
     if (
@@ -225,6 +229,7 @@ async def get_task_run_map(
         or not all(isinstance(v, str) and v.strip() for v in periods.values())
     ):
         raise HTTPException(status_code=422, detail="分析结果缺少可信时段")
+    trusted = trusted_map_metadata(indicator)
     artifacts = metadata.get("artifact_references")
     safe_artifacts = artifacts if isinstance(artifacts, dict) else {}
     allowed_artifacts = {
@@ -243,25 +248,37 @@ async def get_task_run_map(
         for key, value in safe_artifacts.items()
     ):
         raise HTTPException(status_code=422, detail="分析结果包含未验证的图层引用")
-    bounds = metadata.get("bounds")
-    safe_bounds = (
-        bounds
-        if isinstance(bounds, list)
-        and len(bounds) == 4
-        and all(isinstance(value, (int, float)) for value in bounds)
-        else None
-    )
+    for artifact_name in safe_artifacts:
+        try:
+            artifact = artifact_path(str(task_id), str(run_id), artifact_name)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="分析结果包含未验证的图层引用") from None
+        if not artifact.is_file() or not 0 < artifact.stat().st_size <= 2_000_000:
+            raise HTTPException(status_code=409, detail="分析图层尚未准备好")
     return GeoChangeMapResponse(
         indicator=indicator,
         period={str(k): str(v) for k, v in periods.items()},
         aoi_label=str(metadata.get("analysis_area", "武汉东湖（受限缓存覆盖区）")),
         data_source=str(metadata.get("data_source", "已验证的 Sentinel-2 缓存样例")),
-        bounds=safe_bounds,
-        crs=str(provenance.get("aoi_crs")) if isinstance(provenance, dict) else None,
+        bounds=trusted["aoi_bounds_wgs84"],
+        crs=trusted["crs"],
+        native_bounds={key: value["native_bounds"] for key, value in trusted["periods"].items()},
+        raster_dimensions={
+            key: value["raster_dimensions"] for key, value in trusted["periods"].items()
+        },
+        scene_identity={
+            key: str(value["scene_identity"]) for key, value in trusted["periods"].items()
+        },
+        target_transform=trusted["transform"],
+        fixture_version=trusted["fixture_version"],
         valid_value_summary=metadata.get("metrics")
         if isinstance(metadata.get("metrics"), dict)
         else None,
         artifacts={str(k): str(v) for k, v in safe_artifacts.items() if isinstance(v, str)},
+        artifact_urls={
+            str(key): f"/api/v1/tasks/{task_id}/runs/{run_id}/artifacts/{key}"
+            for key in safe_artifacts
+        },
         scientific_limit=_SCIENTIFIC_LIMITS[indicator],
     )
 

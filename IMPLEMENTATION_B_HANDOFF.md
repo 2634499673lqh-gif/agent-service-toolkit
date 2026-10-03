@@ -1,20 +1,21 @@
 # Implementation B Handoff
 
-## A 交付
+## A 当前交付
 
-Implementation A adds a Vite React/TypeScript frontend under `web/`, stable GeoChange capability and verified map metadata endpoints, fixture-root resolution for local and Docker layouts, and bounded RuntimeDispatch recovery for queued/pending orphan runs. Streamlit remains available as the fallback. The deterministic conversation bridge remains in `src/service/conversation_api.py`; it is intentionally not a real LLM.
+Blocker 修复后的 A 增加了真正的登录/注销工作流（opaque session 仅保存在 React 运行时内存）、持续中文对话、澄清日期、显式方案确认、任务轮询、历史结果打开和实际 MapLibre GL JS 地图。A 仍复用确定性 conversation API；真实 LLM 意图理解和解释生成明确留给 B。
 
-## Run and API contract
+服务端 `GET /api/v1/tasks/{task_id}/runs/{run_id}/map` 会先做租户和成功/Verifier 检查，再从服务端 fixture manifest 校验指标对应的 manifest/hash，并返回 native CRS、native bounds、raster dimensions、scene identity、target transform、fixture version 和受信 artifact URL。客户端不得提交或覆盖这些值。
 
-- Frontend: `pnpm --dir web install && pnpm --dir web dev -- --host 127.0.0.1`; browser URL `http://localhost:5173/`.
-- Backend: existing `python src/run_service.py` / Compose `agent_service` on port 8080.
-- `GET /api/v1/geochange/capabilities` requires the existing opaque bearer session and returns only supported indicators, periods, source labels, and scientific limits.
-- `GET /api/v1/tasks/{task_id}/runs/{run_id}/map` is tenant-scoped and requires a succeeded, verifier-passed run. It returns sanitized result metadata and never trusts client paths, bounds, or indicator values.
+## 运行与证据
 
-## B replacement points
+- `docker compose up -d postgres migrate agent_service web`
+- 浏览器：`http://localhost:5173/`
+- 前端：`pnpm --dir web install && pnpm --dir web run build && pnpm --dir web run typecheck`
+- 已验证：focused GeoChange/Runtime tests、Ruff、Pyrefly、Docker Compose config、Web image build。
+- 需现场提供账号和运行中的 PostgreSQL 才能完成真实登录、执行和 artifact 浏览器验收；没有这些条件时不能声称 E2E 已通过。
 
-1. Replace `proposal_from_message` in `src/service/conversation_service.py` with a real structured LLM intent parser while preserving server-side Pydantic validation and explicit confirmation.
-2. Replace the deterministic bridge in `src/service/conversation_api.py` only after adding provider failure classification, authorization tests, and redacted observability.
-3. Add real map artifact URL loading in `web/src/main.tsx` using the verified artifact route and server-returned bounds; do not infer geometry from user input.
+## B 入口
 
-Known limitation: Docker and real browser E2E require a local Docker daemon and configured database; this A run verified frontend build and Vite HTTP startup, but did not claim a public deployment URL or real LLM execution.
+1. 在 `src/service/conversation_service.py` 替换确定性 proposal parser 为结构化真实 LLM，同时保留 Pydantic、显式确认、服务端 AOI/时段/指标校验和失败分类。
+2. 在 `web/src/main.tsx` 保留 token 内存边界，把真实解释接入助手消息；不得把模型输出当授权或科学证据。
+3. 扩展 `src/geochange/provenance.py` 仅在新增受信 manifest 后支持更多产品；当前不增加任意 AOI 或在线 raster 下载。

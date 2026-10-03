@@ -6132,3 +6132,8 @@ Changed files include `AGENTS.md`, `src/geochange/{paths,fixture,ndwi,ndbi}.py`,
 Validation: `uv run pytest -q tests/geochange tests/service/test_runtime_dispatch.py tests/runtime/test_task_runtime.py` (216 passed); `pnpm --dir web run build` and `pnpm --dir web run typecheck` (passed); Ruff, Ruff format, Pyrefly, and `git diff --check` (passed); Vite HTTP smoke at `http://localhost:5173/` returned 200. Docker/PostgreSQL/browser authenticated E2E and real LLM execution remain environment-dependent and are explicitly deferred to B or user acceptance.
 
 Learner focus: server-owned fixture roots and hashes are evidence boundaries; runtime recovery must never replay side effects; product APIs expose a sanitized projection instead of persistence JSON; the browser stores the token only in memory. Next task is Implementation B's real structured LLM path and verified artifact map loading.
+# 2026-10-03 — Implementation A acceptance blocker fix
+
+修复 A 验收阻塞：新增普通邮箱/密码登录和注销，opaque token 只存在 React 运行时内存；左侧改为持续中文消息流、日期澄清和显式确认卡；右侧实际初始化 MapLibre、OpenStreetMap 底图、定位/缩放/AOI/图层控件和 attribution。服务端地图 API 现在从受信 NDVI/NDWI/NDBI fixture manifest 派生 CRS、native bounds、dimensions、scene identity、transform 与 artifact URL，禁止使用客户端或未验证 bounds。结果卡、历史结果和失败/no-data 提示已接入。
+
+前端 build/typecheck、focused GeoChange/Runtime tests、Ruff、Pyrefly、Compose config 和 web image build 已通过。真实登录、真实缓存任务、真实 artifact 叠加仍需在具备 bootstrap 账号和 PostgreSQL 的浏览器环境中现场验收；当前环境无 Playwright 浏览器自动化。
