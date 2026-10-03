@@ -21,6 +21,7 @@ from geochange.skill import (
     SkillSpec,
     SkillValidationError,
     validate_terminal_result,
+    validate_unconfirmed_geochange_route,
 )
 from schema.planner import PlanStep
 
@@ -163,7 +164,9 @@ class _DefaultPlannerModel:
     async def __call__(self, request: Any) -> object:
         text = f"{request.task_input.title} {request.task_input.description or ''}".casefold()
         skill = (
-            WATER_CHANGE_NDWI
+            VEGETATION_CHANGE_NDVI
+            if any(token in text for token in ("vegetation", "ndvi", "植被"))
+            else WATER_CHANGE_NDWI
             if any(token in text for token in ("water", "ndwi", "水体", "水域"))
             else URBAN_CHANGE_NDBI
             if any(token in text for token in ("urban", "ndbi", "built-up", "建成区", "城市"))
@@ -195,10 +198,7 @@ class _DefaultPlannerModel:
             }
         return {
             "steps": [
-                {
-                    "position": 1,
-                    "instruction": f"Complete the task: {request.task_input.title}",
-                }
+                {"position": 1, "instruction": f"Complete the task: {request.task_input.title}"}
             ]
         }
 
@@ -281,6 +281,17 @@ def build_runtime_graph(
         state: AgentState,
         runtime: Runtime[RuntimeGraphContext],
     ) -> dict[str, object]:
+        runtime_context = getattr(runtime, "context", None)
+        if runtime_context is None or runtime_context.skill is None:
+            try:
+                validate_unconfirmed_geochange_route(
+                    state.geochange_task,
+                    state.plan,
+                    title=state.task_input.title,
+                    description=state.task_input.description,
+                )
+            except SkillValidationError:
+                return {"failure": _failure(failure_classifier, "skill_confirmation_required")}
         if state.plan is not None:
             return {"failure": None}
         geochange_task = state.geochange_task
@@ -292,6 +303,13 @@ def build_runtime_graph(
             plan = await planner_node(state.task_input)
             if runtime_context is not None and runtime_context.skill is not None:
                 runtime_context.skill.validate_plan(plan)
+            else:
+                validate_unconfirmed_geochange_route(
+                    state.geochange_task,
+                    plan,
+                    title=state.task_input.title,
+                    description=state.task_input.description,
+                )
             if geochange_task is not None or _is_geochange_request(state.task_input):
                 if geochange_task is None:
                     if settings.GEOCHANGE_LIVE_LLM and not settings.USE_FAKE_MODEL:
@@ -299,13 +317,23 @@ def build_runtime_graph(
                             get_model(settings.DEFAULT_MODEL)
                         ).parse_task(state.task_input.description or state.task_input.title)
                     else:
-                        geochange_task = _offline_geochange_task(state.task_input)
+                        geochange_task = _offline_geochange_task(
+                            state.task_input,
+                            skill=runtime_context.skill if runtime_context is not None else None,
+                        )
                 if geochange_task.analysis_type not in {
                     "vegetation_change",
                     "water_change",
                     "urban_change",
                 }:
                     raise ValueError("unsupported GeoChange analysis type")
+                if runtime_context is None or runtime_context.skill is None:
+                    validate_unconfirmed_geochange_route(
+                        geochange_task,
+                        plan,
+                        title=state.task_input.title,
+                        description=state.task_input.description,
+                    )
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
             if observation_sink is not None:
@@ -313,8 +341,13 @@ def build_runtime_graph(
                     _planner_observation(state, request_id, started_at, failure)
                 )
             return {"failure": failure}
-        except SkillValidationError:
-            failure = _failure(failure_classifier, "skill_plan_invalid")
+        except SkillValidationError as error:
+            code = (
+                "skill_confirmation_required"
+                if str(error) == "confirmed intent is required for this Skill"
+                else "skill_plan_invalid"
+            )
+            failure = _failure(failure_classifier, code)
             if observation_sink is not None:
                 await observation_sink.record(
                     _planner_observation(state, request_id, started_at, failure)
@@ -383,6 +416,19 @@ def build_runtime_graph(
                     finished_at=datetime.now(UTC),
                 )
             )
+
+        if runtime_context is None or runtime_context.skill is None:
+            try:
+                validate_unconfirmed_geochange_route(
+                    state.geochange_task,
+                    state.plan,
+                    title=state.task_input.title,
+                    description=state.task_input.description,
+                )
+            except SkillValidationError:
+                failure = _failure(failure_classifier, "skill_confirmation_required")
+                await observe(agent_status="failed", error=failure)
+                return {"failure": failure}
 
         if state.execution_result is not None and state.pending_approval is None:
             return {"capability_context": None, "failure": None}
@@ -684,6 +730,13 @@ def build_runtime_graph(
             runtime_context = getattr(runtime, "context", None)
             if runtime_context is not None and runtime_context.skill is not None:
                 runtime_context.skill.validate_plan(replacement_plan)
+            else:
+                validate_unconfirmed_geochange_route(
+                    state.geochange_task,
+                    replacement_plan,
+                    title=state.task_input.title,
+                    description=state.task_input.description,
+                )
             previous = ReplanState(
                 plan=state.plan,
                 plan_position=state.plan_position,
@@ -696,8 +749,13 @@ def build_runtime_graph(
             replacement = apply_replacement_plan(previous, replacement_plan, decision)
         except PlannerOutputInvalidError as error:
             return {"failure": _failure(failure_classifier, error.code)}
-        except SkillValidationError:
-            return {"failure": _failure(failure_classifier, "skill_plan_invalid")}
+        except SkillValidationError as error:
+            code = (
+                "skill_confirmation_required"
+                if str(error) == "confirmed intent is required for this Skill"
+                else "skill_plan_invalid"
+            )
+            return {"failure": _failure(failure_classifier, code)}
         except Exception:
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
         return {
@@ -873,33 +931,26 @@ def _default_geochange_task() -> GeoChangeTask:
     )
 
 
-def _offline_geochange_task(task_input: Any) -> GeoChangeTask:
+def _offline_geochange_task(
+    task_input: Any,
+    *,
+    skill: SkillSpec | None = None,
+) -> GeoChangeTask:
     """Build the fake/offline task while preserving T139 text authority."""
 
     source_text = f"{task_input.title} {task_input.description or ''}"
     explicit = extract_explicit_parameters(source_text)
     updates: dict[str, object] = {}
-    is_water = any(token in source_text.casefold() for token in ("water", "ndwi", "水体", "水域"))
-    is_urban = any(
-        token in source_text.casefold() for token in ("urban", "ndbi", "built-up", "建成区", "城市")
-    )
-    if is_water:
+    if skill is not None and skill.result_type in {"water_change", "urban_change"}:
         updates.update(
-            analysis_type="water_change",
-            indicator="NDWI",
-            decline_threshold=None,
-            decline_threshold_source=None,
-        )
-    elif is_urban:
-        updates.update(
-            analysis_type="urban_change",
-            indicator="NDBI",
+            analysis_type=skill.analysis_type,
+            indicator=skill.indicator,
             decline_threshold=None,
             decline_threshold_source=None,
         )
     if explicit.cloud_threshold is not None:
         updates.update(cloud_threshold=explicit.cloud_threshold, cloud_threshold_source="user_text")
-    if explicit.decline_threshold is not None and not is_water:
+    if explicit.decline_threshold is not None:
         updates.update(
             decline_threshold=explicit.decline_threshold,
             decline_threshold_source="user_text",

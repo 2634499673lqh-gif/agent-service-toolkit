@@ -646,3 +646,13 @@ The focused documentation correction makes Skill authority explicit: every start
 ## Phase 14 ADR-014 approval status synchronization — 2026-10-02
 
 Independent Strong Review approved ADR-014. The status is now Accepted / frozen; Implementation 3A is READY FOR IMPLEMENTATION; Implementations 3B and 3C remain BLOCKED pending their existing scientific and data evidence gates. Historical NOT APPROVED findings and focused documentation corrections remain preserved above. No technical contract, scope, production code, test, migration, dependency, or DAG decision changed.
+
+## Phase 14 Final Audit consolidated blocker fix — 2026-10-03
+
+The independent Final Audit found two blockers: NULL-intent presentation or planner text could reach NDWI/NDBI routing, and Phase 14 current-state records were stale. Implementation 1, 2, 3A, 3B and 3C remain recorded as Implementation COMPLETE / Independent Strong Review APPROVED. The Final Audit remains **NOT APPROVED — BLOCKER FIX IN PROGRESS** until focused re-review.
+
+The 3B and 3C exploratory addendums are limited replacements approved for continuous NDWI/NDBI index execution. Confirmed water-area classification, built-up classification and expansion claims remain deferred. The original ADR-014 frozen decisions and historical audit finding are preserved.
+
+## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
+
+Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.

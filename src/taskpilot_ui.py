@@ -1073,7 +1073,7 @@ def _render_dashboard_summary(tasks: list[dict[str, Any]]) -> None:
     dashboard[3].metric("待开始", counts["draft"])
     if not tasks:
         st.info(
-            "欢迎来到 AI 遥感分析工作台。创建第一个分析任务，系统会为你比较不同时段的植被变化。"
+            "欢迎来到 AI 遥感分析工作台。创建第一个分析任务，系统会比较不同时段的 NDVI、NDWI 或 NDBI 指数。"
             "（No tasks yet.）"
         )
     else:
@@ -1082,18 +1082,20 @@ def _render_dashboard_summary(tasks: list[dict[str, Any]]) -> None:
 
 def _render_tasks(client: TaskPilotClient) -> None:
     st.header("AI 遥感分析工作台")
-    st.caption("从分析区域和时间范围出发，查看可解释的 GeoChange 植被变化结果。")
+    st.caption("从分析区域和时间范围出发，查看可解释的 GeoChange 指数变化结果。")
     _render_conversation(client)
     mutation_in_flight = bool(st.session_state.get("taskpilot_mutation_in_flight"))
     with st.form("taskpilot_create"):
         st.markdown("#### 新建分析任务")
         title = st.text_input(
-            "任务名称", key="taskpilot_new_title", placeholder="例如：东湖植被变化分析"
+            "任务名称",
+            key="taskpilot_new_title",
+            placeholder="例如：东湖 NDVI / NDWI / NDBI 变化分析",
         )
         description = st.text_area(
             "分析需求（可选）",
             key="taskpilot_new_description",
-            placeholder="例如：比较 2023 年和 2024 年 7 月的 NDVI 变化。",
+            placeholder="例如：比较 2023 年和 2024 年 7 月的 NDVI、NDWI 或 NDBI 变化。",
         )
         submitted = st.form_submit_button(
             "创建分析任务",
@@ -1260,7 +1262,7 @@ def render_product() -> None:
         unsafe_allow_html=True,
     )
     st.title("TaskPilot · AI 遥感分析工作台")
-    st.caption("面向非技术用户的植被变化分析：结果、图像和证据一目了然。")
+    st.caption("面向非技术用户的遥感指数变化分析：结果、图像和证据一目了然。")
     if st.session_state.get("taskpilot_identity") is None:
         if st.session_state.get("taskpilot_org_ids"):
             _organization_login()

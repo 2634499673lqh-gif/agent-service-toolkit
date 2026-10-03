@@ -1,5 +1,6 @@
 """Static, code-owned Skill constraints for supported GeoChange analyses."""
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
@@ -446,3 +447,99 @@ __all__ = [
     "resolve_skill",
     "validate_terminal_result",
 ]
+
+
+def validate_unconfirmed_geochange_route(
+    task: GeoChangeTask | None,
+    plan: Plan | None,
+    *,
+    title: str,
+    description: str | None,
+) -> None:
+    """Reject new-index requests; text never grants Skill authority.
+
+    Identifier boundaries avoid treating incidental substrings as requests.
+    The named water/urban analysis expressions mirror supported request forms;
+    ordinary vegetation comparisons mentioning water or city context survive.
+    """
+
+    text = f"{title} {description or ''}"
+    negation = re.compile(
+        r"(?:do not|don't|not|without|exclude|excluding|skip|不|不要|不需要|无需|排除|不计算|不做)",
+        re.I,
+    )
+
+    conjunction = re.compile(r"(?:\bbut\b|\band\b|\bor\b|但是|但|而且|并且|和|以及)", re.I)
+
+    def is_negated(match: re.Match[str]) -> bool:
+        clause_start = (
+            max(
+                text.rfind(mark, 0, match.start())
+                for mark in (".", ";", ",", "!", "?", "。", "；", "，", "！", "？")
+            )
+            + 1
+        )
+        clause_end_candidates = [
+            text.find(mark, match.end())
+            for mark in (".", ";", ",", "!", "?", "。", "；", "，", "！", "？")
+        ]
+        clause_end = min(
+            (value for value in clause_end_candidates if value >= 0), default=len(text)
+        )
+        clause = text[clause_start:clause_end]
+        relative_start = match.start() - clause_start
+        relative_end = match.end() - clause_start
+        before = clause[:relative_start]
+        previous_connector = (
+            list(conjunction.finditer(before))[-1] if conjunction.search(before) else None
+        )
+        local_before = before[(previous_connector.end() if previous_connector else 0) :]
+        following = clause[relative_end:]
+        next_connector = conjunction.search(following)
+        local_after = following[: next_connector.start() if next_connector else None]
+        if negation.search(local_before):
+            return True
+        if negation.search(local_after) and re.match(
+            r"\s*(?:is\s+)?(?:not requested|not needed|excluded|不要|不需要|无需|不计算|不做)",
+            local_after,
+            re.I,
+        ):
+            return True
+        if previous_connector and previous_connector.group(0).casefold() in {"or", "和", "以及"}:
+            prior = clause[: previous_connector.start()]
+            return bool(negation.search(prior)) and not re.search(
+                r"\b(?:calculate|分析|比较|计算)\b", local_before, re.I
+            )
+        return False
+
+    index_mentions = re.finditer(
+        r"(?<![A-Za-z0-9_])(?P<indicator>NDWI|NDBI)(?![A-Za-z0-9_])", text, re.I
+    )
+    explicit_index = any(not is_negated(match) for match in index_mentions)
+    analysis_matches = re.finditer(
+        r"\b(?:water|urban|built[- ]up)[ _-]+(?:change|analysis|index|expansion|area|comparison)\b"
+        r"|\b(?:analy[sz]e|compare|calculate)[ ]+(?:the[ ]+)?(?:water|urban|built[- ]up)\b"
+        r"|(?:水体|水域|建成区|城市)(?:的)?(?:变化|分析|指数|扩张|面积)"
+        r"|(?:分析|比较|计算)(?:水体|水域|建成区|城市)",
+        text,
+        re.I,
+    )
+    analysis_expression = any(not is_negated(match) for match in analysis_matches)
+    newer_capabilities = (
+        set(WATER_CHANGE_NDWI.capabilities) | set(URBAN_CHANGE_NDBI.capabilities)
+    ) - set(VEGETATION_CHANGE_NDVI.capabilities)
+    if (
+        explicit_index
+        or analysis_expression
+        or (
+            task is not None
+            and (task.analysis_type, task.indicator) != ("vegetation_change", "NDVI")
+        )
+        or (
+            plan is not None
+            and any(
+                step.instruction.strip().split()[0] in newer_capabilities for step in plan.steps
+            )
+        )
+    ):
+        raise SkillValidationError("confirmed intent is required for this Skill")

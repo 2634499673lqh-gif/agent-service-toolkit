@@ -118,9 +118,14 @@ The existing NDVI and exploratory NDWI contracts, NULL-intent legacy behavior,
 historical checkpoints, TaskRun metadata limits, artifact authorization,
 tenant checks and accepted ADR-014 architecture remain unchanged.
 
-## 3. Future implementation batch acceptance
+## 3. Current implementation state and acceptance evidence
 
-After independent approval, one bounded implementation batch must cover:
+The evidence gate is approved. The exploratory NDBI implementation is complete,
+and its independent implementation Strong Review is approved. Phase 14 Final
+Audit is approved after Round 5. The approved exploratory path does not
+authorize built-up classification or confirmed urban expansion.
+
+The completed batch covered:
 
 - static Skill and strict confirmed-intent routing;
 - deterministic NDBI calculation, target-grid/resampling and common-mask tests;
@@ -132,4 +137,8 @@ After independent approval, one bounded implementation batch must cover:
 - PostgreSQL persistence and reload evidence;
 - affected GeoChange/runtime/service tests, Ruff, Pyrefly, formatting and diff checks.
 
-Until that review returns `APPROVED`, 3C remains evidence/design only.
+The historical evidence/design wording above is retained as history; it does
+not describe the current implementation state. Phase 14 is now complete after
+the approved Final Audit; final commit, push, PR and merge remain pending.
+
+The exploratory approval is usable only when the persisted Task carries a validated `confirmed_intent` pairing `urban_change` with `NDBI`. NULL-intent tasks, presentation text, Planner output, checkpoints and resume input cannot authorize this Skill. Confirmed built-up classification and expansion claims remain deferred.

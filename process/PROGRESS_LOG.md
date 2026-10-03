@@ -6091,3 +6091,35 @@ binding and observe which terminal boundary rejects it. Do not worry yet about
 changing the checkpoint schema.
 
 Result: 3C POSTGRESQL RESUME ACCEPTANCE COMPLETE — READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-03 — Phase 14 Final Audit consolidated blocker fix
+
+Status: Phase 14 Final Audit blockers fixed in implementation; ready for focused Final Audit re-review. The runtime now keeps NULL-intent tasks on the historical NDVI-compatible path and rejects NDWI/NDBI Skill plans or GeoChange state without persisted validated confirmed intent. Confirmed NDVI, NDWI and NDBI routing remains server-owned and covered by runtime tests. Updated current-state documentation and Product wording to distinguish exploratory NDWI/NDBI index support from deferred confirmed classification and expansion claims.
+
+Files changed: `src/runtime/graph.py`, `tests/runtime/test_task_runtime.py`, `ROADMAP.md`, `TASK_BACKLOG.md`, `process/tasks/INDEX.md`, `process/DECISION_LOG.md`, `process/ADR-014-3C-EXPLORATORY-ADDENDUM.md`, `docs/USER_GUIDE.md`, `src/taskpilot_ui.py`.
+
+Validation: focused runtime and offline authority tests passed after correction. Full `uv run pytest -q` passed: 891 passed, 138 skipped, 18 warnings. Round 2 added explicit NDWI/NDBI request rejection tests for direct graph, TaskRuntimeService, replan and resume paths. PostgreSQL marker tests were not runnable because `TASKPILOT_TEST_DATABASE_URL` is not configured. Ruff format/check, Pyrefly, `uv lock --check`, and `git diff --check` passed. No PostgreSQL command or Git state-changing command was performed.
+
+Learner focus: persisted `confirmed_intent` is the authorization boundary; presentation text and checkpoints are inputs or recovery state only. Suggested next task: focused independent Phase 14 Final Audit re-review.
+
+### 2026-10-03 — Phase 14 Final Audit minimal blocker fix Round 3
+
+Narrowed NULL-intent NDWI/NDBI detection to positive indicator or analysis requests. Explicit exclusions such as “NDVI only; do not calculate NDWI/NDBI” and “只计算NDVI，不计算NDWI和NDBI” remain on the legacy NDVI path; mixed positive requests remain confirmation-required. Updated the User Guide with Wuhan East Lake scope and the pinned 2023-07-28 / 2024-07-30 Sentinel-2 fixture periods and limitations.
+
+Validation: focused runtime, Skill and offline authority tests passed: 84 passed, 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL was not run because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+### 2026-10-03 — Phase 14 Final Audit minimal blocker fix Round 4
+
+Replaced the broad negation window in the NULL-intent request guard with indicator-local clause parsing. NDWI and NDBI mentions are evaluated independently across English and Chinese punctuation, coordinated exclusions are supported, and a later positive request overrides an earlier exclusion. Added the complete 22-case behavioral request matrix while preserving direct graph, TaskRuntimeService, replan, resume, legacy NDVI and confirmed-intent coverage.
+
+Validation: focused Runtime/Skill/offline authority suite passed 106 tests with 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL tests were not run because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+### 2026-10-03 — Phase 14 Final Audit final NULL-intent blocker correction
+
+Corrected indicator-local negation association so a negative NDWI phrase cannot suppress a positive NDBI phrase in the same clause, and vice versa. Coordinated exclusions remain allowed only for NDVI-only requests; later positive indicator requests fail closed. Added the four same-clause exploit regressions and Planner non-invocation assertions.
+
+Validation: focused Runtime/Skill/offline authority suite passed 110 tests with 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL persistence tests were skipped because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
+
+Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.

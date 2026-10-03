@@ -27,11 +27,22 @@ After sign-in, the Product view can:
 
 The current Product workspace is presented in Chinese as an AI remote-sensing
 analysis dashboard. Its landing metrics summarize total, active, completed,
-and draft analysis tasks. For a successful GeoChange run, the result view puts
-the analysis area, Period A/Period B, verifier state, NDVI statistics,
-vegetation-decline interpretation, and before/after/change imagery first. Scene
-selection and provenance are shown as an evidence summary, while the technical
-trace remains available in its collapsed developer view.
+and draft analysis tasks. Current supported analyses are confirmed NDVI
+vegetation analysis, exploratory NDWI continuous-index comparison, and
+exploratory NDBI continuous-index comparison. A task must be explicitly
+confirmed before NDWI or NDBI execution; the server uses the confirmed intent,
+AOI and pinned data scope. Results provide before/after/change maps and
+continuous metrics. NDWI does not establish confirmed water expansion, and
+NDBI does not establish confirmed urban expansion; classification thresholds
+remain deferred. Scene selection and provenance are shown as evidence, while
+the technical trace remains available in its collapsed developer view.
+
+The current supported AOI is Wuhan East Lake / 武汉东湖. The workflows use the
+approved bounded, pinned Sentinel-2 fixture coverage: the repository fixtures
+contain the historical scenes dated 2023-07-28 and 2024-07-30 for the two
+comparison periods. This small fixture window is not the whole lake and does
+not provide arbitrary AOIs, arbitrary acquisition dates, or general live
+Sentinel-2 processing.
 
 The underlying protected API is `/api/v1/tasks` (`POST`/`GET`), `/api/v1/tasks/{task_id}` (`GET`), and `/api/v1/tasks/{task_id}/runs` plus `/runs/{run_id}` (`POST`/`GET`). A task or run outside the current organization is not exposed as a visible resource.
 

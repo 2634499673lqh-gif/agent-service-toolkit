@@ -22,6 +22,7 @@ from geochange.skill import (
     SkillValidationError,
     resolve_skill,
     validate_terminal_result,
+    validate_unconfirmed_geochange_route,
 )
 from persistence.models import (
     AgentRun,
@@ -403,6 +404,22 @@ class TaskRuntimeService:
                 description=task_snapshot[1],
             )
             initial_state.geochange_task = confirmed_task
+            if confirmed_task is None:
+                try:
+                    validate_unconfirmed_geochange_route(
+                        None, None, title=task_snapshot[0], description=task_snapshot[1]
+                    )
+                except SkillValidationError:
+                    return await self._finish(
+                        session,
+                        runs,
+                        organization_id=organization_id,
+                        task_id=task_id,
+                        task_run_id=task_run_id,
+                        thread_id=thread_id,
+                        state=self._failed_state(initial_state, "skill_confirmation_required"),
+                        observations=observations,
+                    )
             try:
                 raw_state = await invoke_graph(initial_state.checkpoint_data())
             except Exception:
@@ -447,6 +464,19 @@ class TaskRuntimeService:
                 checkpoint_state = self._state_from_checkpoint(
                     checkpoint, thread_id, task_id=task_id, task_run_id=task_run_id
                 )
+                if confirmed_task is None:
+                    validate_unconfirmed_geochange_route(
+                        checkpoint_state.geochange_task,
+                        checkpoint_state.plan,
+                        title=task_snapshot[0],
+                        description=task_snapshot[1],
+                    )
+                    validate_unconfirmed_geochange_route(
+                        checkpoint_state.geochange_task,
+                        checkpoint_state.plan,
+                        title=checkpoint_state.task_input.title,
+                        description=checkpoint_state.task_input.description,
+                    )
                 if confirmed_task is not None and (
                     checkpoint_state.geochange_task != confirmed_task
                     or checkpoint_state.task_input.title != task_snapshot[0]
@@ -1275,6 +1305,21 @@ class TaskRuntimeService:
                     task_id, task_run_id, organization_id
                 )
                 persisted_intent = None if pair is None else pair[0].confirmed_intent
+                if persisted_intent is None:
+                    if pair is None:
+                        raise ValueError("persisted task is unavailable")
+                    validate_unconfirmed_geochange_route(
+                        state.geochange_task,
+                        state.plan,
+                        title=pair[0].title,
+                        description=pair[0].description,
+                    )
+                    validate_unconfirmed_geochange_route(
+                        state.geochange_task,
+                        state.plan,
+                        title=state.task_input.title,
+                        description=state.task_input.description,
+                    )
                 if persisted_intent is not None:
                     intent = ConfirmedIntent.model_validate(persisted_intent)
                     trusted_task = intent.runtime_task()
