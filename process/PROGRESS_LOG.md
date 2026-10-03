@@ -6137,3 +6137,7 @@ Learner focus: server-owned fixture roots and hashes are evidence boundaries; ru
 修复 A 验收阻塞：新增普通邮箱/密码登录和注销，opaque token 只存在 React 运行时内存；左侧改为持续中文消息流、日期澄清和显式确认卡；右侧实际初始化 MapLibre、OpenStreetMap 底图、定位/缩放/AOI/图层控件和 attribution。服务端地图 API 现在从受信 NDVI/NDWI/NDBI fixture manifest 派生 CRS、native bounds、dimensions、scene identity、transform 与 artifact URL，禁止使用客户端或未验证 bounds。结果卡、历史结果和失败/no-data 提示已接入。
 
 前端 build/typecheck、focused GeoChange/Runtime tests、Ruff、Pyrefly、Compose config 和 web image build 已通过。真实登录、真实缓存任务、真实 artifact 叠加仍需在具备 bootstrap 账号和 PostgreSQL 的浏览器环境中现场验收；当前环境无 Playwright 浏览器自动化。
+
+# 2026-10-04 — Implementation A final focused fixes
+
+修复正常武汉东湖中文月份请求的受控区域与月份时段解析，未知区域仍拒绝；确认接口将 Pydantic 校验失败映射为简洁中文错误；MapLibre 仅显示底图/结果源真实错误并支持恢复清除，结果 artifact 请求携带当前内存会话并按受信投影信息叠加。Focused conversation/GeoChange/Runtime tests 通过，前端 build/typecheck 通过，Docker 后端与 Web healthy，未实施真实 LLM。

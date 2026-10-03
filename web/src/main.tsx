@@ -23,13 +23,73 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
   return <main className="login-shell"><form className="login-card" onSubmit={submit}><div className="brand">✦ TaskPilot</div><h1>进入分析工作台</h1><p className="muted">使用你的 TaskPilot 账号登录，开始一段有依据的遥感分析。</p><label>邮箱<input type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></label><label>密码<input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required /></label>{error && <p className="error">{error}</p>}<button className="primary" disabled={busy}>{busy ? '登录中…' : '登录并进入工作台'}</button></form></main>;
 }
 
-function MapView({ result, taskRun }: { result: MapResult | null; taskRun: { taskId: string; runId: string } | null }) {
-  const node = useRef<HTMLDivElement>(null); const map = useRef<maplibregl.Map | null>(null); const [mapError, setMapError] = useState(''); const [layer, setLayer] = useState('change');
-  useEffect(() => { if (!node.current) return; const m = new maplibregl.Map({ container: node.current, center: [114.375, 30.56], zoom: 10, style: { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }] } }); map.current = m; m.addControl(new maplibregl.NavigationControl(), 'top-right'); m.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right'); m.on('error', () => setMapError('底图服务暂时不可用，请检查网络后重试。')); m.on('load', () => { m.addSource('aoi', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[114.3, 30.5], [114.45, 30.5], [114.45, 30.62], [114.3, 30.62], [114.3, 30.5]]] }, properties: {} } }); m.addLayer({ id: 'aoi-fill', type: 'fill', source: 'aoi', paint: { 'fill-color': '#5ab8bd', 'fill-opacity': 0.12 } }); m.addLayer({ id: 'aoi-line', type: 'line', source: 'aoi', paint: { 'line-color': '#2a9299', 'line-width': 2 } }); }); return () => { m.remove(); map.current = null; }; }, []);
-  useEffect(() => { const m = map.current; if (!m || !result || !taskRun || !m.isStyleLoaded()) return; const key = `${result.indicator.toLowerCase()}_${layer}`; const url = result.artifact_urls[key]; if (!url) return; const native = result.native_bounds[layer === 'before' ? 'period_a' : 'period_b']; if (!native) return; const [minX, minY, maxX, maxY] = native; const corners = [[minX, maxY], [maxX, maxY], [maxX, minY], [minX, minY]].map(([x, y]) => proj4(result.crs, 'EPSG:4326', [x, y])); const sourceId = 'result-raster'; if (m.getLayer('result-raster')) m.removeLayer('result-raster'); if (m.getSource(sourceId)) m.removeSource(sourceId); m.addSource(sourceId, { type: 'image', url, coordinates: corners as unknown as [[number, number], [number, number], [number, number], [number, number]] }); m.addLayer({ id: sourceId, type: 'raster', source: sourceId, paint: { 'raster-opacity': 0.78 } }); m.fitBounds([[Math.min(...corners.map(c => c[0])), Math.min(...corners.map(c => c[1]))], [Math.max(...corners.map(c => c[0])), Math.max(...corners.map(c => c[1]))]], { padding: 60, duration: 500 }); }, [result, layer, taskRun]);
+function MapView({ result, taskRun, token }: { result: MapResult | null; taskRun: { taskId: string; runId: string } | null; token: string }) {
+  const node = useRef<HTMLDivElement>(null);
+  const map = useRef<maplibregl.Map | null>(null);
+  const [mapError, setMapError] = useState('');
+  const [layer, setLayer] = useState('change');
+  const imageUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!node.current) return;
+    const m = new maplibregl.Map({
+      container: node.current,
+      center: [114.375, 30.56],
+      zoom: 10,
+      style: { version: 8, sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' } }, layers: [{ id: 'osm', type: 'raster', source: 'osm' }] },
+    });
+    map.current = m;
+    let mapReady = false;
+    m.addControl(new maplibregl.NavigationControl(), 'top-right');
+    m.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right');
+    m.on('error', (event) => {
+      const sourceId = (event as { sourceId?: string }).sourceId;
+      if (sourceId === 'osm' || sourceId === 'result-raster') setMapError('地图数据暂时不可用，请检查网络后重试。');
+      else if (!mapReady) setMapError('地图初始化失败，请刷新后重试。');
+    });
+    m.on('sourcedata', (event) => { if (event.sourceId === 'osm' && event.isSourceLoaded) setMapError(''); });
+    m.on('load', () => {
+      mapReady = true;
+      setMapError('');
+      m.addSource('aoi', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[[114.3, 30.5], [114.45, 30.5], [114.45, 30.62], [114.3, 30.62], [114.3, 30.5]]] }, properties: {} } });
+      m.addLayer({ id: 'aoi-fill', type: 'fill', source: 'aoi', paint: { 'fill-color': '#5ab8bd', 'fill-opacity': 0.12 } });
+      m.addLayer({ id: 'aoi-line', type: 'line', source: 'aoi', paint: { 'line-color': '#2a9299', 'line-width': 2 } });
+    });
+    return () => { m.remove(); map.current = null; if (imageUrl.current) URL.revokeObjectURL(imageUrl.current); };
+  }, []);
+
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !result || !taskRun || !m.isStyleLoaded()) return;
+    const key = `${result.indicator.toLowerCase()}_${layer}`;
+    const artifactUrl = result.artifact_urls[key];
+    const native = result.native_bounds[layer === 'before' ? 'period_a' : 'period_b'];
+    if (!artifactUrl || !native) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(artifactUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!response.ok) throw new Error('artifact unavailable');
+        const blobUrl = URL.createObjectURL(await response.blob());
+        if (cancelled) { URL.revokeObjectURL(blobUrl); return; }
+        if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
+        imageUrl.current = blobUrl;
+        const [minX, minY, maxX, maxY] = native;
+        const corners = [[minX, maxY], [maxX, maxY], [maxX, minY], [minX, minY]].map(([x, y]) => proj4(result.crs, 'EPSG:4326', [x, y]));
+        const sourceId = 'result-raster';
+        if (m.getLayer(sourceId)) m.removeLayer(sourceId);
+        if (m.getSource(sourceId)) m.removeSource(sourceId);
+        m.addSource(sourceId, { type: 'image', url: blobUrl, coordinates: corners as unknown as [[number, number], [number, number], [number, number], [number, number]] });
+        m.addLayer({ id: sourceId, type: 'raster', source: sourceId, paint: { 'raster-opacity': 0.78 } });
+        m.fitBounds([[Math.min(...corners.map(c => c[0])), Math.min(...corners.map(c => c[1]))], [Math.max(...corners.map(c => c[0])), Math.max(...corners.map(c => c[1]))]], { padding: 60, duration: 500 });
+        setMapError('');
+      } catch { if (!cancelled) setMapError('结果图层加载失败，请稍后重试。'); }
+    })();
+    return () => { cancelled = true; };
+  }, [result, layer, taskRun, token]);
+
   return <div className="map-wrap"><div ref={node} className="map-canvas" />{mapError && <div className="map-error">{mapError}</div>}<div className="map-toolbar"><span>武汉东湖 · 已验证覆盖区</span>{result && <><button className={layer === 'before' ? 'active' : ''} onClick={() => setLayer('before')}>时段 A</button><button className={layer === 'after' ? 'active' : ''} onClick={() => setLayer('after')}>时段 B</button><button className={layer === 'change' ? 'active' : ''} onClick={() => setLayer('change')}>变化</button></>}</div><div className="map-attribution">© OpenStreetMap contributors</div></div>;
 }
-
 function App() {
   const [token, setToken] = useState<string | null>(null); const [capabilities, setCapabilities] = useState<Capability[]>([]); const [messages, setMessages] = useState<ChatMessage[]>([]); const [draft, setDraft] = useState(''); const [proposal, setProposal] = useState<Proposal | null>(null); const [dates, setDates] = useState({ aStart: '2023-07-01', aEnd: '2023-07-31', bStart: '2024-07-01', bEnd: '2024-07-31' }); const [result, setResult] = useState<MapResult | null>(null); const [taskRun, setTaskRun] = useState<{ taskId: string; runId: string } | null>(null); const [history, setHistory] = useState<HistoryItem[]>([]); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(''); const [view, setView] = useState<'workspace' | 'history' | 'help'>('workspace');
   async function loadHome(auth: string) { try { const caps = await api<{ capabilities: Capability[] }>('/api/v1/geochange/capabilities', auth); setCapabilities(caps.capabilities); setMessages([{ from: 'assistant', text: '你好，我可以帮你比较武汉东湖已验证缓存中的 NDVI、NDWI 或 NDBI。你想先了解哪项变化？' }]); const h = await api<{ tasks?: HistoryItem[] }>('/api/v1/conversation', auth, { method: 'POST', body: JSON.stringify({ message: '历史分析' }) }); setHistory(h.tasks ?? []); } catch (err) { setToken(null); setNotice(err instanceof Error ? err.message : '登录状态失效。'); } }
@@ -40,7 +100,7 @@ function App() {
   async function openHistory(item: HistoryItem) { if (!token) return; const run = [...item.runs].reverse().find(r => r.status === 'succeeded'); if (!run) { setNotice('该历史任务还没有可展示的成功结果。'); return; } try { setResult(await api<MapResult>(`/api/v1/tasks/${item.task_id}/runs/${run.id}/map`, token)); setTaskRun({ taskId: item.task_id, runId: run.id }); setView('workspace'); setNotice('已打开历史分析结果。'); } catch (err) { setNotice(err instanceof Error ? err.message : '历史结果暂不可用。'); } }
   const overlay = view === 'history' ? <div className="view-overlay"><div className="view-card"><div className="view-heading"><h2>我的分析</h2><button onClick={() => setView('workspace')}>返回工作台</button></div><p className="muted">以下任务来自当前账号的真实历史记录。</p><div className="history-list">{history.length === 0 ? <p className="muted">暂时没有历史分析。</p> : history.slice().reverse().map(item => <div className="history-row" key={item.task_id}><div><strong>{item.title}</strong><span>{item.status}</span></div><button onClick={() => openHistory(item)} disabled={!item.runs.some(run => run.status === 'succeeded')}>重新打开结果</button></div>)}</div></div></div> : view === 'help' ? <div className="view-overlay"><div className="view-card help-card"><div className="view-heading"><h2>使用帮助</h2><button onClick={() => setView('workspace')}>返回工作台</button></div><ol><li>登录后在左侧输入自然语言问题，先查看分析方案。</li><li>补充两个不重叠的比较时段，再点击确认方案并开始分析。</li><li>右侧地图支持缩放、定位和时段 A / 时段 B / 变化图层切换。</li><li>当前仅支持已验证的武汉东湖 Sentinel-2 缓存场景。</li></ol><p><strong>科学限制：</strong>NDVI 是植被指数；NDWI 和 NDBI 仅展示连续指数变化，不能直接证明水域、建设用地或城市扩张面积。</p></div></div> : null;
   if (!token) return <Login onLogin={login} />;
-  return <main><header><strong>✦ TaskPilot</strong><span>AI 遥感智能分析平台</span><nav className="top-nav"><button className={view === 'workspace' ? 'selected' : ''} onClick={() => setView('workspace')}>分析工作台</button><button className={view === 'history' ? 'selected' : ''} onClick={() => setView('history')}>我的分析</button><button className={view === 'help' ? 'selected' : ''} onClick={() => setView('help')}>使用帮助</button><button onClick={logout}>退出</button></nav></header><section className="workspace"><aside className="chat-panel"><div className="panel-title"><h1>AI 遥感助手</h1><span className="online">● 在线</span></div><p className="muted">用自然语言描述想比较的指标和时段，我会先给你一张分析方案卡。</p><div className="messages">{messages.map((m, i) => <div className={`message ${m.from}`} key={i}><div className="bubble">{m.text}</div>{m.proposal && <div className="proposal"><h3>分析方案</h3><p>{m.proposal.indicator} · {m.proposal.analysis_area ?? '武汉东湖'}</p><p className="muted">{m.proposal.period_a ? `${m.proposal.period_a.start} 至 ${m.proposal.period_a.end}` : '请选择时段 A'}　→　{m.proposal.period_b ? `${m.proposal.period_b.start} 至 ${m.proposal.period_b.end}` : '请选择时段 B'}</p>{(!m.proposal.period_a || !m.proposal.period_b) && <div className="date-grid"><label>时段 A<input type="date" value={dates.aStart} onChange={e => setDates({ ...dates, aStart: e.target.value })} /><input type="date" value={dates.aEnd} onChange={e => setDates({ ...dates, aEnd: e.target.value })} /></label><label>时段 B<input type="date" value={dates.bStart} onChange={e => setDates({ ...dates, bStart: e.target.value })} /><input type="date" value={dates.bEnd} onChange={e => setDates({ ...dates, bEnd: e.target.value })} /></label></div>}<button className="primary" onClick={confirm} disabled={busy}>确认方案并开始分析</button></div>}</div>)}</div><div className="examples">{capabilities.map(c => <button key={c.indicator} onClick={() => ask(`请比较武汉东湖 2023-07-01 至 2023-07-31 和 2024-07-01 至 2024-07-31 的 ${c.indicator} 变化`)}>{c.indicator} · {c.label}</button>)}</div><form className="composer" onSubmit={e => { e.preventDefault(); ask(); }}><input value={draft} onChange={e => setDraft(e.target.value)} placeholder="例如：比较两个时段的 NDVI 变化" /><button disabled={busy}>发送</button></form></aside><article className="result-panel"><MapView result={result} taskRun={taskRun} /><div className="result-card"><div><h2>{result ? `${result.indicator} 结果概览` : '分析工作台'}</h2><p>{result ? `${result.aoi_label} · ${result.data_source}` : '地图可以先浏览，完成分析后会显示已验证的结果图层。'}</p>{result && <><p>{result.period.period_a}　→　{result.period.period_b}</p><small>{result.scientific_limit}</small></>}</div><div className="history"><strong>历史分析</strong>{history.slice(-4).reverse().map(item => <button key={item.task_id} onClick={() => openHistory(item)}>{item.title}</button>)}</div></div>{notice && <div className="notice">{notice}</div>}</article></section>{overlay}</main>;
+  return <main><header><strong>✦ TaskPilot</strong><span>AI 遥感智能分析平台</span><nav className="top-nav"><button className={view === 'workspace' ? 'selected' : ''} onClick={() => setView('workspace')}>分析工作台</button><button className={view === 'history' ? 'selected' : ''} onClick={() => setView('history')}>我的分析</button><button className={view === 'help' ? 'selected' : ''} onClick={() => setView('help')}>使用帮助</button><button onClick={logout}>退出</button></nav></header><section className="workspace"><aside className="chat-panel"><div className="panel-title"><h1>AI 遥感助手</h1><span className="online">● 在线</span></div><p className="muted">用自然语言描述想比较的指标和时段，我会先给你一张分析方案卡。</p><div className="messages">{messages.map((m, i) => <div className={`message ${m.from}`} key={i}><div className="bubble">{m.text}</div>{m.proposal && <div className="proposal"><h3>分析方案</h3><p>{m.proposal.indicator} · {m.proposal.analysis_area ?? '武汉东湖'}</p><p className="muted">{m.proposal.period_a ? `${m.proposal.period_a.start} 至 ${m.proposal.period_a.end}` : '请选择时段 A'}　→　{m.proposal.period_b ? `${m.proposal.period_b.start} 至 ${m.proposal.period_b.end}` : '请选择时段 B'}</p>{(!m.proposal.period_a || !m.proposal.period_b) && <div className="date-grid"><label>时段 A<input type="date" value={dates.aStart} onChange={e => setDates({ ...dates, aStart: e.target.value })} /><input type="date" value={dates.aEnd} onChange={e => setDates({ ...dates, aEnd: e.target.value })} /></label><label>时段 B<input type="date" value={dates.bStart} onChange={e => setDates({ ...dates, bStart: e.target.value })} /><input type="date" value={dates.bEnd} onChange={e => setDates({ ...dates, bEnd: e.target.value })} /></label></div>}<button className="primary" onClick={confirm} disabled={busy}>确认方案并开始分析</button></div>}</div>)}</div><div className="examples">{capabilities.map(c => <button key={c.indicator} onClick={() => ask(`请比较武汉东湖 2023-07-01 至 2023-07-31 和 2024-07-01 至 2024-07-31 的 ${c.indicator} 变化`)}>{c.indicator} · {c.label}</button>)}</div><form className="composer" onSubmit={e => { e.preventDefault(); ask(); }}><input value={draft} onChange={e => setDraft(e.target.value)} placeholder="例如：比较两个时段的 NDVI 变化" /><button disabled={busy}>发送</button></form></aside><article className="result-panel"><MapView result={result} taskRun={taskRun} token={token} /><div className="result-card"><div><h2>{result ? `${result.indicator} 结果概览` : '分析工作台'}</h2><p>{result ? `${result.aoi_label} · ${result.data_source}` : '地图可以先浏览，完成分析后会显示已验证的结果图层。'}</p>{result && <><p>{result.period.period_a}　→　{result.period.period_b}</p><small>{result.scientific_limit}</small></>}</div><div className="history"><strong>历史分析</strong>{history.slice(-4).reverse().map(item => <button key={item.task_id} onClick={() => openHistory(item)}>{item.title}</button>)}</div></div>{notice && <div className="notice">{notice}</div>}</article></section>{overlay}</main>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

@@ -38,6 +38,22 @@ def test_message_with_two_explicit_periods_completes_proposal() -> None:
     assert proposal.period_b is not None
 
 
+@pytest.mark.parametrize("indicator", ["NDVI", "NDWI", "NDBI"])
+def test_normal_chinese_month_request_validates_confirmed_intent(indicator: str) -> None:
+    proposal = proposal_from_message(
+        f"请分析武汉东湖地区2023年7月与2024年7月的{indicator}变化"
+    )
+    assert proposal.analysis_area == "武汉东湖"
+    assert proposal.period_a is not None and proposal.period_b is not None
+    validate_proposal(proposal)
+
+
+def test_unknown_area_remains_rejected_by_confirmed_intent() -> None:
+    proposal = proposal_from_message("请分析北京地区2023年7月与2024年7月的NDVI变化")
+    with pytest.raises(ValueError):
+        validate_proposal(proposal)
+
+
 def test_proposal_validation_rejects_reverse_period() -> None:
     with pytest.raises(ValueError, match="comparison periods"):
         validate_proposal(

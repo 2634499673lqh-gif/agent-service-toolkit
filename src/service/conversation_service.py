@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import re
 from datetime import date
 
@@ -18,6 +19,7 @@ _AREA_RE = re.compile(
     r"(?:分析|查看|研究|比较)(?P<area>[^，。:：,.！？!]{1,80}?)(?:最近|近几年|植被|NDVI|变化|有没有|是否|[，。:：,.！？!]|$)"
 )
 _DATE_RE = re.compile(r"20\d{2}-\d{2}-\d{2}")
+_MONTH_RE = re.compile(r"(20\d{2})年\s*(1[0-2]|0?[1-9])月")
 _RESULT_QUERY_FILLER = (
     "打开",
     "之前",
@@ -37,7 +39,10 @@ def proposal_from_message(message: str) -> TaskProposal:
 
     text = message.strip()
     area_match = _AREA_RE.search(text)
-    area = area_match.group("area").strip() if area_match else None
+    if "武汉东湖" in text or "东湖" in text:
+        area = "武汉东湖"
+    else:
+        area = area_match.group("area").strip() if area_match else None
     dates = [date.fromisoformat(value) for value in _DATE_RE.findall(text)]
     period_a = period_b = None
     if len(dates) == 4:
@@ -45,6 +50,20 @@ def proposal_from_message(message: str) -> TaskProposal:
 
         period_a = Period(start=dates[0], end=dates[1])
         period_b = Period(start=dates[2], end=dates[3])
+    else:
+        from geochange.models import Period
+
+        months = [(int(year), int(month)) for year, month in _MONTH_RE.findall(text)]
+        if len(months) >= 2:
+            month_periods = []
+            for year, month in months[:2]:
+                month_periods.append(
+                    Period(
+                        start=date(year, month, 1),
+                        end=date(year, month, calendar.monthrange(year, month)[1]),
+                    )
+                )
+            period_a, period_b = month_periods
     if any(token in text.casefold() for token in ("ndbi", "urban", "built-up", "建成区", "城市")):
         analysis_type, indicator = "urban_change", "NDBI"
     elif "水" in text and "植被" not in text and "NDVI" not in text.upper():

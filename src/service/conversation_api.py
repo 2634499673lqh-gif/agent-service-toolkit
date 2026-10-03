@@ -1,6 +1,7 @@
 """Protected conversational facade for TaskPilot Product users."""
 
 from fastapi import APIRouter, HTTPException, Response, status
+from pydantic import ValidationError
 
 from schema.conversation_api import (
     ConfirmTaskRequest,
@@ -79,8 +80,11 @@ async def confirm_conversation_task(
             )
         task = await create_confirmed_task(session, principal, payload.proposal)
         response.status_code = status.HTTP_201_CREATED
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
+    except (ValueError, ValidationError):
+        raise HTTPException(
+            status_code=422,
+            detail="分析方案无法通过安全校验，请检查区域、指标和比较时段。",
+        ) from None
     return ConversationResponse(
         kind="task_created",
         message="任务已创建为草稿。请在任务页面确认后开始执行。",

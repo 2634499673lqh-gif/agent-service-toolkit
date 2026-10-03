@@ -19,3 +19,8 @@ Blocker 修复后的 A 增加了真正的登录/注销工作流（opaque session
 1. 在 `src/service/conversation_service.py` 替换确定性 proposal parser 为结构化真实 LLM，同时保留 Pydantic、显式确认、服务端 AOI/时段/指标校验和失败分类。
 2. 在 `web/src/main.tsx` 保留 token 内存边界，把真实解释接入助手消息；不得把模型输出当授权或科学证据。
 3. 扩展 `src/geochange/provenance.py` 仅在新增受信 manifest 后支持更多产品；当前不增加任意 AOI 或在线 raster 下载。
+
+
+## Final A focused fixes
+
+Chinese year/month requests such as “武汉东湖地区 2023 年 7 月与 2024 年 7 月的 NDVI 变化” now normalize only the controlled Wuhan East Lake label and bounded month periods before ConfirmedIntent validation; unknown areas remain rejected. MapLibre reports only source-scoped tile/result failures, clears transient errors after recovery, and authenticated artifact fetches use the in-memory bearer token before creating a blob URL for the georeferenced image source. Pydantic validation details are mapped to a concise Chinese safety message at the confirm route.
