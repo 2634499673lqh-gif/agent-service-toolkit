@@ -6141,3 +6141,9 @@ Learner focus: server-owned fixture roots and hashes are evidence boundaries; ru
 # 2026-10-04 — Implementation A final focused fixes
 
 修复正常武汉东湖中文月份请求的受控区域与月份时段解析，未知区域仍拒绝；确认接口将 Pydantic 校验失败映射为简洁中文错误；MapLibre 仅显示底图/结果源真实错误并支持恢复清除，结果 artifact 请求携带当前内存会话并按受信投影信息叠加。Focused conversation/GeoChange/Runtime tests 通过，前端 build/typecheck 通过，Docker 后端与 Web healthy，未实施真实 LLM。
+
+# 2026-10-04 — Implementation A raster visualization correction
+
+修复结果图层在 MapLibre style 尚未完成时一次性 return、导致永不重试的问题。现在监听地图 load 生命周期，检查受认证 artifact 的 HTTP 状态、PNG 内容和解码尺寸，按受信 native bounds 与投影四角添加 image source/raster layer，并等待 MapLibre idle 后才报告渲染成功。结果卡区分计算完成、图层获取和地图渲染状态；失败显示简洁中文信息，不再提前宣称 artifact 已叠加。
+
+验证：`pnpm --dir web run build`、`pnpm --dir web run typecheck` 通过；此前受影响后端 focused tests 通过。浏览器自动化不可用，真实账号下的 authenticated raster 视觉证据仍需人工验收。

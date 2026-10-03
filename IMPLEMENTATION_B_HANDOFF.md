@@ -24,3 +24,7 @@ Blocker 修复后的 A 增加了真正的登录/注销工作流（opaque session
 ## Final A focused fixes
 
 Chinese year/month requests such as “武汉东湖地区 2023 年 7 月与 2024 年 7 月的 NDVI 变化” now normalize only the controlled Wuhan East Lake label and bounded month periods before ConfirmedIntent validation; unknown areas remain rejected. MapLibre reports only source-scoped tile/result failures, clears transient errors after recovery, and authenticated artifact fetches use the in-memory bearer token before creating a blob URL for the georeferenced image source. Pydantic validation details are mapped to a concise Chinese safety message at the confirm route.
+
+## Raster visualization correction
+
+The result map now waits for the MapLibre `load` lifecycle event instead of dropping a one-time pre-style attempt. Each authenticated artifact is checked as a non-empty PNG, decoded before use, added with trusted native bounds and EPSG:32650-to-WGS84 corner conversion, and considered successful only after the source/layer exists and MapLibre reaches `idle`. The UI distinguishes computation complete, artifact fetched, and map layer rendered; failures remain visible as concise Chinese diagnostics. The 64×64 fixture is fit to its native footprint rather than stretched across the AOI.
