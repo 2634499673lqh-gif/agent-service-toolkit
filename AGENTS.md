@@ -275,3 +275,7 @@ unambiguous stale current-state evidence. That exception cannot modify code,
 tests, migrations, Task Card contracts, ADR decisions, DAG topology, schema,
 security, authorization, transaction, concurrency, or runtime behavior.
 Ambiguous authority or substantive defects remain `NOT APPROVED` blockers.
+
+## V0.2 Fast Delivery Mode
+
+Implementation batches may combine adjacent features when their contracts and dependency boundaries are coherent. Real LLM integration must retain the existing safety, authorization, structured parsing, failure classification, and test constraints. V0.2 does not permit real destructive external operations. Every batch must add or update tests, required documentation, runtime evidence, and a scope check. Strong Review and the final audit remain independent and read-only. Only explicit, unambiguous current-state facts may be mechanically synchronized in status documentation; contracts and runtime behavior must not be changed by status updates.

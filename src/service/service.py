@@ -51,6 +51,7 @@ from service.agui import router as agui_router
 from service.approval_api import approval_router
 from service.auth_api import auth_router
 from service.conversation_api import conversation_router
+from service.geochange_api import geochange_router
 from service.logging import configure_logging, reset_request_id, set_request_id
 from service.runtime_capacity import RuntimeCapacityFull, runtime_capacity
 from service.runtime_dispatch import RuntimeDispatchService
@@ -623,5 +624,6 @@ async def health_ready() -> dict[str, str]:
 app.include_router(router)
 app.include_router(task_router)
 app.include_router(conversation_router)
+app.include_router(geochange_router)
 app.include_router(approval_router)
 app.include_router(auth_router)

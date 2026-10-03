@@ -16,9 +16,10 @@ import numpy as np
 from PIL import Image
 
 from .models import GeoChangeTask
+from .paths import fixture_root
 
-ROOT = Path(__file__).resolve().parents[2] / "data/geochange-fixtures/real-sentinel2-ndbi-v1"
-NDWI_ROOT = Path(__file__).resolve().parents[2] / "data/geochange-fixtures/real-sentinel2-ndwi-v5"
+ROOT = fixture_root("real-sentinel2-ndbi-v1")
+NDWI_ROOT = fixture_root("real-sentinel2-ndwi-v5")
 THRESHOLDS = (-0.2, -0.1, 0.0, 0.1, 0.2, 0.3, 0.4)
 SCL_VALID_CLASSES = (4, 5, 6)
 FIXTURE_VERSION = "geochange.real-sentinel2-ndbi.v1"

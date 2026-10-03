@@ -124,6 +124,42 @@ class TaskLifecycleService:
             result_metadata,
         )
 
+    async def fail_unstarted_run(
+        self,
+        task_id: UUID,
+        organization_id: UUID,
+        task_run_id: UUID,
+        *,
+        reason: str = "runtime_dispatch_failed_before_running",
+    ) -> bool:
+        """Close a queued/orphaned run without replaying any runtime work."""
+        try:
+            task = await self._locked_task(task_id, organization_id)
+            run = await self.runs.get_for_task_in_principal_tenant(
+                task_id, task_run_id, organization_id
+            )
+            if run is None or run.status in (
+                TaskRunStatus.SUCCEEDED,
+                TaskRunStatus.FAILED,
+                TaskRunStatus.CANCELLED,
+            ):
+                await self.session.rollback()
+                return False
+            if task.status is TaskStatus.RUNNING and run.status is TaskRunStatus.RUNNING:
+                await self.session.rollback()
+                return False
+            run.status = TaskRunStatus.FAILED
+            run.result_metadata = {
+                "error_code": reason,
+                "verifier_status": "not_run",
+            }
+            task.status = TaskStatus.FAILED
+            await self.session.commit()
+            return True
+        except BaseException:
+            await self.session.rollback()
+            raise
+
     async def _finish_public(
         self,
         task_id: UUID,

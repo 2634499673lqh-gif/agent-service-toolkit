@@ -6123,3 +6123,12 @@ Validation: focused Runtime/Skill/offline authority suite passed 110 tests with 
 ## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
 
 Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.
+# 2026-10-03 — TaskPilot V0.2 Implementation A
+
+Implemented the first user-acceptance slice: fixture roots resolve independently of the working directory in local/Docker layouts; NDBI manifest bytes are restored to the trusted hash; RuntimeDispatch closes queued/pending orphan runs with a bounded failure classification; GeoChange capabilities and verified map metadata routes are tenant-protected; and a React/TypeScript/Vite workspace frontend with same-origin `/api` proxy is available under `web/`. Streamlit remains unchanged as fallback.
+
+Changed files include `AGENTS.md`, `src/geochange/{paths,fixture,ndwi,ndbi}.py`, `src/service/{runtime_dispatch,task_lifecycle,task_api,geochange_api}.py`, `src/schema/geochange_api.py`, `web/`, `docker/Dockerfile.web`, `compose.yaml`, `USER_ACCEPTANCE_GUIDE.md`, and `IMPLEMENTATION_B_HANDOFF.md`.
+
+Validation: `uv run pytest -q tests/geochange tests/service/test_runtime_dispatch.py tests/runtime/test_task_runtime.py` (216 passed); `pnpm --dir web run build` and `pnpm --dir web run typecheck` (passed); Ruff, Ruff format, Pyrefly, and `git diff --check` (passed); Vite HTTP smoke at `http://localhost:5173/` returned 200. Docker/PostgreSQL/browser authenticated E2E and real LLM execution remain environment-dependent and are explicitly deferred to B or user acceptance.
+
+Learner focus: server-owned fixture roots and hashes are evidence boundaries; runtime recovery must never replay side effects; product APIs expose a sanitized projection instead of persistence JSON; the browser stores the token only in memory. Next task is Implementation B's real structured LLM path and verified artifact map loading.
