@@ -11,6 +11,19 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
+from geochange.aoi import resolve_aoi
+from geochange.fixture import scene_evidence, validate_binding
+from geochange.ndbi import scene_evidence as ndbi_scene_evidence
+from geochange.ndbi import validate_binding as validate_ndbi_binding
+from geochange.ndwi import scene_evidence as ndwi_scene_evidence
+from geochange.ndwi import validate_binding as validate_ndwi_binding
+from geochange.skill import (
+    SkillSpec,
+    SkillValidationError,
+    resolve_skill,
+    validate_terminal_result,
+    validate_unconfirmed_geochange_route,
+)
 from persistence.models import (
     AgentRun,
     AgentRunStatus,
@@ -31,6 +44,7 @@ from runtime.planner import PlannerNode
 from runtime.risk import RiskRoute, classify_action
 from runtime.state import AgentState, PendingApprovalReference
 from runtime.verifier import VerifierNode
+from schema.confirmed_intent import ConfirmedIntent
 from schema.models import (
     AnthropicModelName,
     AWSModelName,
@@ -300,6 +314,37 @@ class TaskRuntimeService:
 
         task, task_run = pair
         task_snapshot = (task.title, task.description)
+        confirmed_task = None
+        selected_skill: SkillSpec | None = None
+        canonical_aoi_evidence: dict[str, str] | None = None
+        canonical_scene_evidence: dict[str, str] | None = None
+        if task.confirmed_intent is not None:
+            try:
+                intent = ConfirmedIntent.model_validate(task.confirmed_intent)
+                confirmed_task = intent.runtime_task()
+                selected_skill = resolve_skill(intent.analysis_type, intent.indicator)
+                aoi = resolve_aoi(confirmed_task.aoi_key)
+                canonical_aoi_evidence = {
+                    "catalog_key": aoi.catalog_key,
+                    "crs": aoi.crs,
+                    "source": aoi.source,
+                }
+                canonical_scene_evidence = (
+                    ndwi_scene_evidence(confirmed_task)
+                    if selected_skill.result_type == "water_change"
+                    else ndbi_scene_evidence(confirmed_task)
+                    if selected_skill.result_type == "urban_change"
+                    else scene_evidence(confirmed_task)
+                )
+                # Planner/capability text is derived from the validated intent,
+                # independently of mutable presentation title/description.
+                task_snapshot = (
+                    f"{confirmed_task.analysis_type} {confirmed_task.indicator} Wuhan East Lake",
+                    confirmed_task.model_dump_json(),
+                )
+            except ValueError:
+                await session.rollback()
+                raise TaskRuntimeConflictError("confirmed execution intent is invalid") from None
         run_status = task_run.status
         await session.rollback()
 
@@ -336,6 +381,7 @@ class TaskRuntimeService:
             task_snapshot=task_snapshot,
             approval_tracker=approval_tracker,
             observation_sink=observations,
+            skill=selected_skill,
         )
 
         async def invoke_graph(input_data: object) -> Any:
@@ -357,6 +403,23 @@ class TaskRuntimeService:
                 title=task_snapshot[0],
                 description=task_snapshot[1],
             )
+            initial_state.geochange_task = confirmed_task
+            if confirmed_task is None:
+                try:
+                    validate_unconfirmed_geochange_route(
+                        None, None, title=task_snapshot[0], description=task_snapshot[1]
+                    )
+                except SkillValidationError:
+                    return await self._finish(
+                        session,
+                        runs,
+                        organization_id=organization_id,
+                        task_id=task_id,
+                        task_run_id=task_run_id,
+                        thread_id=thread_id,
+                        state=self._failed_state(initial_state, "skill_confirmation_required"),
+                        observations=observations,
+                    )
             try:
                 raw_state = await invoke_graph(initial_state.checkpoint_data())
             except Exception:
@@ -401,6 +464,35 @@ class TaskRuntimeService:
                 checkpoint_state = self._state_from_checkpoint(
                     checkpoint, thread_id, task_id=task_id, task_run_id=task_run_id
                 )
+                if confirmed_task is None:
+                    validate_unconfirmed_geochange_route(
+                        checkpoint_state.geochange_task,
+                        checkpoint_state.plan,
+                        title=task_snapshot[0],
+                        description=task_snapshot[1],
+                    )
+                    validate_unconfirmed_geochange_route(
+                        checkpoint_state.geochange_task,
+                        checkpoint_state.plan,
+                        title=checkpoint_state.task_input.title,
+                        description=checkpoint_state.task_input.description,
+                    )
+                if confirmed_task is not None and (
+                    checkpoint_state.geochange_task != confirmed_task
+                    or checkpoint_state.task_input.title != task_snapshot[0]
+                    or checkpoint_state.task_input.description != task_snapshot[1]
+                ):
+                    raise ValueError("checkpoint does not match confirmed intent")
+                if selected_skill is not None and checkpoint_state.plan is not None:
+                    selected_skill.validate_plan(checkpoint_state.plan)
+                if confirmed_task is not None:
+                    _validate_checkpoint_geochange_evidence(
+                        checkpoint_state,
+                        canonical_aoi_evidence,
+                        canonical_scene_evidence,
+                        require_complete=checkpoint_state.plan_position >= 3,
+                        task=confirmed_task,
+                    )
             except ValueError:
                 failed_state = self._failed_state(
                     AgentState.initial(
@@ -490,22 +582,36 @@ class TaskRuntimeService:
 
         if state.task_id != str(task_id) or state.task_run_id != str(task_run_id):
             state = self._failed_state(state, "runtime_state_identity_mismatch")
-        elif state.pending_approval is not None:
-            return await self._verify_written_approval_checkpoint(
-                session,
-                organization_id=organization_id,
-                task_id=task_id,
-                task_run_id=task_run_id,
-                thread_id=thread_id,
-                task_snapshot=task_snapshot,
-                state=state,
-                principal=principal,
-                config=config,
-                approval_tracker=approval_tracker,
-                observations=observations,
-            )
-        elif state.terminal_outcome is None:
-            state = self._failed_state(state, "runtime_incomplete")
+        elif confirmed_task is not None and state.geochange_task != confirmed_task:
+            state = self._failed_state(state, "runtime_confirmed_intent_mismatch")
+        else:
+            if confirmed_task is not None:
+                try:
+                    _validate_checkpoint_geochange_evidence(
+                        state,
+                        canonical_aoi_evidence,
+                        canonical_scene_evidence,
+                        require_complete=state.plan_position >= 3,
+                        task=confirmed_task,
+                    )
+                except ValueError:
+                    state = self._failed_state(state, "runtime_confirmed_evidence_mismatch")
+            if state.pending_approval is not None:
+                return await self._verify_written_approval_checkpoint(
+                    session,
+                    organization_id=organization_id,
+                    task_id=task_id,
+                    task_run_id=task_run_id,
+                    thread_id=thread_id,
+                    task_snapshot=task_snapshot,
+                    state=state,
+                    principal=principal,
+                    config=config,
+                    approval_tracker=approval_tracker,
+                    observations=observations,
+                )
+            if state.terminal_outcome is None:
+                state = self._failed_state(state, "runtime_incomplete")
         return await self._finish(
             session,
             runs,
@@ -539,6 +645,7 @@ class TaskRuntimeService:
         task_snapshot: tuple[str, str | None],
         approval_tracker: dict[str, UUID],
         observation_sink: _RuntimeObservationCollector | None = None,
+        skill: SkillSpec | None = None,
     ) -> RuntimeGraphContext | None:
         """Build invocation-only callbacks; no service object enters AgentState."""
 
@@ -581,6 +688,7 @@ class TaskRuntimeService:
             approval_gate=create_approval if principal is not None else None,
             observation_sink=observation_sink,
             request_id=None if observation_sink is None else observation_sink.request_id,
+            skill=skill,
         )
 
     def _proposal_for_state(
@@ -1191,6 +1299,48 @@ class TaskRuntimeService:
         if outcome not in {"SUCCEEDED", "FAILED"}:
             state = self._failed_state(state, "runtime_incomplete")
             outcome = "FAILED"
+        if outcome == "SUCCEEDED" and state.geochange_task is not None:
+            try:
+                pair = await runs.get_task_and_run_in_principal_tenant(
+                    task_id, task_run_id, organization_id
+                )
+                persisted_intent = None if pair is None else pair[0].confirmed_intent
+                if persisted_intent is None:
+                    if pair is None:
+                        raise ValueError("persisted task is unavailable")
+                    validate_unconfirmed_geochange_route(
+                        state.geochange_task,
+                        state.plan,
+                        title=pair[0].title,
+                        description=pair[0].description,
+                    )
+                    validate_unconfirmed_geochange_route(
+                        state.geochange_task,
+                        state.plan,
+                        title=state.task_input.title,
+                        description=state.task_input.description,
+                    )
+                if persisted_intent is not None:
+                    intent = ConfirmedIntent.model_validate(persisted_intent)
+                    trusted_task = intent.runtime_task()
+                    skill = resolve_skill(intent.analysis_type, intent.indicator)
+                    if trusted_task != state.geochange_task:
+                        raise ValueError("terminal GeoChange task does not match confirmed intent")
+                    payload = (
+                        json.loads(state.execution_result.output or "")
+                        if state.execution_result
+                        else None
+                    )
+                    validate_terminal_result(
+                        skill,
+                        payload,
+                        task=trusted_task,
+                        aoi_evidence=state.geochange_aoi_evidence,
+                        scene_evidence_values=state.geochange_evidence,
+                    )
+            except (TypeError, ValueError, SkillValidationError):
+                state = self._failed_state(state, "skill_result_invalid")
+                outcome = "FAILED"
         stage_status = _terminal_stage_status(state)
         result_metadata: dict[str, object] = {
             "schema_version": "taskpilot.runtime.v1",
@@ -1208,10 +1358,17 @@ class TaskRuntimeService:
                 candidate = json.loads(state.execution_result.output)
             except (TypeError, ValueError):
                 candidate = None
-            if isinstance(candidate, dict) and isinstance(candidate.get("metrics"), dict):
+            if (
+                outcome == "SUCCEEDED"
+                and stage_status["execution"] == "passed"
+                and stage_status["verifier"] == "passed"
+                and isinstance(candidate, dict)
+                and isinstance(candidate.get("metrics"), dict)
+            ):
                 result_metadata.update(
                     {
-                        "analysis_type": "vegetation_change",
+                        "analysis_type": candidate.get("analysis_type", "vegetation_change"),
+                        "indicator": candidate.get("indicator"),
                         "summary": candidate.get("summary", result_metadata["summary"]),
                         "execution_mode": candidate.get("execution_mode", "REAL_STAC_LOCAL_RASTER"),
                         "metrics": candidate["metrics"],
@@ -1221,6 +1378,18 @@ class TaskRuntimeService:
                         "replan_count": state.replan_count,
                     }
                 )
+                # GeoChangeResult carries a bounded product-facing projection.
+                # Preserve it in the existing result_metadata JSON object so the
+                # Product UI never reconstructs AOI or period data from task text.
+                for key in (
+                    "analysis_area",
+                    "analysis_periods",
+                    "data_source",
+                    "provenance_summary",
+                    "provenance",
+                ):
+                    if candidate.get(key):
+                        result_metadata[key] = candidate[key]
         # Candidate capability output cannot override the runtime's terminal
         # stage truth (especially after verifier rejection).
         result_metadata["verifier_status"] = stage_status["verifier"]
@@ -1281,6 +1450,45 @@ def _terminal_stage_status(state: AgentState) -> dict[str, str]:
         else:
             verifier = "not_run"
     return {"planner": planner, "execution": execution, "verifier": verifier}
+
+
+def _validate_checkpoint_geochange_evidence(
+    state: AgentState,
+    canonical_aoi_evidence: dict[str, str] | None,
+    canonical_scene_evidence: dict[str, str] | None,
+    *,
+    require_complete: bool,
+    task: Any,
+) -> None:
+    """Validate checkpoint evidence against server-derived AOI and fixture facts."""
+
+    if canonical_aoi_evidence is None or canonical_scene_evidence is None:
+        raise ValueError("canonical GeoChange evidence is unavailable")
+    aoi_evidence = state.geochange_aoi_evidence
+    scene = state.geochange_evidence
+    if not isinstance(aoi_evidence, dict) or not isinstance(scene, dict):
+        raise ValueError("checkpoint GeoChange evidence is malformed")
+    if any(
+        key not in canonical_aoi_evidence or value != canonical_aoi_evidence[key]
+        for key, value in aoi_evidence.items()
+    ):
+        raise ValueError("checkpoint AOI evidence is not server-authorized")
+    if state.plan_position >= 1 and aoi_evidence != canonical_aoi_evidence:
+        raise ValueError("checkpoint AOI evidence is incomplete")
+    if any(
+        key not in canonical_scene_evidence or value != canonical_scene_evidence[key]
+        for key, value in scene.items()
+    ):
+        raise ValueError("checkpoint scene evidence is not server-authorized")
+    if require_complete:
+        if scene != canonical_scene_evidence:
+            raise ValueError("checkpoint scene evidence is incomplete")
+        if getattr(task, "analysis_type", None) == "water_change":
+            validate_ndwi_binding(task, scene)
+        elif getattr(task, "analysis_type", None) == "urban_change":
+            validate_ndbi_binding(task, scene)
+        else:
+            validate_binding(task, scene)
 
 
 __all__ = [

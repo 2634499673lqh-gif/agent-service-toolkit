@@ -1,3 +1,29 @@
+### 2026-10-02 — Phase 14 3B exploratory addendum blocker fix
+
+Revised `process/ADR-014-3B-EXPLORATORY-ADDENDUM.md` with an explicit scope-revision table and a complete proposed exploratory NDWI contract. The proposal now explicitly defers water-class and water-area thresholds, prohibits confirmed water-area/expansion claims, retains all B03/B08/SCL, provenance, mask, Runtime-security and NDVI compatibility requirements, and keeps 3C blocked.
+
+The implementation-ready contract freezes the future `water_change`/`NDWI` Skill sequence, strict confirmed-intent branch, server-owned v5 fixture, scale/offset and SCL nearest-neighbour rules, common-valid mask, continuous-only metrics, `ndwi_*` artifact allowlist, provenance bindings, fail-closed Verifier/lifecycle conditions, and one complete future acceptance batch. No ADR-014, production code, tests, fixtures or Runtime behavior changed.
+
+Result: 3B EXPLORATORY ADDENDUM BLOCKERS FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 3B scientific gate closure sprint
+
+Assessed independent reference options and added deterministic exploratory validation in `scripts/validate_ndwi_science.py`. Copernicus Water Bodies (100 m monthly) and Dynamic World (10 m model predictions) were documented as unsuitable for this batch as date-matched independent ground truth. Per-period confusion matrices, quadrant checks, common-valid change sensitivity, and low-reflectance handling are now reproducible.
+
+Period A has 218 valid pixels and period B 355, with 160 common valid pixels. At NDWI 0.20, SCL comparison F1 is 0.304 (A) and 0.531 (B); common-area candidate water-pixel deltas range from 82 to -1 across tested thresholds. No consistent, independently validated classification or change threshold exists. Added `process/ADR-014-3B-EXPLORATORY-ADDENDUM.md` as a proposed, non-executable scope-reduction option.
+
+Validation: 67 affected GeoChange tests passed; Ruff, Ruff format, Pyrefly, and `git diff --check` passed. NDVI and Runtime behavior remain unchanged.
+
+Result: 3B SCIENCE INSUFFICIENT — EXPLORATORY NDWI ADR ADDENDUM READY FOR REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3B evidence/data preparation
+
+Prepared independent `geochange.real-sentinel2-ndwi.v1` data under `data/geochange-fixtures/real-sentinel2-ndwi-v5/` with bounded B03/B08/SCL reads, copied STAC snapshots, checksums, target-grid metadata, and explicit scene-footprint coverage masks. Added `scripts/prepare_geochange_ndwi_fixture.py`, focused integrity/mask/provenance tests, and `process/PHASE_14_3B_EVIDENCE.md`. Existing NDVI v1 data and runtime behavior are unchanged.
+
+Validation: 66 affected GeoChange tests passed; Ruff, Ruff format, Pyrefly, and `git diff --check` passed. The period B footprint mismatch is resolved by explicit coverage masking. SCL consistency produced a weak candidate threshold near 0.20, but independent scientific validation of water-class and change thresholds remains outstanding; NDWI Runtime is not activated.
+
+Result: 3B EVIDENCE BLOCKED — SPECIFIC REMAINING GAPS.
+
 ### 2026-09-25 — T107 Phase 8 Final Audit
 
 Status: T107 Phase 8 Final Audit is APPROVED; Phase 8 is COMPLETE. Phase 9 Planning is APPROVED / frozen; T110–T116 and T118–T119 are COMPLETE / APPROVED; T117 Phase 9 Final Audit is APPROVED; Phase 9 is COMPLETE.
@@ -5627,3 +5653,473 @@ while all 226 tracked Python files were formatted. Formatting-only edits were
 AST-equivalent to their baseline. No production behavior, contract, dependency,
 authentication, migration semantics, or scope expansion was introduced by the
 status synchronization. No commit or push.
+
+### 2026-10-01 — Phase 14 Implementation 1: Product UI & Visualization Upgrade
+
+Upgraded the Streamlit Product workspace presentation without changing Agent
+Runtime, Planner, Executor, Verifier, evidence persistence, or database schema.
+`src/taskpilot_ui.py` now presents a Chinese AI remote-sensing dashboard with
+task counts, a guided task-creation form, localized task/run/status labels, and
+an answer-first GeoChange result view covering analysis area, comparison
+periods, NDVI statistics, decline interpretation, before/after/change images,
+scene evidence, provenance, and the retained technical trace/approval views.
+`src/streamlit_app.py` localizes the workspace selector while retaining the
+legacy chat route. Added focused projection tests for localized statuses,
+periods, areas, metrics, and provenance. No runtime or persistence behavior
+changed.
+
+Validation: Product Streamlit/AppTest and legacy app regression passed 45 tests;
+Ruff check and formatting passed for changed Python files. Application startup
+and authenticated task/run flows remain covered by the existing AppTest HTTP
+boundary. Remaining limitation: the UI renders the persisted AOI/period fields
+when present; older historical runs without those fields show “未记录”.
+
+Learner notes: the key concept is keeping the API's stable English enum and
+evidence contracts separate from localized UI projections. Read
+`src/taskpilot_ui.py`, `src/streamlit_app.py`, and `tests/app/test_taskpilot_ui.py`.
+Exercise: run one cached Sentinel-2 GeoChange task and explain the relationship
+between the three NDVI images, the metric cards, and the selected-scene evidence.
+Suggested next task: perform an independent Phase 14 UI review with a real
+authenticated Product smoke and visual screenshot check.
+
+### 2026-10-01 — Phase 14 Implementation 1 contract-alignment fix
+
+Strong Review identified that the first UI pass projected AOI and period values
+that were not part of the persisted result contract. The existing
+`GeoChangeResult` projection now carries bounded `analysis_area`, compact
+`analysis_periods`, `data_source`, `provenance_summary`, and `provenance`
+fields. The runtime terminal projection preserves these fields in the existing
+`result_metadata` JSON object, and its existing validator allowlist validates
+their size and shape without a migration or new table. Streamlit now reads
+only these persisted fields, with selected-scene dates as the existing safe
+fallback for older results. UI and GeoChange tests use realistic response
+shapes and cover both legacy metadata and enriched GeoChange results.
+### 2026-10-01 — Phase 14 Implementation 2: Conversational Agent + Task Memory Foundation
+
+Added a protected conversational facade over the existing TaskPilot business
+records. Natural-language requests produce a bounded `TaskProposal` containing
+area, analysis type, indicator, dates, and required parameters; the server
+re-validates the proposal and only the explicit `/conversation/confirm` action
+creates a DRAFT Task. Confirmation never starts a TaskRun, so the existing
+execution and approval boundaries remain authoritative.
+
+Added user-scoped history and historical-result lookup. Both read existing
+Task/TaskRun/result metadata through tenant- and user-scoped repository queries;
+no memory store, embedding pipeline, vector database, migration, or Runtime
+change was introduced. The Streamlit Product view now exposes proposal review,
+confirmation, history, and result-found feedback while keeping the existing
+task/run visualization as the result surface.
+
+Files changed: `src/schema/conversation_api.py`,
+`src/service/conversation_service.py`, `src/service/conversation_api.py`,
+`src/persistence/repositories.py`, `src/client/taskpilot.py`,
+`src/taskpilot_ui.py`, and `tests/service/test_conversation_service.py`.
+
+Validation: focused conversation and Product UI tests passed (20), affected
+service/task API regression passed (15 tests, 5 PostgreSQL skips), Ruff passed,
+Pyrefly reported 0 errors, Python compilation passed, and `git diff --check`
+passed. PostgreSQL-backed history/result integration remains environment-gated
+by the repository's disposable database fixture.
+
+Learner notes: the key boundary is that conversational text is an input to a
+validated proposal, not an execution command. Read
+`src/service/conversation_service.py`, `src/service/conversation_api.py`,
+`src/schema/conversation_api.py`, `src/persistence/repositories.py`, and
+`src/taskpilot_ui.py`. Exercise: trace a confirmed proposal and identify the
+exact line where a Task is created and why no TaskRun is created there. Do not
+worry yet about RAG, semantic memory, or new Agent Runtime nodes.
+
+Suggested next task: independent Phase 14 Implementation 2 Strong Review with
+authenticated conversation, tenant/user-isolation, and persisted-result smoke.
+### 2026-10-01 — Phase 14 Implementation 2 focused blocker fix
+
+Resolved the Strong Review findings without changing Runtime architecture.
+Result-access intent is evaluated before generic history intent, so requests
+such as “打开之前武汉东湖那个分析” perform persisted result lookup. The
+conversation request and TaskProposal now share the 2,000-character boundary,
+and proposal construction/confirmation failures return bounded validation
+feedback rather than an unhandled error.
+
+Confirmed proposals now persist their validated analysis type, indicator,
+area, dates, and required parameters in the existing Task description as a
+bounded structured suffix alongside the readable request. No schema or
+migration was required, and confirmation still creates only a DRAFT Task.
+Focused tests cover routing priority, input bounds, confirmation semantics,
+proposal-field preservation, and existing user/tenant-scoped lookup paths.
+
+Validation: conversation tests passed (6), affected Product/service tests
+remain green, Ruff and Pyrefly pass, and `git diff --check` passes.
+### 2026-10-01 — Phase 14 Implementation 2 Fix Round 2: Intent persistence alignment
+
+Added deterministic Chinese conversational-query normalization so generic words
+such as “打开”“之前”“那个”“分析” are removed before matching meaningful
+location terms against the current user's persisted Task records. Result lookup
+continues through the existing tenant/user-scoped TaskRun and result metadata
+queries.
+
+The confirmed proposal marker is now parsed as a bounded structured input at
+the existing runtime boundary. Offline GeoChange construction consumes the
+confirmed analysis type, indicator, area, period and supported numeric
+parameters, rejecting unsupported confirmed intent instead of silently using
+defaults. No new table, column, migration, RAG, vector database, or memory
+service was introduced.
+
+Validation: focused conversation/runtime tests passed (17), Ruff passed,
+Pyrefly reported 0 errors, and `git diff --check` passed. Broader application,
+service, UI, and GeoChange regressions remain required before independent
+focused Strong Re-review.
+### 2026-10-01 — Phase 14 Implementation 2 Fix Round 3: Trusted intent contract
+
+Added the minimum `Task.confirmed_intent` nullable JSONB field and Alembic
+migration `t036_confirmed_intent`. Confirmation now validates a strict
+GeoChange intent with distinct, ordered `period_a` and `period_b`, supported
+analysis type/indicator/area, and bounded parameters before creating a DRAFT
+Task. The user-facing description remains presentation text only.
+
+`TaskRuntimeService` reads and validates `confirmed_intent` before constructing
+runtime input. It uses the persisted comparison periods and parameters, rejects
+invalid or unsupported intent, and keeps mutable title/description text out of
+the trusted execution path. Tasks created before this migration remain
+compatible with NULL intent and retain the existing legacy runtime path.
+
+Validation: conversation, runtime, persistence foundation, service, UI, GeoChange, and PostgreSQL-gated regression tests passed (191 passed, 33 PostgreSQL skips); Ruff, Ruff format,
+Pyrefly (0 errors), and `git diff --check` passed.
+
+Learner notes: the key boundary is separating mutable presentation text from
+server-validated execution intent. Read `src/schema/confirmed_intent.py`,
+`src/persistence/models.py`, `migrations/versions/20261001_01_confirmed_intent.py`,
+and `src/service/task_runtime.py`. Exercise: change a Task description after
+confirmation and verify the runtime still receives the same two periods. Do
+not worry yet about migrating old Tasks to synthetic intent.
+### 2026-10-02 — Phase 14 Implementation 2 Fix Round 4: Proposal completion flow
+
+Natural-language proposals now return a clarification response when the two
+required comparison periods are missing. Explicit ISO date pairs can complete
+`period_a` and `period_b`; the server still validates ordering and distinctness
+before confirmation. The UI exposes four date inputs for the clarification
+step, and confirmation never invents dates.
+
+The trusted execution contract is unchanged: completed confirmation persists
+`Task.confirmed_intent`, and Runtime reads only that server-controlled field.
+Added focused tests for incomplete/complete proposal flow, clarification on
+confirmation, and user/organization-scoped history lookup.
+
+Validation: conversation tests passed (14); the previously affected service,
+UI, GeoChange, Runtime, and persistence suites remain green. Ruff, Ruff
+format, Pyrefly, and `git diff --check` passed.
+### 2026-10-02 — Phase 14 Implementation 2 Fix Round 5: Conversation edge contract
+
+Expanded deterministic area extraction to handle Chinese commas, colons, and
+sentence punctuation in complete requests. Confirmation now uses a dynamic
+HTTP status contract: clarification responses are HTTP 200 and created draft
+Tasks are HTTP 201. Missing-period confirmations return before the TaskService
+boundary, so no Task or TaskRun is created.
+
+Added focused tests for punctuation-aware area extraction, complete
+confirmation status, incomplete confirmation clarification, and no-resource
+creation behavior. The trusted `Task.confirmed_intent` and Runtime authority
+model are unchanged.
+
+### 2026-10-02 — Phase 14 Implementation 3 design freeze correction
+
+Added proposed `process/ADR-014.md` after the initial planning report received Planning Strong Review NOT APPROVED. The document freezes the minimum static Skill and Runtime boundary, strict analysis-specific intent compatibility, shared bounded results/artifacts, fail-closed routing, and acceptance gates for 3A/3B/3C. Existing fixture inspection confirms only B04/B08 evidence; B03/B11/SCL data, checksums, masks, grid/resampling rules, and scientific thresholds remain explicit prerequisites for 3B/3C. No production code, tests, migrations, dependencies, or runtime behavior changed.
+
+Result: READY FOR PLANNING STRONG REVIEW. ADR-014 remains Proposed / Pending Review; Implementation 3A is not authorized by this document alone.
+
+### 2026-10-02 — ADR-014 focused documentation correction
+
+Resolved the three remaining planning blockers without changing scope. ADR-014 now states that the server derives Skill from validated `Task.confirmed_intent` on every start/resume, checkpoints cannot authorize Skills or capabilities, and one static specification owns all Skill constraints. It explicitly preserves strict routing for confirmed-intent Tasks, the existing NULL-intent legacy path, historical checkpoints without new Skill fields, NDVI behavior, and recovery compatibility. Batch 3A now lists the required unknown/cross-Skill, order, replan, resume, malicious Planner, capability-output, and legacy recovery acceptance tests. Batch 3B/3C evidence gates remain unchanged.
+
+Result: READY FOR FOCUSED PLANNING STRONG RE-REVIEW. ADR-014 remains Proposed / Pending Review; no production code or tests changed.
+
+### 2026-10-02 — ADR-014 approval status synchronization
+
+Independent Strong Review approved the ADR-014 design. Updated the current status to Accepted / frozen and marked Implementation 3A READY FOR IMPLEMENTATION. Implementations 3B and 3C remain BLOCKED pending B03/B11, SCL/cloud-shadow, checksum/provenance, grid/resampling, and scientific validation evidence. Historical review findings remain preserved; no technical contract or scope was changed.
+
+Result: ADR-014 ACCEPTED / FROZEN; 3A READY FOR IMPLEMENTATION; 3B/3C BLOCKED.
+
+### 2026-10-02 — Phase 14 Implementation 3A — Static Skill boundary and NDVI compatibility
+
+Added the code-owned `vegetation_change`/`NDVI` Skill specification with one
+allowlisted capability order and result artifact contract. Confirmed-intent
+starts and resumes derive the Skill from the validated Task record; Planner,
+replan, current-step dispatch, checkpoint plans, and result payloads are now
+validated against it. Checkpoint state remains recovery-only and no Skill field
+was added to historical state. The existing NULL-intent path keeps its legacy
+capability selection behavior.
+
+Files changed: `src/geochange/skill.py`, `src/runtime/graph.py`,
+`src/service/task_runtime.py`, `tests/geochange/test_skill.py`.
+
+Validation: focused Skill/runtime/GeoChange/conversation tests passed (132);
+Ruff, Ruff format, Pyrefly, shared Runtime regressions, and `git diff --check`
+remain part of the implementation validation. PostgreSQL evidence is reported
+only if the repository test environment exposes a safe database.
+
+Learner notes: the important boundary is that a persisted, validated intent
+selects one static server-owned contract, while checkpoints carry execution
+state only. Read `src/geochange/skill.py`, `src/runtime/graph.py`,
+`src/service/task_runtime.py`, and `tests/geochange/test_skill.py`. Exercise:
+change one confirmed planner step to another capability and observe the
+terminal `skill_plan_invalid` failure. Do not worry about NDWI/NDBI yet; their
+data and scientific gates remain blocked.
+
+Result: BATCH READY FOR STRONG REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix
+
+Completed the two Strong Review blocker corrections. `SkillSpec.validate_result`
+now validates the complete terminal NDVI payload at the final summarize step:
+schema/type, required finite metrics and ranges, trusted periods/area/threshold,
+provenance, exact artifact references, verifier status, and unauthorized fields.
+Intermediate capability outputs remain subject only to their existing bounded
+capability contract. Replan failure now routes directly to terminal instead of
+executing the previous plan after an unauthorized replacement is rejected.
+
+Added behavioral graph tests for incomplete terminal output and unauthorized
+replan escape. Existing legacy and recovery tests remain unchanged and green.
+
+Validation: affected GeoChange/Runtime/service suites passed (291 passed, 35
+PostgreSQL tests skipped because no safe database was configured); Ruff, Ruff
+format, Pyrefly, and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A terminal result bypass fix
+
+Closed the remaining terminal validation bypasses. Confirmed GeoChange
+summarize outputs now always pass the shared terminal validator when successful;
+non-JSON, non-object, incomplete, or invalid results fail with
+`skill_result_invalid`. Confirmed resume finalization revalidates stored
+successful `execution_result` values against the persisted intent, canonical AOI
+and pinned scene evidence before lifecycle persistence, so forged provenance
+cannot enter `TaskRun.result_metadata`.
+
+Added actual graph and TaskRuntimeService tests for non-JSON start output,
+invalid terminal schemas, forged stored resume results, mutually consistent
+forgeries, valid confirmed start/resume, and legacy/tampered-plan regressions.
+
+Validation: affected GeoChange/Runtime/service suites passed (307 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix round 3
+
+Closed checkpoint evidence-trust gaps. For confirmed NDVI Tasks, TaskRuntime
+now reconstructs canonical AOI and pinned fixture scene evidence from the
+validated confirmed intent on every resume. Checkpoint evidence is accepted
+only when it matches those server-derived values; complete scene evidence is
+revalidated with the existing fixture `validate_binding` before downstream
+execution. The graph independently repeats canonical evidence validation at
+the terminal result boundary, preventing mutually consistent forged
+checkpoint/result values from passing.
+
+New confirmed-intent terminal results require `execution_mode` and
+`selected_scene_evidence`; both are strictly typed, bounded, and matched to
+trusted evidence. Added real TaskRuntime tests for successful confirmed
+resume, forged AOI/scene checkpoint evidence, tampered plans, and legacy
+compatibility, plus adversarial matching-forgery coverage.
+
+Validation: affected GeoChange/Runtime/service suites passed (305 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 Implementation 3A focused blocker fix round 2
+
+Bound terminal NDVI provenance to server-authorized Runtime evidence. Result
+validation now checks AOI provenance against resolved AOI evidence, fixture and
+scene provenance against the server-selected scene evidence, and validates
+execution mode and selected-scene evidence types, bounds and exact content.
+Added adversarial checks for wrong AOI, scene identity, execution mode and
+malformed scene evidence.
+
+Added real TaskRuntimeService-path tests for confirmed-intent start Skill
+derivation and confirmed resume rejection of a tampered checkpoint plan. The
+existing historical checkpoint and NULL-intent recovery tests remain green.
+Added a valid full NDVI graph success regression.
+
+Validation: affected GeoChange/Runtime/service suites passed (300 passed, 35
+PostgreSQL tests skipped because no safe disposable database was configured).
+Ruff, Ruff format, Pyrefly and `git diff --check` passed.
+
+Result: READY FOR FOCUSED STRONG RE-REVIEW.
+### 2026-10-02 — Phase 14 Implementation 3B exploratory NDWI workflow
+
+Implemented the approved limited exploratory `water_change` / `NDWI` workflow. Added strict confirmed-intent and Skill pairing, deterministic v5 fixture computation with common-valid masks, NDWI artifacts and provenance, graph capability routing, terminal validation, authorized artifact names, conversation parsing, and a UI projection that labels results exploratory and never claims confirmed water area or expansion. Existing NDVI fixtures and behavior remain compatible.
+
+Validation: focused NDWI, Skill, capability, conversation and TaskRuntime tests passed (63 passed); exploratory graph execution and terminal evidence checks pass. Remaining full-suite, static and diff checks are run for this batch. ADR-014 remains frozen and 3C/NDBI remains out of scope.
+
+Result: 3B EXPLORATORY NDWI WORKFLOW IMPLEMENTED; READY FOR STRONG REVIEW.
+### 2026-10-02 — Phase 14 3B consolidated Strong Review blocker fix
+
+Extended the bounded TaskRun result metadata validator for the approved exploratory `water_change` / `NDWI` projection, including the exact five continuous metrics and `ndwi_*` artifact references while rejecting unknown indicators and water-area claims. Corrected checkpoint resume binding to select the server-owned NDWI fixture binder after confirmed-intent validation, and extended the Product Client artifact allowlist for the three NDWI maps.
+
+Added real TaskRuntime persistence and resume coverage, forged-evidence fail-closed coverage, Product Client artifact tests, and a disposable PostgreSQL integration test covering NDWI execution, metadata reload, artifact authorization, and cross-tenant rejection. Docker PostgreSQL was started without volume deletion; `taskpilot_test` was used as the disposable database.
+
+Validation: focused tests passed; PostgreSQL runtime suite passed (36 passed); full regression with live PostgreSQL reached 972 passed, 4 skipped, with one pre-existing migration-audit failure in `test_scenario_a_langgraph_then_taskpilot_and_downgrade` expecting t035 while current repository migrations reach t036. Ruff, Pyrefly, lock check and diff check passed.
+
+Result: PHASE 14 3B BLOCKERS FIXED; LIVE POSTGRESQL VERIFIED; READY FOR FOCUSED STRONG RE-REVIEW.
+### 2026-10-02 — Phase 14 3B final focused blocker fix
+
+Made the exploratory NDWI summary server-authoritative. The Runtime generates one deterministic summary from the verified continuous metrics; terminal Skill validation and bounded `TaskRun.result_metadata` validation require the exact summary, fixed exploratory data source and fixed provenance wording. Forged expansion, contraction and water-area claims therefore fail before successful persistence, while NDVI summary behavior remains unchanged.
+
+Updated the pre-existing PostgreSQL migration audit expectation from the repository's stale t035 default to the actual t036 `confirmed_intent` head, including the confirmed-intent column and check constraint while preserving historical upgrade/downgrade assertions. No migration file was changed.
+
+Validation: adversarial NDWI tests, NDVI regressions and persistence tests passed; live PostgreSQL tests passed; full regression passed (976 passed, 4 skipped). Ruff, Pyrefly, lock check and diff check passed.
+
+Result: 3B FINAL BLOCKER FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-02 — Phase 14 / 3C accelerated NDBI evidence and design batch
+
+Prepared an independent `real-sentinel2-ndbi-v1` fixture without modifying the
+approved NDWI v5 fixture. The preparation script uses bounded HTTP Range reads
+for real B11 tiles from the existing two Sentinel-2 STAC snapshots, records
+ETag/Content-Length/source grid/radiometry/nodata, preserves STAC snapshots and
+license attribution, and binds fixture, crop and manifest SHA-256 values.
+
+Verified the aligned EPSG:32650 transforms: B08 is native 10 m and B11 is
+native 20 m. The evidence freezes nearest-neighbour 2×2 block expansion to a
+24×24 target grid, categorical SCL expansion, footprint coverage, nodata and
+common-valid masking. Deterministic NDBI evidence contains 338/395 valid
+period pixels, 322 common-valid pixels, mean period values -0.2691168 and
+-0.1286449 on the common mask, and mean delta 0.1404719. Candidate threshold
+counts are reported only as exploratory sensitivity; no built-up threshold or
+urban-expansion claim is authorized.
+
+Added `process/PHASE_14_3C_EVIDENCE.md` and the complete
+`process/ADR-014-3C-EXPLORATORY-ADDENDUM.md`, whose status is
+`PROPOSED / PENDING INDEPENDENT REVIEW`. No NDBI Runtime, UI, artifact serving,
+migration or PostgreSQL implementation was started.
+
+Files changed: `scripts/prepare_geochange_ndbi_fixture.py`,
+`scripts/validate_ndbi_science.py`,
+`data/geochange-fixtures/real-sentinel2-ndbi-v1/`,
+`tests/geochange/test_ndbi_evidence.py`, the 3C evidence report, the 3C
+exploratory addendum proposal, and this progress log.
+
+Learner notes: the key boundary is that a 20 m band can be aligned to a 10 m
+analysis grid without creating new 10 m information, and an index change is
+not a validated land-cover change. Read the preparation script, the manifest,
+`scripts/validate_ndbi_science.py`, and both 3C process documents. Exercise:
+change the candidate threshold in the validator and observe how counts move
+while the continuous NDBI metrics stay fixed. Do not worry about implementing
+the NDBI Runtime until the addendum receives independent approval.
+
+Result: 3C EVIDENCE AND DESIGN READY FOR ONE GATE REVIEW.
+
+### 2026-10-02 — Phase 14 / 3C focused evidence integrity blocker fix
+
+Resolved both Strong Review blockers at the evidence trust boundary. The NDBI
+scientific entry point now pins code-owned SHA-256 values for the manifest,
+both NDBI NPZ files, both STAC snapshots, the reused NDWI manifest and both
+reused NDWI NPZ files. Digests are checked before raster loading; a mutable
+manifest or regenerated sidecar cannot establish trust.
+
+Validation now binds the actual inputs to the manifest/STAC contracts for item,
+date, collection, source CRS/dimensions/transform/resolution, radiometry,
+nodata, crop geometry, target-grid alignment, SCL mapping, coverage, arrays,
+checksums and provenance. The NDBI B08/SCL/coverage arrays are compared with
+the pinned NDWI v5 arrays, and all calculations use manifest scale/offset
+values.
+
+Added adversarial entry-point tests for manifest CRS/transform mutations,
+changed B11 pixels, changed STAC, missing files, changed NDWI manifest or
+reused pixels, B11 transform/resolution/scale/offset/nodata, array geometry and
+coverage. The original fixture continues to produce 338/395 period-valid
+pixels, 322 common-valid pixels and mean delta NDBI 0.1404719.
+
+Validation: NDBI and NDWI evidence tests passed (18), affected GeoChange and
+offline authority tests passed (45), Ruff/Ruff format, Pyrefly, Markdown lint
+and `git diff --check` passed. No PostgreSQL or NDBI Runtime work was started.
+
+Result: 3C EVIDENCE INTEGRITY BLOCKERS FIXED; READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-03 — Phase 14 Implementation 3C exploratory NDBI workflow
+
+Implemented the approved limited `urban_change`/`NDBI` workflow end to end. The
+runtime derives the strict server-owned pairing and capability sequence,
+validates the pinned real Sentinel-2 evidence before computation, persists the
+bounded five-metric result, serves only the three NDBI artifacts with tenant
+isolation, and renders an exploratory UI summary without built-up or urban
+expansion claims. The default deterministic planner now recognizes the new
+skill, while NDVI and NDWI paths remain compatible.
+
+Files changed include `src/geochange/ndbi.py`, the confirmed-intent, model,
+skill, runtime capability, graph, task-runtime, persistence, artifact/client,
+conversation and UI modules, plus NDBI workflow and PostgreSQL integration
+tests. Validation included focused GeoChange tests, affected runtime/service
+regression, live PostgreSQL persistence and artifact authorization, Ruff,
+Pyrefly, lock consistency and diff checks.
+
+Known limitation: this remains continuous-index evidence only. Thresholded
+built-up classification, confirmed built-up area, urban expansion and generic
+GIS workflows remain deferred by the approved addendum.
+
+Learner notes: the main concept is keeping a trusted evidence binder separate
+from planner text and treating NDBI as an exploratory continuous index. Read
+`src/geochange/ndbi.py`, `src/geochange/skill.py`, `src/geochange/runtime_caps.py`,
+`src/service/task_runtime.py`, and the NDBI workflow tests. Exercise: trace one
+NDBI artifact request from the tenant check to the generated PNG. Do not worry
+yet about calibrated land-cover thresholds or live Sentinel-2 search.
+
+Result: IMPLEMENTATION 3C COMPLETE — READY FOR CONSOLIDATED STRONG REVIEW.
+
+### 2026-10-03 — 3C focused PostgreSQL resume acceptance fix
+
+Added dedicated live PostgreSQL coverage for the two remaining 3C acceptance
+gaps. `test_postgres_confirmed_ndbi_checkpoint_resume_succeeds` builds a real
+NDBI checkpoint with `AsyncPostgresSaver`, resumes it through
+`TaskRuntimeService`, reloads SUCCEEDED state and metadata, and verifies all
+three tenant-authorized artifacts. `test_postgres_ndbi_resume_rejects_forged_stored_execution_result`
+tampers with the persisted terminal execution result before production resume;
+the forged exploratory claim fails closed and no successful NDBI metadata is
+stored.
+
+The focused tests and the complete PostgreSQL runtime suite passed against the
+disposable test database. No production code, migrations, fixtures or ADR
+boundaries changed in this fix.
+
+Learner notes: a checkpoint is durable runtime state, so resume tests must
+create the interruption with the real PostgreSQL saver and then invoke the
+normal TaskRuntimeService path. Read the two new tests and
+`src/service/task_runtime.py`. Exercise: change the forged summary or scene
+binding and observe which terminal boundary rejects it. Do not worry yet about
+changing the checkpoint schema.
+
+Result: 3C POSTGRESQL RESUME ACCEPTANCE COMPLETE — READY FOR FOCUSED STRONG RE-REVIEW.
+
+### 2026-10-03 — Phase 14 Final Audit consolidated blocker fix
+
+Status: Phase 14 Final Audit blockers fixed in implementation; ready for focused Final Audit re-review. The runtime now keeps NULL-intent tasks on the historical NDVI-compatible path and rejects NDWI/NDBI Skill plans or GeoChange state without persisted validated confirmed intent. Confirmed NDVI, NDWI and NDBI routing remains server-owned and covered by runtime tests. Updated current-state documentation and Product wording to distinguish exploratory NDWI/NDBI index support from deferred confirmed classification and expansion claims.
+
+Files changed: `src/runtime/graph.py`, `tests/runtime/test_task_runtime.py`, `ROADMAP.md`, `TASK_BACKLOG.md`, `process/tasks/INDEX.md`, `process/DECISION_LOG.md`, `process/ADR-014-3C-EXPLORATORY-ADDENDUM.md`, `docs/USER_GUIDE.md`, `src/taskpilot_ui.py`.
+
+Validation: focused runtime and offline authority tests passed after correction. Full `uv run pytest -q` passed: 891 passed, 138 skipped, 18 warnings. Round 2 added explicit NDWI/NDBI request rejection tests for direct graph, TaskRuntimeService, replan and resume paths. PostgreSQL marker tests were not runnable because `TASKPILOT_TEST_DATABASE_URL` is not configured. Ruff format/check, Pyrefly, `uv lock --check`, and `git diff --check` passed. No PostgreSQL command or Git state-changing command was performed.
+
+Learner focus: persisted `confirmed_intent` is the authorization boundary; presentation text and checkpoints are inputs or recovery state only. Suggested next task: focused independent Phase 14 Final Audit re-review.
+
+### 2026-10-03 — Phase 14 Final Audit minimal blocker fix Round 3
+
+Narrowed NULL-intent NDWI/NDBI detection to positive indicator or analysis requests. Explicit exclusions such as “NDVI only; do not calculate NDWI/NDBI” and “只计算NDVI，不计算NDWI和NDBI” remain on the legacy NDVI path; mixed positive requests remain confirmation-required. Updated the User Guide with Wuhan East Lake scope and the pinned 2023-07-28 / 2024-07-30 Sentinel-2 fixture periods and limitations.
+
+Validation: focused runtime, Skill and offline authority tests passed: 84 passed, 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL was not run because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+### 2026-10-03 — Phase 14 Final Audit minimal blocker fix Round 4
+
+Replaced the broad negation window in the NULL-intent request guard with indicator-local clause parsing. NDWI and NDBI mentions are evaluated independently across English and Chinese punctuation, coordinated exclusions are supported, and a later positive request overrides an earlier exclusion. Added the complete 22-case behavioral request matrix while preserving direct graph, TaskRuntimeService, replan, resume, legacy NDVI and confirmed-intent coverage.
+
+Validation: focused Runtime/Skill/offline authority suite passed 106 tests with 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL tests were not run because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+### 2026-10-03 — Phase 14 Final Audit final NULL-intent blocker correction
+
+Corrected indicator-local negation association so a negative NDWI phrase cannot suppress a positive NDBI phrase in the same clause, and vice versa. Coordinated exclusions remain allowed only for NDVI-only requests; later positive indicator requests fail closed. Added the four same-clause exploit regressions and Planner non-invocation assertions.
+
+Validation: focused Runtime/Skill/offline authority suite passed 110 tests with 4 warnings. Pyrefly, Ruff check/format, `uv lock --check` and `git diff --check` passed. PostgreSQL persistence tests were skipped because `TASKPILOT_TEST_DATABASE_URL` is not configured.
+
+## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
+
+Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.

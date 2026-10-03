@@ -165,6 +165,24 @@ class TaskPilotClient:
             )
         return data
 
+    def converse(self, message: str) -> dict[str, Any]:
+        data = self._json(self._request("POST", "/api/v1/conversation", json={"message": message}))
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
+    def confirm_conversation_task(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        data = self._json(
+            self._request("POST", "/api/v1/conversation/confirm", json={"proposal": proposal})
+        )
+        if not isinstance(data, dict):
+            raise TaskPilotClientError(
+                "The service returned an invalid response.", kind="malformed_response"
+            )
+        return data
+
     @staticmethod
     def _resource_path(task_id: str | UUID, suffix: str = "") -> str:
         return f"/api/v1/tasks/{task_id}{suffix}"
@@ -265,12 +283,32 @@ class TaskPilotClient:
         return [item for item in data if isinstance(item, dict)]
 
     def artifact_url(self, task_id: str | UUID, run_id: str | UUID, artifact_name: str) -> str:
-        if artifact_name not in {"ndvi_before", "ndvi_after", "ndvi_change"}:
+        if artifact_name not in {
+            "ndvi_before",
+            "ndvi_after",
+            "ndvi_change",
+            "ndwi_before",
+            "ndwi_after",
+            "ndwi_change",
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
+        }:
             raise ValueError("unsupported artifact")
         return f"{self.base_url}{self._resource_path(task_id, f'/runs/{run_id}/artifacts/{artifact_name}')}"
 
     def get_artifact(self, task_id: str | UUID, run_id: str | UUID, artifact_name: str) -> bytes:
-        if artifact_name not in {"ndvi_before", "ndvi_after", "ndvi_change"}:
+        if artifact_name not in {
+            "ndvi_before",
+            "ndvi_after",
+            "ndvi_change",
+            "ndwi_before",
+            "ndwi_after",
+            "ndwi_change",
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
+        }:
             raise ValueError("unsupported artifact")
         response = self._request(
             "GET", self._resource_path(task_id, f"/runs/{run_id}/artifacts/{artifact_name}")

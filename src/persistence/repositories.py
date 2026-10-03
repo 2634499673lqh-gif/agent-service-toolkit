@@ -94,6 +94,22 @@ class TaskRepository:
         result = await self.session.scalars(statement)
         return list(result)
 
+    async def list_for_user_in_organization(
+        self, user_id: UUID, organization_id: UUID
+    ) -> list[Task]:
+        """List a user's Tasks while retaining the explicit tenant predicate."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.created_by_user_id == user_id,
+                Task.organization_id == organization_id,
+            )
+            .order_by(Task.created_at, Task.id)
+        )
+        result = await self.session.scalars(statement)
+        return list(result)
+
 
 class TaskRunRepository:
     """Tenant-scoped persistence operations for TaskRun history."""

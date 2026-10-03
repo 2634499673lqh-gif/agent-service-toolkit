@@ -1,6 +1,18 @@
 from pathlib import Path
 
-ALLOWED_ARTIFACTS = frozenset({"ndvi_before", "ndvi_after", "ndvi_change"})
+ALLOWED_ARTIFACTS = frozenset(
+    {
+        "ndvi_before",
+        "ndvi_after",
+        "ndvi_change",
+        "ndwi_before",
+        "ndwi_after",
+        "ndwi_change",
+        "ndbi_before",
+        "ndbi_after",
+        "ndbi_change",
+    }
+)
 ARTIFACT_ROOT = Path("data/geochange-artifacts").resolve()
 
 

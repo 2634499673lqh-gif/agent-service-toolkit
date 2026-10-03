@@ -303,9 +303,15 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         "schema_version",
         "summary",
         "metrics",
+        "analysis_area",
+        "analysis_periods",
+        "data_source",
+        "provenance_summary",
+        "provenance",
         "verifier_status",
         "execution_mode",
         "analysis_type",
+        "indicator",
         "selected_scene_evidence",
         "artifact_references",
         "replan_count",
@@ -321,14 +327,173 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.schema_version is invalid")
     if not isinstance(value.get("summary"), str) or len(value["summary"]) > 500:
         raise ValueError("result_metadata.summary is invalid")
+    for key, limit in (
+        ("analysis_area", 80),
+        ("data_source", 120),
+        ("provenance_summary", 500),
+    ):
+        if key in value and (not isinstance(value[key], str) or len(value[key]) > limit):
+            raise ValueError(f"result_metadata.{key} is invalid")
+    if "analysis_periods" in value:
+        periods = value["analysis_periods"]
+        expected_period_keys = {"period_a", "period_b"}
+        if (
+            not isinstance(periods, dict)
+            or set(periods) != expected_period_keys
+            or any(not isinstance(item, str) or len(item) > 32 for item in periods.values())
+        ):
+            raise ValueError("result_metadata.analysis_periods is invalid")
     metrics = value.get("metrics")
     if not isinstance(metrics, dict) or any(
         not isinstance(key, str) or not isinstance(item, (int, float, str, bool))
         for key, item in metrics.items()
     ):
         raise ValueError("result_metadata.metrics is invalid")
-    if "analysis_type" in value and value["analysis_type"] != "vegetation_change":
+    analysis_type = value.get("analysis_type")
+    indicator = value.get("indicator")
+    if analysis_type is not None and analysis_type not in {
+        "vegetation_change",
+        "water_change",
+        "urban_change",
+    }:
         raise ValueError("result_metadata.analysis_type is invalid")
+    if indicator is not None and indicator not in {"NDVI", "NDWI", "NDBI"}:
+        raise ValueError("result_metadata.indicator is invalid")
+    if analysis_type == "vegetation_change" and indicator not in {None, "NDVI"}:
+        raise ValueError("result_metadata vegetation indicator is invalid")
+    if analysis_type == "water_change":
+        if indicator != "NDWI":
+            raise ValueError("result_metadata water indicator is invalid")
+        if set(value.get("metrics", {})) != {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndwi_period_a",
+            "mean_ndwi_period_b",
+            "mean_delta_ndwi",
+        }:
+            raise ValueError("result_metadata NDWI metrics are invalid")
+        ndwi_metrics = value["metrics"]
+        if (
+            not isinstance(ndwi_metrics["valid_pixels"], int)
+            or isinstance(ndwi_metrics["valid_pixels"], bool)
+            or ndwi_metrics["valid_pixels"] <= 0
+            or any(
+                not isinstance(ndwi_metrics[name], (int, float))
+                or isinstance(ndwi_metrics[name], bool)
+                or not math.isfinite(float(ndwi_metrics[name]))
+                for name in (
+                    "valid_analysis_area_m2",
+                    "mean_ndwi_period_a",
+                    "mean_ndwi_period_b",
+                    "mean_delta_ndwi",
+                )
+            )
+            or ndwi_metrics["valid_analysis_area_m2"] <= 0
+            or not -1.00001 <= ndwi_metrics["mean_ndwi_period_a"] <= 1.00001
+            or not -1.00001 <= ndwi_metrics["mean_ndwi_period_b"] <= 1.00001
+            or not -2.00001 <= ndwi_metrics["mean_delta_ndwi"] <= 2.00001
+        ):
+            raise ValueError("result_metadata NDWI metric values are invalid")
+        if set(value.get("artifact_references", {})) != {
+            "ndwi_before",
+            "ndwi_after",
+            "ndwi_change",
+        }:
+            raise ValueError("result_metadata NDWI artifacts are invalid")
+        if any(
+            value.get("artifact_references", {}).get(name) != name
+            for name in ("ndwi_before", "ndwi_after", "ndwi_change")
+        ):
+            raise ValueError("result_metadata NDWI artifact references are invalid")
+        expected_summary = (
+            "Exploratory NDWI comparison: mean NDWI changed from "
+            f"{ndwi_metrics['mean_ndwi_period_a']:.3f} to "
+            f"{ndwi_metrics['mean_ndwi_period_b']:.3f}; "
+            "continuous index statistics over the common-valid pixels only; "
+            "this does not establish confirmed water area or expansion/contraction."
+        )
+        if value.get("summary") != expected_summary:
+            raise ValueError("result_metadata NDWI summary is not server-authorized")
+        if value.get("data_source") != "cached_real_sentinel2_ndwi_fixture":
+            raise ValueError("result_metadata NDWI data source is invalid")
+        if value.get("provenance_summary") != (
+            "Exploratory NDWI over verified common-valid Sentinel-2 coverage."
+        ):
+            raise ValueError("result_metadata NDWI provenance summary is invalid")
+        if any(
+            key in value.get("metrics", {})
+            for key in ("water_area", "water_area_m2", "expansion", "contraction")
+        ):
+            raise ValueError("result_metadata contains unauthorized water-area claims")
+    if analysis_type == "urban_change":
+        if indicator != "NDBI":
+            raise ValueError("result_metadata urban indicator is invalid")
+        expected_metrics = {
+            "valid_pixels",
+            "valid_analysis_area_m2",
+            "mean_ndbi_period_a",
+            "mean_ndbi_period_b",
+            "mean_delta_ndbi",
+        }
+        if set(value.get("metrics", {})) != expected_metrics:
+            raise ValueError("result_metadata NDBI metrics are invalid")
+        ndbi_metrics = value["metrics"]
+        if (
+            not isinstance(ndbi_metrics["valid_pixels"], int)
+            or isinstance(ndbi_metrics["valid_pixels"], bool)
+            or ndbi_metrics["valid_pixels"] <= 0
+            or any(
+                not isinstance(ndbi_metrics[name], (int, float))
+                or isinstance(ndbi_metrics[name], bool)
+                or not math.isfinite(float(ndbi_metrics[name]))
+                for name in (
+                    "valid_analysis_area_m2",
+                    "mean_ndbi_period_a",
+                    "mean_ndbi_period_b",
+                    "mean_delta_ndbi",
+                )
+            )
+            or ndbi_metrics["valid_analysis_area_m2"] <= 0
+            or not -1.00001 <= ndbi_metrics["mean_ndbi_period_a"] <= 1.00001
+            or not -1.00001 <= ndbi_metrics["mean_ndbi_period_b"] <= 1.00001
+            or not -2.00001 <= ndbi_metrics["mean_delta_ndbi"] <= 2.00001
+        ):
+            raise ValueError("result_metadata NDBI metric values are invalid")
+        if set(value.get("artifact_references", {})) != {
+            "ndbi_before",
+            "ndbi_after",
+            "ndbi_change",
+        } or any(
+            value.get("artifact_references", {}).get(name) != name
+            for name in ("ndbi_before", "ndbi_after", "ndbi_change")
+        ):
+            raise ValueError("result_metadata NDBI artifacts are invalid")
+        expected_summary = (
+            "Exploratory NDBI index comparison: mean NDBI changed from "
+            f"{ndbi_metrics['mean_ndbi_period_a']:.3f} to "
+            f"{ndbi_metrics['mean_ndbi_period_b']:.3f}; "
+            "continuous index statistics over the common-valid pixels only; "
+            "this does not establish confirmed built-up area or urban expansion."
+        )
+        if value.get("summary") != expected_summary:
+            raise ValueError("result_metadata NDBI summary is not server-authorized")
+        if value.get("data_source") != "cached_real_sentinel2_ndbi_fixture":
+            raise ValueError("result_metadata NDBI data source is invalid")
+        if value.get("provenance_summary") != (
+            "Exploratory NDBI over verified common-valid Sentinel-2 coverage; B11 native resolution is 20 m."
+        ):
+            raise ValueError("result_metadata NDBI provenance summary is invalid")
+        if any(
+            key in value.get("metrics", {})
+            for key in (
+                "built_up_area",
+                "built_up_area_m2",
+                "urban_expansion",
+                "urban_contraction",
+                "construction_land_conversion",
+            )
+        ):
+            raise ValueError("result_metadata contains unauthorized urban claims")
     if "replan_count" in value and not isinstance(value["replan_count"], int):
         raise ValueError("result_metadata.replan_count is invalid")
     if "stage_status" in value:
@@ -358,6 +523,28 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
             or any(not isinstance(k, str) or not isinstance(v, str) for k, v in value[key].items())
         ):
             raise ValueError(f"result_metadata.{key} is invalid")
+    if "provenance" in value and (
+        not isinstance(value["provenance"], dict)
+        or len(value["provenance"]) > 16
+        or set(value["provenance"])
+        - {
+            "aoi_key",
+            "aoi_crs",
+            "aoi_source",
+            "raster_source",
+            "fixture_manifest",
+            "period_a_collection",
+            "period_b_collection",
+        }
+        or any(
+            not isinstance(key, str)
+            or not isinstance(item, str)
+            or len(key) > 80
+            or len(item) > 240
+            for key, item in value["provenance"].items()
+        )
+    ):
+        raise ValueError("result_metadata.provenance is invalid")
     sanitized = _validate_observability_json_object(value, "result_metadata")
     encoded = json.dumps(
         sanitized, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -643,6 +830,11 @@ class Task(Base):
 
     __tablename__ = "tasks"
     __table_args__ = (
+        CheckConstraint(
+            "confirmed_intent IS NULL OR (jsonb_typeof(confirmed_intent) = 'object' "
+            "AND octet_length(confirmed_intent::text) <= 4096)",
+            name="task_confirmed_intent_bounds",
+        ),
         CheckConstraint("title ~ '[^[:space:]]'", name="task_title_not_blank"),
         CheckConstraint(
             "status IN ('draft', 'queued', 'running', 'succeeded', 'failed', 'cancelled')",
@@ -666,6 +858,18 @@ class Task(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confirmed_intent: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+
+    @validates("confirmed_intent")
+    def validate_confirmed_intent(self, _key: str, value: object) -> dict[str, Any] | None:
+        from schema.confirmed_intent import ConfirmedIntent
+
+        return (
+            None if value is None else ConfirmedIntent.model_validate(value).model_dump(mode="json")
+        )
+
     status: Mapped[TaskStatus] = mapped_column(
         sa.Enum(
             TaskStatus,

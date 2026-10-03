@@ -34,6 +34,7 @@ from persistence.models import (
     TaskStatus,
     ToolCall,
     User,
+    _validate_result_metadata,
     utc_now,
 )
 from persistence.repositories import (
@@ -75,6 +76,84 @@ def test_taskpilot_metadata_is_schema_scoped() -> None:
     assert Approval.__table__.schema == "taskpilot"
     assert AgentRun.__table__.schema == "taskpilot"
     assert ToolCall.__table__.schema == "taskpilot"
+
+
+def test_result_metadata_accepts_bounded_geochange_product_projection() -> None:
+    value = _validate_result_metadata(
+        {
+            "schema_version": "taskpilot.runtime.v1",
+            "summary": "verified result",
+            "metrics": {"decline_percentage": 12.5},
+            "analysis_area": "wuhan_east_lake",
+            "analysis_periods": {
+                "period_a": "2023-07-01/2023-07-31",
+                "period_b": "2024-07-01/2024-07-31",
+            },
+            "data_source": "cached_real_sentinel2_fixture",
+            "provenance_summary": "verified cached raster",
+            "provenance": {"aoi_key": "wuhan_east_lake"},
+            "verifier_status": "passed",
+            "selected_scene_evidence": {"period_a_item_id": "scene-a"},
+        }
+    )
+    assert value is not None
+    assert value["analysis_area"] == "wuhan_east_lake"
+    with pytest.raises(ValueError, match="analysis_periods is invalid"):
+        _validate_result_metadata(
+            {
+                "schema_version": "taskpilot.runtime.v1",
+                "summary": "invalid",
+                "metrics": {},
+                "analysis_periods": {"period_a": "2023"},
+            }
+        )
+
+
+def test_result_metadata_accepts_only_the_exploratory_ndwi_projection() -> None:
+    value = _validate_result_metadata(
+        {
+            "schema_version": "taskpilot.runtime.v1",
+            "summary": (
+                "Exploratory NDWI comparison: mean NDWI changed from 0.100 to 0.200; "
+                "continuous index statistics over the common-valid pixels only; "
+                "this does not establish confirmed water area or expansion/contraction."
+            ),
+            "analysis_type": "water_change",
+            "indicator": "NDWI",
+            "metrics": {
+                "valid_pixels": 160,
+                "valid_analysis_area_m2": 16000.0,
+                "mean_ndwi_period_a": 0.1,
+                "mean_ndwi_period_b": 0.2,
+                "mean_delta_ndwi": 0.1,
+            },
+            "artifact_references": {
+                "ndwi_before": "ndwi_before",
+                "ndwi_after": "ndwi_after",
+                "ndwi_change": "ndwi_change",
+            },
+            "verifier_status": "passed",
+            "data_source": "cached_real_sentinel2_ndwi_fixture",
+            "provenance_summary": "Exploratory NDWI over verified common-valid Sentinel-2 coverage.",
+        }
+    )
+    assert value is not None
+    with pytest.raises(ValueError, match="NDWI metrics"):
+        _validate_result_metadata(
+            {
+                "schema_version": "taskpilot.runtime.v1",
+                "summary": "invalid",
+                "analysis_type": "water_change",
+                "indicator": "NDWI",
+                "metrics": {"water_area_m2": 0},
+                "artifact_references": {
+                    "ndwi_before": "ndwi_before",
+                    "ndwi_after": "ndwi_after",
+                    "ndwi_change": "ndwi_change",
+                },
+                "verifier_status": "passed",
+            }
+        )
 
 
 def test_approval_metadata_declares_frozen_identity_and_integrity_contract() -> None:
@@ -321,6 +400,7 @@ def test_task_metadata_declares_tenant_creator_and_status_constraints() -> None:
     assert {constraint.name for constraint in table.constraints if constraint.name} == {
         "ck_tasks_task_title_not_blank",
         "ck_tasks_task_status_valid",
+        "ck_tasks_task_confirmed_intent_bounds",
         "pk_tasks",
         "fk_tasks_organization_id_organizations",
         "fk_tasks_created_by_user_id_users",

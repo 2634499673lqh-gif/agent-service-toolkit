@@ -61,7 +61,16 @@ async def test_capabilities_consume_validated_geochange_parameters():
     summary = await SummarizeChangeRuntimeCapability().execute(
         PlanStep(position=1, instruction="summarize_change"), context
     )
-    assert json.loads(summary.output)["metrics"]["decline_threshold"] == -0.1
+    payload = json.loads(summary.output)
+    assert payload["metrics"]["decline_threshold"] == -0.1
+    assert payload["analysis_area"] == task.aoi_key
+    assert payload["analysis_periods"] == {
+        "period_a": "2023-07-01/2023-07-31",
+        "period_b": "2024-07-01/2024-07-31",
+    }
+    assert payload["data_source"] == "cached_real_sentinel2_fixture"
+    assert payload["provenance"]["aoi_key"] == task.aoi_key
+    assert payload["provenance_summary"]
 
 
 @pytest.mark.asyncio

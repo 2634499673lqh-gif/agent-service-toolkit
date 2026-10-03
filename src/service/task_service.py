@@ -1,5 +1,6 @@
 """Application service for the T036 Task create/list/get surface."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +25,7 @@ class TaskService:
         *,
         title: str,
         description: str | None = None,
+        confirmed_intent: dict[str, Any] | None = None,
     ) -> Task:
         """Create a draft Task with ownership derived from the principal."""
 
@@ -33,6 +35,7 @@ class TaskService:
                 created_by_user_id=principal.user_id,
                 title=title,
                 description=description,
+                confirmed_intent=confirmed_intent,
             )
             await self.tasks.add(task)
             await self.session.commit()

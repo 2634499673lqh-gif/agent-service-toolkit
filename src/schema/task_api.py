@@ -32,6 +32,7 @@ class TaskResponse(BaseModel):
     created_by_user_id: UUID
     title: str
     description: str | None
+    confirmed_intent: dict[str, object] | None = None
     status: TaskStatus
     created_at: datetime
     updated_at: datetime

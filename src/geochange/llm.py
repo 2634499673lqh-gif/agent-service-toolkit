@@ -83,22 +83,47 @@ class GeoChangeLLM:
             raw = {**raw, "version": "1"}
         if not isinstance(raw, dict):
             raise ValueError("model structured output is invalid")
+        is_urban = any(
+            token in text.casefold() for token in ("ndbi", "urban", "built-up", "建成区", "城市")
+        )
+        is_water = any(token in text.casefold() for token in ("ndwi", "water", "水体", "水域"))
         model_data_mode = raw.get("data_mode")
         if model_data_mode is not None and model_data_mode != "local_real_raster_fixture":
             raise ValueError("model data_mode conflicts with server-owned runtime policy")
         # Numeric constraints, mode, and provider policy are server-owned.
         raw = {
             **raw,
+            **(
+                {
+                    "analysis_type": "urban_change",
+                    "indicator": "NDBI",
+                    "decline_threshold": None,
+                    "decline_threshold_source": None,
+                }
+                if is_urban
+                else {
+                    "analysis_type": "water_change",
+                    "indicator": "NDWI",
+                    "decline_threshold": None,
+                    "decline_threshold_source": None,
+                }
+                if is_water
+                else {}
+            ),
             "cloud_threshold": 30.0
             if explicit.cloud_threshold is None
             else explicit.cloud_threshold,
-            "decline_threshold": -0.2
+            "decline_threshold": None
+            if is_urban or is_water
+            else -0.2
             if explicit.decline_threshold is None
             else explicit.decline_threshold,
             "cloud_threshold_source": "server_default"
             if explicit.cloud_threshold is None
             else "user_text",
-            "decline_threshold_source": "server_default"
+            "decline_threshold_source": None
+            if is_urban or is_water
+            else "server_default"
             if explicit.decline_threshold is None
             else "user_text",
             "data_mode": "local_real_raster_fixture",
