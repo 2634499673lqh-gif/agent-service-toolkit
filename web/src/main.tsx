@@ -32,6 +32,7 @@ function MapView({ result, taskRun, token, onLayerStatus }: { result: MapResult 
   const [layer, setLayer] = useState('change');
   const [styleReady, setStyleReady] = useState(false);
   const imageUrl = useRef<string | null>(null);
+  const resultRendered = useRef(false);
 
   useEffect(() => {
     if (!node.current) return;
@@ -48,7 +49,7 @@ function MapView({ result, taskRun, token, onLayerStatus }: { result: MapResult 
     m.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right');
     m.on('error', (event) => {
       const sourceId = (event as { sourceId?: string }).sourceId;
-      if (sourceId === 'osm' || sourceId === 'result-raster') setMapError('地图数据暂时不可用，请检查网络后重试。');
+      if (sourceId === 'osm' || (sourceId === 'result-raster' && !resultRendered.current)) setMapError('地图数据暂时不可用，请检查网络后重试。');
       else if (event.error && !mapReady) setMapError('地图初始化失败，请刷新后重试。');
     });
     m.on('sourcedata', (event) => { if (event.sourceId === 'osm' && event.isSourceLoaded) setMapError(''); });
@@ -72,13 +73,19 @@ function MapView({ result, taskRun, token, onLayerStatus }: { result: MapResult 
     if (!artifactUrl || !native) return;
     let cancelled = false;
     const sourceId = 'result-raster';
-    const waitForIdle = () => new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => { m.off('idle', onIdle); reject(new Error('map idle timeout')); }, 10000);
-      const onIdle = () => { window.clearTimeout(timeout); m.off('idle', onIdle); resolve(); };
-      m.once('idle', onIdle);
+    const waitForSource = () => new Promise<void>((resolve, reject) => {
+      const started = performance.now();
+      const check = () => {
+        if (cancelled) { reject(new Error('layer request superseded')); return; }
+        if (m.getSource(sourceId) && m.isSourceLoaded(sourceId)) { resolve(); return; }
+        if (performance.now() - started > 10000) { reject(new Error('raster source load timeout')); return; }
+        window.setTimeout(check, 100);
+      };
+      check();
     });
     (async () => {
       try {
+        resultRendered.current = false;
         onLayerStatus('fetching', '正在获取结果图层…');
         const response = await fetch(artifactUrl, { headers: { Authorization: `Bearer ${token}` } });
         if (!response.ok) throw new Error(`artifact HTTP ${response.status}`);
@@ -100,8 +107,9 @@ function MapView({ result, taskRun, token, onLayerStatus }: { result: MapResult 
         m.addLayer({ id: sourceId, type: 'raster', source: sourceId, paint: { 'raster-opacity': 0.78 } });
         if (!m.getSource(sourceId) || !m.getLayer(sourceId)) throw new Error('map source or layer missing');
         m.fitBounds([[Math.min(...corners.map(c => c[0])), Math.min(...corners.map(c => c[1]))], [Math.max(...corners.map(c => c[0])), Math.max(...corners.map(c => c[1]))]], { padding: 60, duration: 500 });
-        await waitForIdle();
+        await waitForSource();
         if (cancelled) return;
+        resultRendered.current = true;
         setMapError('');
         onLayerStatus('rendered', '地图图层加载成功，已按原生范围定位。');
       } catch (err) {

@@ -28,3 +28,5 @@ Chinese year/month requests such as “武汉东湖地区 2023 年 7 月与 2024
 ## Raster visualization correction
 
 The result map now waits for the MapLibre `load` lifecycle event instead of dropping a one-time pre-style attempt. Each authenticated artifact is checked as a non-empty PNG, decoded before use, added with trusted native bounds and EPSG:32650-to-WGS84 corner conversion, and considered successful only after the source/layer exists and MapLibre reaches `idle`. The UI distinguishes computation complete, artifact fetched, and map layer rendered; failures remain visible as concise Chinese diagnostics. The 64×64 fixture is fit to its native footprint rather than stretched across the AOI.
+
+The final state correction now uses the result source's `isSourceLoaded` state rather than a global `idle` event, preventing a rendered image from being reported as failed when unrelated map activity keeps `idle` pending. Superseded requests are cancelled, and late raster errors no longer overwrite a confirmed rendered state. NoData alpha/masking remains supplied by the trusted PNG; the client does not reinterpret low index values.
