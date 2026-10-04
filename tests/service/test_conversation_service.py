@@ -6,9 +6,10 @@ from uuid import uuid4
 import pytest
 from starlette.responses import Response
 
-from schema.conversation_api import ConfirmTaskRequest, ConversationRequest, TaskProposal
+from schema.conversation_api import ConfirmTaskRequest, ConversationRequest, LLMIntent, TaskProposal
 from service import conversation_api, conversation_service
 from service.conversation_service import (
+    LLMConversationError,
     confirmed_intent_from_proposal,
     create_confirmed_task,
     missing_proposal_fields,
@@ -40,9 +41,7 @@ def test_message_with_two_explicit_periods_completes_proposal() -> None:
 
 @pytest.mark.parametrize("indicator", ["NDVI", "NDWI", "NDBI"])
 def test_normal_chinese_month_request_validates_confirmed_intent(indicator: str) -> None:
-    proposal = proposal_from_message(
-        f"请分析武汉东湖地区2023年7月与2024年7月的{indicator}变化"
-    )
+    proposal = proposal_from_message(f"请分析武汉东湖地区2023年7月与2024年7月的{indicator}变化")
     assert proposal.analysis_area == "武汉东湖"
     assert proposal.period_a is not None and proposal.period_b is not None
     validate_proposal(proposal)
@@ -52,6 +51,35 @@ def test_unknown_area_remains_rejected_by_confirmed_intent() -> None:
     proposal = proposal_from_message("请分析北京地区2023年7月与2024年7月的NDVI变化")
     with pytest.raises(ValueError):
         validate_proposal(proposal)
+
+
+@pytest.mark.asyncio
+async def test_live_interpretation_without_platform_key_is_explicitly_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(conversation_service.settings, "USE_FAKE_MODEL", False)
+    monkeypatch.setattr(conversation_service.settings, "GEOCHANGE_LIVE_LLM", True)
+    monkeypatch.setattr(conversation_service.settings, "DEEPSEEK_API_KEY", None)
+    monkeypatch.setattr(conversation_service.settings, "DEFAULT_MODEL", "deepseek-v4-flash")
+    with pytest.raises(LLMConversationError, match="AI 服务暂不可用"):
+        await conversation_service.interpret_message("请分析武汉东湖的 NDVI 变化")
+
+
+def test_llm_intent_normalizes_provider_slot_aliases() -> None:
+    intent = LLMIntent.model_validate(
+        {
+            "intent": "new_analysis",
+            "location": "武汉东湖",
+            "index": "NDVI",
+            "time_ranges": [
+                {"start_date": "2023-07-01", "end_date": "2023-07-31"},
+                {"start_date": "2024-07-01", "end_date": "2024-07-31"},
+            ],
+        }
+    )
+    assert intent.analysis_area == "武汉东湖"
+    assert intent.indicator == "NDVI"
+    assert intent.period_a is not None and intent.period_b is not None
 
 
 def test_proposal_validation_rejects_reverse_period() -> None:

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import ValidationError
 
+from core.settings import settings
 from schema.conversation_api import (
     ConfirmTaskRequest,
     ConversationRequest,
@@ -11,9 +12,12 @@ from schema.conversation_api import (
 )
 from service.auth_dependency import PrincipalDependency
 from service.conversation_service import (
+    LLMConversationError,
+    _proposal_from_intent,
     create_confirmed_task,
     find_result,
     history,
+    interpret_message,
     missing_proposal_fields,
     proposal_from_message,
 )
@@ -28,36 +32,66 @@ async def converse(
     principal: PrincipalDependency,
     session: TaskSessionDependency,
 ) -> ConversationResponse:
-    text = payload.message.casefold()
-    if any(word in text for word in ("打开", "查看结果", "结果", "open", "result")):
-        result = await find_result(session, principal, payload.message)
-        if result is None:
+    assistant_message = "我已整理出任务提案，请确认后再创建任务。"
+    if settings.USE_FAKE_MODEL and not settings.GEOCHANGE_LIVE_LLM:
+        text = payload.message.casefold()
+        if any(word in text for word in ("打开", "查看结果", "结果", "open", "result")):
+            result = await find_result(session, principal, payload.message)
+            if result is None:
+                return ConversationResponse(
+                    kind="result_not_found", message="没有找到可展示的历史分析结果。"
+                )
             return ConversationResponse(
-                kind="result_not_found", message="没有找到可展示的历史分析结果。"
+                kind="result", message="已找到历史分析结果。", result=result
             )
-        return ConversationResponse(kind="result", message="已找到历史分析结果。", result=result)
-    if any(word in text for word in ("之前", "历史", "做过", "history")):
-        records = await history(session, principal)
-        return ConversationResponse(
-            kind="history",
-            message=f"找到 {len(records)} 条分析任务记录。",
-            tasks=records,
-        )
-    try:
-        proposal = proposal_from_message(payload.message)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail="无法生成有效任务提案。") from error
+        if any(word in text for word in ("之前", "历史", "做过", "history")):
+            records = await history(session, principal)
+            return ConversationResponse(
+                kind="history", message=f"找到 {len(records)} 条分析任务记录。", tasks=records
+            )
+        try:
+            proposal = proposal_from_message(payload.message)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="无法生成有效任务提案。") from error
+    else:
+        try:
+            intent = await interpret_message(payload.message, payload.context)
+        except LLMConversationError as error:
+            return ConversationResponse(kind="llm_unavailable", message=str(error))
+        if intent.intent == "history":
+            records = await history(session, principal)
+            return ConversationResponse(
+                kind="history", message=f"找到 {len(records)} 条分析任务记录。", tasks=records
+            )
+        if intent.intent == "result":
+            result = await find_result(session, principal, payload.message)
+            return (
+                ConversationResponse(kind="result", message="已找到历史分析结果。", result=result)
+                if result
+                else ConversationResponse(
+                    kind="result_not_found", message="没有找到可展示的历史分析结果。"
+                )
+            )
+        if intent.intent in {"chat", "unsupported"}:
+            return ConversationResponse(
+                kind=intent.intent, message=intent.response or "这个请求目前不在支持范围内。"
+            )
+        proposal = _proposal_from_intent(intent, payload.message)
+        if intent.response:
+            assistant_message = intent.response
+        else:
+            assistant_message = "我已整理出任务提案，请确认后再创建任务。"
     missing = missing_proposal_fields(proposal)
     if missing:
         return ConversationResponse(
             kind="clarification",
-            message="请补充两个明确、先后不重叠的比较时段（period_a 和 period_b）。",
+            message=assistant_message,
             proposal=proposal,
             missing_fields=missing,
         )
     return ConversationResponse(
         kind="proposal",
-        message="我已整理出任务提案，请确认后再创建任务。",
+        message=assistant_message,
         proposal=proposal,
     )
 

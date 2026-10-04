@@ -1,23 +1,27 @@
 """Protected `/api/v1/tasks` routes for T036–T038."""
 
 from collections.abc import AsyncIterator
+from io import BytesIO
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from geochange.artifacts import artifact_path
 from geochange.provenance import trusted_map_metadata
 from persistence.repositories import TaskRepository
+from schema.conversation_api import InterpretationRequest, ResultInterpretation
 from schema.geochange_api import GeoChangeMapResponse
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
 from schema.task_run_api import TaskRunResponse
 from schema.trace_api import TraceEventResponse
 from service.auth_dependency import PrincipalDependency, get_session_factory
 from service.authorization import RESOURCE_NOT_FOUND_DETAIL, AuthorizationError
+from service.conversation_service import LLMConversationError, explain_result
 from service.task_lifecycle import (
     TaskLifecycleConflictError,
     TaskLifecycleInconsistentStateError,
@@ -48,6 +52,49 @@ _SCIENTIFIC_LIMITS = {
     "NDWI": "NDWI 是连续水体相关指数，不足以确认水域面积或扩张。",
     "NDBI": "NDBI 是连续建成区相关指数，不足以确认建设用地或城市扩张面积。",
 }
+
+
+def _colorized_index_response(path: Path, artifact_name: str) -> Response:
+    """Render the trusted [-1, 1] encoded index PNG with a transparent NoData mask."""
+
+    with Image.open(path) as source:
+        if source.mode != "L":
+            output = BytesIO()
+            source.save(output, format="PNG", optimize=True)
+            return Response(
+                output.getvalue(),
+                media_type="image/png",
+                headers={"X-Artifact-Role": artifact_name},
+            )
+        pixels = [int(value) for value in source.getdata()]  # type: ignore[bad-argument-type]
+        rgba: list[tuple[int, int, int, int]] = []
+        stops = (
+            (0, (215, 48, 39)),
+            (96, (254, 224, 139)),
+            (160, (166, 217, 106)),
+            (255, (26, 152, 80)),
+        )
+        for value in pixels:
+            if value == 0:
+                rgba.append((0, 0, 0, 0))
+                continue
+            left, right = stops[0], stops[-1]
+            for candidate in stops[1:]:
+                if value <= candidate[0]:
+                    right = candidate
+                    break
+                left = candidate
+            span = max(1, right[0] - left[0])
+            ratio = (value - left[0]) / span
+            rgb = tuple(round(left[1][i] + (right[1][i] - left[1][i]) * ratio) for i in range(3))
+            rgba.append((*rgb, 255))  # type: ignore[bad-argument-type]
+        colored = Image.new("RGBA", source.size)
+        colored.putdata(rgba)
+        output = BytesIO()
+        colored.save(output, format="PNG", optimize=True)
+    return Response(
+        output.getvalue(), media_type="image/png", headers={"X-Artifact-Role": artifact_name}
+    )
 
 
 @task_router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -283,6 +330,29 @@ async def get_task_run_map(
     )
 
 
+@task_router.post(
+    "/{task_id}/runs/{run_id}/interpretation",
+    response_model=ResultInterpretation,
+)
+async def interpret_task_run(
+    task_id: UUID,
+    run_id: UUID,
+    payload: InterpretationRequest,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> ResultInterpretation:
+    run = await TaskRunService(session).get_run(principal, task_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=RESOURCE_NOT_FOUND_DETAIL)
+    metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
+    if run.status.value != "succeeded" or metadata.get("verifier_status") != "passed":
+        raise HTTPException(status_code=409, detail="分析结果尚未验证，暂时不能生成解读")
+    try:
+        return await explain_result(metadata, payload.question)
+    except LLMConversationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+
+
 @task_router.get(
     "/{task_id}/runs/{run_id}/trace",
     response_model=list[TraceEventResponse],
@@ -315,7 +385,7 @@ async def get_task_artifact(
     artifact_name: str,
     principal: PrincipalDependency,
     session: TaskSessionDependency,
-) -> FileResponse:
+) -> Response:
     run = await TaskRunService(session).get_run(principal, task_id, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
@@ -340,7 +410,7 @@ async def get_task_artifact(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
         ) from None
-    return FileResponse(path, media_type="image/png", filename=path.name)
+    return _colorized_index_response(path, artifact_name)
 
 
 __all__ = ["TASK_LIFECYCLE_CONFLICT_DETAIL", "get_task_session", "task_router"]

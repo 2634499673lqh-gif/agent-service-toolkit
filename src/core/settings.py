@@ -97,7 +97,10 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str | None = None
     OLLAMA_BASE_URL: Annotated[str | None, BeforeValidator(validate_optional_http_preserve)] = None
     USE_FAKE_MODEL: bool = False
+    ALLOW_NO_LLM: bool = False
     GEOCHANGE_LIVE_LLM: bool = False
+    LLM_REQUEST_TIMEOUT: float = Field(default=30.0, gt=0, le=120)
+    LLM_MAX_CONCURRENCY: int = Field(default=2, ge=1, le=8)
     GEOCHANGE_LIVE_STAC: bool = False
     GEOCHANGE_TEST_REPLAN: bool = False
     OPENROUTER_API_KEY: SecretStr | None = None
@@ -198,7 +201,7 @@ class Settings(BaseSettings):
             Provider.OPENROUTER: self.OPENROUTER_API_KEY,
         }
         active_keys = [k for k, v in api_keys.items() if self._has_value(v)]
-        if not active_keys:
+        if not active_keys and not self.ALLOW_NO_LLM:
             raise ValueError("At least one LLM API key must be provided.")
 
         # USE_FAKE_MODEL must win the default even when real provider keys are present.

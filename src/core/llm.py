@@ -98,12 +98,16 @@ def get_model(model_name: AllModelEnum, /) -> ModelT:
             max_retries=3,
         )
     if model_name in DeepseekModelName:
+        if not settings.DEEPSEEK_API_KEY:
+            raise ValueError("DeepSeek API key is not configured")
         return ChatOpenAI(
             model=api_model_name,
             temperature=0.5,
             streaming=True,
             openai_api_base="https://api.deepseek.com",
             openai_api_key=settings.DEEPSEEK_API_KEY,
+            timeout=settings.LLM_REQUEST_TIMEOUT,
+            max_retries=1,
         )
     if model_name in AnthropicModelName:
         if model_name == AnthropicModelName.SONNET_5:

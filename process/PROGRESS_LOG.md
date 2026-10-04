@@ -6147,3 +6147,9 @@ Learner focus: server-owned fixture roots and hashes are evidence boundaries; ru
 修复结果图层在 MapLibre style 尚未完成时一次性 return、导致永不重试的问题。现在监听地图 load 生命周期，检查受认证 artifact 的 HTTP 状态、PNG 内容和解码尺寸，按受信 native bounds 与投影四角添加 image source/raster layer，并等待 MapLibre idle 后才报告渲染成功。结果卡区分计算完成、图层获取和地图渲染状态；失败显示简洁中文信息，不再提前宣称 artifact 已叠加。
 
 验证：`pnpm --dir web run build`、`pnpm --dir web run typecheck` 通过；此前受影响后端 focused tests 通过。浏览器自动化不可用，真实账号下的 authenticated raster 视觉证据仍需人工验收。
+
+# 2026-10-04 — Implementation B live conversation foundation
+
+基于 A 的 `e86edac` 创建 `codex/taskpilot-v02-b`。新增受限 LLMIntent/ResultInterpretation schema、平台 DeepSeek 调用的超时/重试/并发边界、受控上下文、无 key/provider 失败分类和租户授权的结果解读接口；前端增加结果解读入口与连续指数图例。Compose 正式 live 路径关闭 FakeModel；没有平台 key 时明确返回 AI 不可用，不伪造成功。
+
+验证：conversation/core focused tests 64 passed；Ruff、Pyrefly、前端 build/typecheck 通过。真实 DeepSeek key 与浏览器端到端证据尚未提供，不能宣称 B 完成。

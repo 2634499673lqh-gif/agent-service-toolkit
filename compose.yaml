@@ -49,8 +49,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agent_service}
       TASKPILOT_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-agent_service}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      USE_FAKE_MODEL: ${USE_FAKE_MODEL:-true}
-      GEOCHANGE_LIVE_LLM: ${GEOCHANGE_LIVE_LLM:-false}
+      USE_FAKE_MODEL: "false"
+      ALLOW_NO_LLM: "true"
+      GEOCHANGE_LIVE_LLM: "true"
       GEOCHANGE_LIVE_STAC: ${GEOCHANGE_LIVE_STAC:-false}
     depends_on:
       postgres:
