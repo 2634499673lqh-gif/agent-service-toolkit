@@ -66,6 +66,13 @@ def _live_scene_evidence(task: GeoChangeTask, item_a: Any, item_b: Any) -> dict[
 class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
         output = json.dumps(payload, separators=(",", ":"))
+        if len(output) > 2000 and isinstance(payload.get("summary"), str):
+            # Provider prose is presentation only. Keep the trusted metrics,
+            # artifact references and scene evidence intact when a provider
+            # spends the whole budget on prose.
+            compact = dict(payload)
+            compact["summary"] = payload["summary"][:80]
+            output = json.dumps(compact, separators=(",", ":"))
         if len(output) > 2000:
             return ExecutionResult(
                 step_position=step.position,

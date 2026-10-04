@@ -66,6 +66,7 @@ services:
       start_period: 10s
     volumes:
       - ./privatecredentials:/privatecredentials
+      - ./data/geochange-artifacts:/app/data/geochange-artifacts
     restart: unless-stopped
     stop_grace_period: 30s
     develop:

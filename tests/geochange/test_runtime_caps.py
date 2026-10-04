@@ -141,5 +141,5 @@ async def test_cached_real_summary_remains_bounded_with_maximum_llm_prose(monkey
     result = await SummarizeChangeRuntimeCapability().execute(
         PlanStep(position=1, instruction="summarize_change"), context
     )
-    assert not result.success
-    assert result.error_code == "geochange_output_oversized"
+    assert result.success
+    assert len(result.output or "") <= 2000

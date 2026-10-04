@@ -6161,3 +6161,11 @@ Learner focus: server-owned fixture roots and hashes are evidence boundaries; ru
 验证：`uv run pytest -q tests/service/test_conversation_service.py tests/geochange tests/service/test_runtime_dispatch.py`（151 passed，6 warnings）；`uv run ruff check`、`uv run pyrefly check`、前端 `tsc -b`/Vite build 通过；Docker Compose 重建后 agent readiness 与 web 首页均为 200；容器真实 DeepSeek smoke 成功完成模型身份、武汉东湖 NDVI 双时段意图和 verifier 证据解释。浏览器自动化不可用，真实账号历史/地图视觉验收仍需人工完成。
 
 Learner notes: history loading is a server-authorized read path, while confirmation remains the only task creation boundary; MapLibre success must be tied to source lifecycle rather than a fetch alone; provider JSON is untrusted and must be normalized before bounded validation. Read `src/service/conversation_api.py`, `src/service/conversation_service.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `src/schema/conversation_api.py`. Exercise: open a successful history item and inspect the Network request, then switch A/B/change and confirm each artifact request. Do not worry yet about richer charts, calibrated classes, or arbitrary AOI support.
+
+# 2026-10-04 — Runtime and user acceptance blocker fix
+
+核对确认用户从错误目录执行 Compose 会得到“no configuration file”；正确入口是仓库根目录 `D:\github\agent-service\agent-service-toolkit` 的 `compose.yaml`。新增受控 artifact bind mount，修复数据库 succeeded Run 与 PNG 生命周期脱节。历史检查确认旧容器中大量成功记录没有对应 PNG；这些旧结果不伪造恢复。新 NDVI Run `aeb4ca75-b687-4696-b566-f5ed4ded455c` / `98da98c8-e847-4c20-895a-16a6bbfeeb69` 真实执行成功并生成三张图，trusted `/map` 成功，强制重建 agent/web 后同一文件仍在。
+
+真实日志定位到 `geochange_output_oversized` 是 provider 解读文本与受信 scene evidence 合并后超过旧 2 KiB envelope；现在仅截断展示摘要，保留 metrics/artifact/scene evidence。DeepSeek provider 还会对能力问答返回 `capability_query`、空 period 字段；边界层已归一化并区分 malformed/timeout/provider 日志。真实复测“你好”“你是什么模型”“你能做什么”和 NDVI 请求成功；已有 NDWI 成功 Run 的真实解释也通过。
+
+验证：focused conversation/runtime-cap tests 通过；Ruff、Pyrefly、git diff check、前端 build/typecheck 通过；Docker compose rebuild/force-recreate 后四服务健康，artifact 持久化前后验证完成。浏览器自动化工具不可用，登录后的视觉与点击流程仍需人工确认。

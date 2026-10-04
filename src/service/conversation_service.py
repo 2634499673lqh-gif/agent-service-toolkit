@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 import json
+import logging
 import re
 from datetime import date
 from typing import Any
@@ -22,8 +23,11 @@ from schema.conversation_api import (
     ResultInterpretation,
     TaskProposal,
 )
+from service.logging import current_request_id
 from service.session import CurrentPrincipal
 from service.task_service import TaskService
+
+logger = logging.getLogger(__name__)
 
 _AREA_RE = re.compile(
     r"(?:分析|查看|研究|比较)(?P<area>[^，。:：,.！？!]{1,80}?)(?:最近|近几年|植被|NDVI|变化|有没有|是否|[，。:：,.！？!]|$)"
@@ -158,13 +162,19 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
         ):
             provider, model_name = configured_model_identity()
             intent.response = f"我是 TaskPilot AI 遥感助手，当前由平台配置的 {provider} 模型服务支持（{model_name}）。"
+        elif intent.intent == "chat" and not intent.response:
+            intent.response = "我可以分析武汉东湖缓存场景中的 NDVI、NDWI 和 NDBI 双时相连续指数变化，并在确认方案后执行任务。"
         return intent
     except TimeoutError as error:
+        logger.warning("conversation_llm_failure category=timeout provider=deepseek model=%s request_id=%s", settings.DEFAULT_MODEL, current_request_id())
         raise LLMConversationError("timeout", "AI 服务响应超时，请稍后重试。") from error
     except LLMConversationError:
         raise
     except Exception as error:
-        raise LLMConversationError("provider", "AI 服务暂时不可用，请稍后重试。") from error
+        category = "malformed_response" if error.__class__.__name__ in {"ValidationError", "JSONDecodeError", "ValueError"} else "provider"
+        logger.warning("conversation_llm_failure category=%s provider=deepseek model=%s request_id=%s", category, settings.DEFAULT_MODEL, current_request_id())
+        message = "AI 返回格式无法验证，请重试。" if category == "malformed_response" else "AI 服务暂时不可用，请稍后重试。"
+        raise LLMConversationError(category, message) from error
 
 
 async def explain_result(metadata: dict[str, Any], question: str = "") -> ResultInterpretation:

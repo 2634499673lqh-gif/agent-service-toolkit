@@ -25,3 +25,5 @@ Implementation B 的正式路径使用平台后端配置的 DeepSeek key，用�
 “我的分析”从受保护的历史接口读取真实任务；打开成功结果时先显示“正在加载历史结果…”，只有 `/map` 元数据和 artifact 校验成功且 MapLibre 图层实际 loaded/rendered 后才提示地图已加载。若运行未验证、artifact 缺失、无权限或超时，页面显示对应中文原因。确认卡会保留模型返回的时段，旧方案不能重复确认。
 
 本轮 Docker 真实模型证据已完成：容器使用平台配置的 `deepseek-v4-flash`，FakeModel 关闭；真实 DeepSeek 可回答模型身份、解析武汉东湖 NDVI 双时段请求并基于 verifier 证据生成解释。当前环境没有浏览器自动化工具，真实账号登录、历史结果打开及三图层视觉切换仍需人工浏览器验收，不能以 HTTP 200 代替。
+
+运行时修复后，artifact 目录已由 Compose 持久化挂载。已验证一条真实 NDVI Run 在 `succeeded/passed` 后生成 before/after/change 三个 PNG，强制重建 agent/web 容器（不删除数据库卷）后同一 Run 的文件仍存在。历史中若 PNG 在挂载前已丢失，页面会明确提示不可恢复，不会伪造结果。真实 DeepSeek 的“你好”“你是什么模型”“你能做什么”和 NDVI 请求均已复测成功。

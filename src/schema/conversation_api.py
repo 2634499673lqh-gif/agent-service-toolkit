@@ -73,6 +73,8 @@ class LLMIntent(BaseModel):
             "new_task": "new_analysis",
             "analysis": "new_analysis",
             "response": "chat",
+            "capability_query": "chat",
+            "greeting": "chat",
             "history_query": "history",
             "result_query": "result",
         }
@@ -92,7 +94,7 @@ class LLMIntent(BaseModel):
         index = normalized.get("index")
         if "indicator" not in normalized and isinstance(index, dict):
             normalized["indicator"] = index.get("name")
-        if "period_a" not in normalized and isinstance(normalized.get("time_periods"), list):
+        if not normalized.get("period_a") and isinstance(normalized.get("time_periods"), list):
             ranges = normalized["time_periods"]
             if len(ranges) >= 2:
                 normalized["period_a"], normalized["period_b"] = ranges[:2]
@@ -102,6 +104,9 @@ class LLMIntent(BaseModel):
             normalized["title"] = "遥感变化分析"
         if normalized.get("description") is None:
             normalized["description"] = ""
+        for period_key in ("period_a", "period_b"):
+            if normalized.get(period_key) is None or not isinstance(normalized.get(period_key), dict):
+                normalized[period_key] = None
         if not isinstance(normalized.get("required_parameters"), dict):
             normalized["required_parameters"] = {}
         if "response" not in normalized and isinstance(normalized.get("reply"), str):
@@ -124,7 +129,7 @@ class LLMIntent(BaseModel):
             normalized["analysis_area"] = normalized["location"]
         if "indicator" not in normalized and isinstance(normalized.get("index"), str):
             normalized["indicator"] = normalized["index"]
-        if "period_a" not in normalized and isinstance(normalized.get("time_ranges"), list):
+        if not normalized.get("period_a") and isinstance(normalized.get("time_ranges"), list):
             ranges = normalized["time_ranges"]
             if len(ranges) >= 2:
                 normalized["period_a"], normalized["period_b"] = (
@@ -137,7 +142,7 @@ class LLMIntent(BaseModel):
                     for item in ranges[:2]
                 )
         temporal = normalized.get("temporal")
-        if isinstance(temporal, dict) and "period_a" not in normalized:
+        if isinstance(temporal, dict) and not normalized.get("period_a"):
             baseline, comparison = temporal.get("baseline"), temporal.get("comparison")
             if (
                 isinstance(baseline, str)
