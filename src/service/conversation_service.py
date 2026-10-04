@@ -11,7 +11,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.llm import get_model
+from core.llm import configured_model_identity, get_model
 from core.settings import settings
 from persistence.models import Task, TaskRun
 from persistence.repositories import TaskRepository, TaskRunRepository
@@ -135,6 +135,9 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
         "不支持任意地点、在线下载、面积扩张结论。区分新分析、历史、结果、闲聊、澄清和不支持。"
         "若请求含新地点/指标/日期，即使出现‘结果’也必须是 new_analysis。"
         "日期必须输出 ISO 日期；缺少必要字段使用 clarification。"
+        "输出 JSON 字段必须是 intent,response,title,description,analysis_area,indicator,"
+        "analysis_type,period_a,period_b,required_parameters；period_a/period_b 使用"
+        "{start,end}，闲聊和能力问答也必须保留 intent=response。"
     )
     prompt = {"message": message, "context": bounded_context}
     try:
@@ -149,7 +152,13 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
                 ),
                 timeout=settings.LLM_REQUEST_TIMEOUT,
             )
-        return LLMIntent.model_validate(_json_object(_model_text(result)))
+        intent = LLMIntent.model_validate(_json_object(_model_text(result)))
+        if intent.intent == "chat" and any(
+            phrase in message for phrase in ("你是什么模型", "什么模型", "模型身份", "你是谁")
+        ):
+            provider, model_name = configured_model_identity()
+            intent.response = f"我是 TaskPilot AI 遥感助手，当前由平台配置的 {provider} 模型服务支持（{model_name}）。"
+        return intent
     except TimeoutError as error:
         raise LLMConversationError("timeout", "AI 服务响应超时，请稍后重试。") from error
     except LLMConversationError:
@@ -192,7 +201,9 @@ async def explain_result(metadata: dict[str, Any], question: str = "") -> Result
     }
     prompt = (
         "只基于以下已验证证据生成中文简短解读，不补造数值，不推断因果或面积。"
-        "必须说明数据来源、时段和科学限制。用户问题：" + question[:500] + "\n证据：" + str(evidence)
+        "必须说明数据来源、时段和科学限制。只输出 JSON，字段严格为 text、evidence_status、"
+        "limitations；evidence_status 只能是 verified、limited、unavailable，limitations 是字符串数组。"
+        "用户问题：" + question[:500] + "\n证据：" + str(evidence)
     )
     try:
         async with _LLM_SEMAPHORE:
@@ -206,9 +217,14 @@ async def explain_result(metadata: dict[str, Any], question: str = "") -> Result
                 ),
                 timeout=settings.LLM_REQUEST_TIMEOUT,
             )
-        return ResultInterpretation.model_validate(_json_object(_model_text(result)))
+        try:
+            return ResultInterpretation.model_validate(_json_object(_model_text(result)))
+        except (ValueError, TypeError) as error:
+            raise LLMConversationError("malformed_response", "分析解读格式无法验证，请稍后重试。") from error
     except TimeoutError as error:
         raise LLMConversationError("timeout", "分析解读响应超时，请稍后重试。") from error
+    except LLMConversationError:
+        raise
     except Exception as error:
         raise LLMConversationError("provider", "分析解读服务暂时不可用，请稍后重试。") from error
 

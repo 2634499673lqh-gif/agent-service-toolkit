@@ -6,7 +6,13 @@ from uuid import uuid4
 import pytest
 from starlette.responses import Response
 
-from schema.conversation_api import ConfirmTaskRequest, ConversationRequest, LLMIntent, TaskProposal
+from schema.conversation_api import (
+    ConfirmTaskRequest,
+    ConversationRequest,
+    LLMIntent,
+    ResultInterpretation,
+    TaskProposal,
+)
 from service import conversation_api, conversation_service
 from service.conversation_service import (
     LLMConversationError,
@@ -80,6 +86,15 @@ def test_llm_intent_normalizes_provider_slot_aliases() -> None:
     assert intent.analysis_area == "武汉东湖"
     assert intent.indicator == "NDVI"
     assert intent.period_a is not None and intent.period_b is not None
+
+
+def test_result_interpretation_normalizes_provider_aliases_without_fabricating_evidence() -> None:
+    result = ResultInterpretation.model_validate(
+        {"summary": "依据已验证指标生成解读。", "status": "passed", "constraints": "仅展示连续指数变化"}
+    )
+    assert result.text.startswith("依据")
+    assert result.evidence_status == "verified"
+    assert result.limitations == ["仅展示连续指数变化"]
 
 
 def test_proposal_validation_rejects_reverse_period() -> None:

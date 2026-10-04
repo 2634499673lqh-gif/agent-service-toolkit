@@ -208,6 +208,12 @@ class Settings(BaseSettings):
         if self.USE_FAKE_MODEL and self.DEFAULT_MODEL is None:
             self.DEFAULT_MODEL = FakeModelName.FAKE
 
+        # DeepSeek is the platform-managed V0.2 provider when its key is
+        # configured.  This avoids silently selecting another configured
+        # provider based on dictionary order.
+        if self.DEFAULT_MODEL is None and self._has_value(self.DEEPSEEK_API_KEY):
+            self.DEFAULT_MODEL = DeepseekModelName.DEEPSEEK_V4_FLASH
+
         for provider in active_keys:
             match provider:
                 case Provider.OPENAI:

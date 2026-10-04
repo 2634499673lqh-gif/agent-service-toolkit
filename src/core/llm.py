@@ -50,6 +50,19 @@ class FakeToolModel(FakeListChatModel):
         return self
 
 
+def configured_model_identity() -> tuple[str, str]:
+    """Return non-secret provider metadata for trusted user-facing replies."""
+
+    model = settings.DEFAULT_MODEL
+    if isinstance(model, DeepseekModelName):
+        return "DeepSeek", str(getattr(model, "value", model))
+    if isinstance(model, (OpenAIModelName, OpenAICompatibleName, AzureOpenAIModelName)):
+        return "OpenAI", str(getattr(model, "value", model))
+    if isinstance(model, FakeModelName):
+        return "测试模型", str(getattr(model, "value", model))
+    return "平台配置模型", str(getattr(model, "value", model or "未配置"))
+
+
 type ModelT = (
     AzureChatOpenAI
     | ChatOpenAI

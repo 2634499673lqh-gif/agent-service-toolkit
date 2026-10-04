@@ -8,6 +8,7 @@ from schema.conversation_api import (
     ConfirmTaskRequest,
     ConversationRequest,
     ConversationResponse,
+    ConversationTaskSummary,
     TaskProposal,
 )
 from service.auth_dependency import PrincipalDependency
@@ -24,6 +25,16 @@ from service.conversation_service import (
 from service.task_api import TaskSessionDependency
 
 conversation_router = APIRouter(prefix="/api/v1/conversation", tags=["conversation"])
+
+
+@conversation_router.get("/history", response_model=list[ConversationTaskSummary])
+async def conversation_history(
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> list[ConversationTaskSummary]:
+    """Return persisted history without spending an LLM call or creating a task."""
+
+    return await history(session, principal)
 
 
 @conversation_router.post("", response_model=ConversationResponse)

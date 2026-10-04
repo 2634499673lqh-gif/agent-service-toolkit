@@ -6153,3 +6153,11 @@ Learner focus: server-owned fixture roots and hashes are evidence boundaries; ru
 基于 A 的 `e86edac` 创建 `codex/taskpilot-v02-b`。新增受限 LLMIntent/ResultInterpretation schema、平台 DeepSeek 调用的超时/重试/并发边界、受控上下文、无 key/provider 失败分类和租户授权的结果解读接口；前端增加结果解读入口与连续指数图例。Compose 正式 live 路径关闭 FakeModel；没有平台 key 时明确返回 AI 不可用，不伪造成功。
 
 验证：conversation/core focused tests 64 passed；Ruff、Pyrefly、前端 build/typecheck 通过。真实 DeepSeek key 与浏览器端到端证据尚未提供，不能宣称 B 完成。
+
+# 2026-10-04 — Final consolidated acceptance fix
+
+修复历史结果加载生命周期、真实历史接口、模型输出兼容和提案确认一致性：新增受保护的 `GET /api/v1/conversation/history`，历史视图按成功运行回退并区分验证/artifact/权限/超时失败；MapLibre 状态只在 artifact 获取、source loaded 和实际渲染完成后报告成功；模型身份回答使用受信配置而非模型自报，DeepSeek 常见 provider 字段映射到有界 `LLMIntent`/`ResultInterpretation`；结果解释补齐可信 task intent 证据，指标摘要显示中文名称、三位小数和 m²/像元单位；确认卡保留时段、过期卡不可重复确认并防止快速重复创建。
+
+验证：`uv run pytest -q tests/service/test_conversation_service.py tests/geochange tests/service/test_runtime_dispatch.py`（151 passed，6 warnings）；`uv run ruff check`、`uv run pyrefly check`、前端 `tsc -b`/Vite build 通过；Docker Compose 重建后 agent readiness 与 web 首页均为 200；容器真实 DeepSeek smoke 成功完成模型身份、武汉东湖 NDVI 双时段意图和 verifier 证据解释。浏览器自动化不可用，真实账号历史/地图视觉验收仍需人工完成。
+
+Learner notes: history loading is a server-authorized read path, while confirmation remains the only task creation boundary; MapLibre success must be tied to source lifecycle rather than a fetch alone; provider JSON is untrusted and must be normalized before bounded validation. Read `src/service/conversation_api.py`, `src/service/conversation_service.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `src/schema/conversation_api.py`. Exercise: open a successful history item and inspect the Network request, then switch A/B/change and confirm each artifact request. Do not worry yet about richer charts, calibrated classes, or arbitrary AOI support.

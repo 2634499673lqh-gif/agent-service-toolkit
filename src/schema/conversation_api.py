@@ -72,11 +72,38 @@ class LLMIntent(BaseModel):
             "chitchat": "chat",
             "new_task": "new_analysis",
             "analysis": "new_analysis",
+            "response": "chat",
             "history_query": "history",
             "result_query": "result",
         }
+        if "intent" not in normalized:
+            if "action" in normalized or "time_periods" in normalized or "region" in normalized:
+                normalized["intent"] = "new_analysis"
+            elif "助手名称" in normalized or "身份说明" in normalized or "模型细节" in normalized:
+                normalized["intent"] = "chat"
+        if "response" not in normalized:
+            for key in ("身份说明", "response_text", "message"):
+                if isinstance(normalized.get(key), str):
+                    normalized["response"] = normalized[key]
+                    break
+        region = normalized.get("region")
+        if "analysis_area" not in normalized and isinstance(region, dict):
+            normalized["analysis_area"] = region.get("name")
+        index = normalized.get("index")
+        if "indicator" not in normalized and isinstance(index, dict):
+            normalized["indicator"] = index.get("name")
+        if "period_a" not in normalized and isinstance(normalized.get("time_periods"), list):
+            ranges = normalized["time_periods"]
+            if len(ranges) >= 2:
+                normalized["period_a"], normalized["period_b"] = ranges[:2]
         if isinstance(normalized.get("intent"), str):
             normalized["intent"] = intent_aliases.get(normalized["intent"], normalized["intent"])
+        if normalized.get("title") is None:
+            normalized["title"] = "遥感变化分析"
+        if normalized.get("description") is None:
+            normalized["description"] = ""
+        if not isinstance(normalized.get("required_parameters"), dict):
+            normalized["required_parameters"] = {}
         if "response" not in normalized and isinstance(normalized.get("reply"), str):
             normalized["response"] = normalized["reply"]
         slots = normalized.get("slots")
@@ -146,6 +173,19 @@ class LLMIntent(BaseModel):
             "time_ranges",
             "display_result",
             "clarification_required",
+            "action",
+            "status",
+            "region",
+            "index",
+            "time_periods",
+            "processing",
+            "visualization",
+            "outputs",
+            "result",
+            "助手名称",
+            "身份说明",
+            "模型细节",
+            "可用范围",
         ):
             normalized.pop(key, None)
         normalized.pop("temporal", None)
@@ -155,6 +195,39 @@ class LLMIntent(BaseModel):
 
 class ResultInterpretation(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_provider_fields(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        aliases = {
+            "summary": "text",
+            "interpretation": "text",
+            "reply": "text",
+            "status": "evidence_status",
+            "evidence": "evidence_status",
+            "constraints": "limitations",
+            "limitations_and_caveats": "limitations",
+        }
+        for source, target in aliases.items():
+            if target not in normalized and source in normalized:
+                normalized[target] = normalized[source]
+        if isinstance(normalized.get("limitations"), str):
+            normalized["limitations"] = [normalized["limitations"]]
+        status_aliases = {
+            "verified": "verified",
+            "passed": "verified",
+            "limited": "limited",
+            "partial": "limited",
+            "unavailable": "unavailable",
+        }
+        if isinstance(normalized.get("evidence_status"), str):
+            normalized["evidence_status"] = status_aliases.get(
+                normalized["evidence_status"].casefold(), normalized["evidence_status"]
+            )
+        return normalized
 
     text: str = Field(min_length=1, max_length=2000)
     evidence_status: Literal["verified", "limited", "unavailable"]

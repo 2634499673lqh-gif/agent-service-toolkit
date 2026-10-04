@@ -347,8 +347,23 @@ async def interpret_task_run(
     metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
     if run.status.value != "succeeded" or metadata.get("verifier_status") != "passed":
         raise HTTPException(status_code=409, detail="分析结果尚未验证，暂时不能生成解读")
+    # Fill only missing evidence fields from the tenant-scoped confirmed
+    # intent.  The model never receives caller-supplied coordinates or an
+    # untrusted result override.
+    task = await TaskRepository(session).get_in_principal_tenant(
+        task_id, principal.organization_id
+    )
+    evidence = dict(metadata)
+    intent = getattr(task, "confirmed_intent", None)
+    if isinstance(intent, dict):
+        evidence.setdefault("indicator", intent.get("indicator"))
+        evidence.setdefault("analysis_periods", {
+            "period_a": intent.get("period_a"),
+            "period_b": intent.get("period_b"),
+        })
+        evidence.setdefault("analysis_area", intent.get("analysis_area"))
     try:
-        return await explain_result(metadata, payload.question)
+        return await explain_result(evidence, payload.question)
     except LLMConversationError as error:
         raise HTTPException(status_code=503, detail=str(error)) from None
 
