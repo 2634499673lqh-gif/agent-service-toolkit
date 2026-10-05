@@ -6255,3 +6255,13 @@ Clean committed probe evidence：AOI `jianghan_district_420103`、admin code `42
 Pair grid 为 EPSG:32649、30 m、296×264；AOI pixels `31,857`；2023 preparation `26,108/31,857 = 81.9537307%`；2024 `31,856/31,857 = 99.9968610%`；common preparation `26,107`。Hard limits：target 500,000 pixels、window 262,144 pixels、array 100,663,296 bytes、GDAL cache 33,554,432 bytes、最大并发 2、retry 3、deadline 180 s；本次 `bytes_observed=655,360` 为 lower-bound Range probe metric，A-owned staged/artifact writes 为 0。Probe 与 clean image 未输出 SAS、signed query、credential 或 secret。
 
 这次结果证明 `clean committed Git HEAD → Docker image → real provider probe PASS`。此前 primary worktree 的 7 行 `landsat.py` resolution check 属于实施 A 的实际 source-grid metadata 校验，但未进入该 clean image；选中的真实 30 m source grid 与目标 grid 一致，因此该 dirty diff 未影响本次 probe 结果。
+
+# 2026-10-05 — V0.3 A final three-blocker fix validation
+
+On isolated clean worktree, commit `fd78271` adds the authoritative `prepare_landsat_operation` wrapper, which owns one monotonic 180 s deadline and passes it through discovery and preparation; strict trusted-STAC nodata binding; and raw COG scale=1/offset=0 rejection unless physical STAC and matching MTL calibration are present. The production probe now uses the shared-deadline wrapper.
+
+Focused validation: `uv run pytest -q tests/geochange/test_landsat.py tests/geochange/test_landsat_provider_limits.py` — 48 passed. Provider-limit tests include shared-deadline consumption, expected nodata None/0/conflict cases, and all four raw-calibration cases. Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed. Runtime suite: 248 passed, 39 skipped, 1 pre-existing unrelated NDBI presentation-fixture failure (`urban_change-NDBI` confirmed-intent validation).
+
+Docker server 29.8.1 was healthy; the clean committed image rebuilt successfully and PostgreSQL/migrate/agent_service started. The required container probe failed closed at `invalid_raster_metadata / expected_nodata`: live Planetary Computer QA_PIXEL and SR_QA_AEROSOL STAC metadata report expected nodata `1`, while the opened COG metadata reports actual nodata `None`. This is the required strict binding behavior and is a real provider metadata conflict; no coverage/common-valid values were accepted from this run. A diagnostic read independently reproduced the conflict without persisting signed URLs or credentials. The temporary Compose project and override files were removed.
+
+No threshold was frozen. The prior clean reference remains approximately AOI 31,857 pixels, 2023 81.9537%, 2024 99.9969%, common 26,107, but this final strict Docker run cannot support formal freeze until the provider nodata conflict is resolved under the frozen contract.
