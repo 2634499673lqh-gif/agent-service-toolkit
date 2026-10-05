@@ -6332,3 +6332,7 @@ Focused Landsat tests: 9 passed, 1 skipped because the host virtualenv lacks
 Rasterio's PROJ database. Runtime/service regression: 86 passed, 3 skipped;
 the one remaining failure is the known out-of-scope confirmed NDBI baseline
 fixture. Clean committed Docker persistence/API/history smoke remains required.
+
+The clean committed Docker NDVI product probe passed with artifact-bound
+verification: AOI 31,857 pixels; final coverage 81.9537% / 99.9969%; common
+26,107 (81.9506%).
