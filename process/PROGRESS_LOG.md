@@ -6246,6 +6246,14 @@ MTL 读取现在在签名前拒绝输入 SAS/token query，签名结果再次执
 
 此轮没有修改 V0.2、Sentinel-2 或 NDBI fixture，没有开始 Implementation B，没有把 preparation、final NDVI 或 common-comparison 阈值写成代码冻结。clean Docker evidence 仍支持 `preparation-valid coverage >= 70%`，但该阈值继续等待独立 Strong Review/final approval；final NDVI-valid `>=60%` 与 final common-comparison `>=50%` 仍为 B-owned provisional thresholds。
 
+# 2026-10-05 — V0.3 A QA nodata semantic blocker fix
+
+将 Landsat 元数据 nodata 校验按角色分开：SR_B4/SR_B5 继续严格要求可信 STAC/MTL 与实际 COG 的 Collection 2 fill `0` 一致；QA_PIXEL、QA_RADSAT、SR_QA_AEROSOL 以 bit 0 Fill 语义为准，STAC nodata `1` 对实际 COG nodata `None` 合法，但显式矛盾值 fail closed。新增 QA_PIXEL/SR_QA_AEROSOL optional-tag 与 contradictory-tag 回归，保留 QA bit 解码和 SR 校准约束。
+
+`uv run pytest -q tests/geochange/test_landsat_provider_limits.py tests/geochange/test_landsat.py`：52 passed；Ruff、`uv lock --check`、`git diff --check` 通过。Pyrefly 在本机因 Rust checker 内存分配失败而未完成。精确 clean commit `34bf236` 重建 `agent_service` 后，容器内 `PYTHONPATH=/app python scripts/probe_landsat_pair.py` exit 0；AOI 31,857 pixels，2023/2024 preparation 分别 26,108（81.9537307%）与 31,856（99.9968610%），common 26,107，网格 EPSG:32649、30 m、296×264，bytes_observed 655,360 为 lower-bound 指标。容器版本 Rasterio 1.5.1 / GDAL 3.12.4 / PROJ 9.8.1；输出与日志未泄漏 SAS、signed query 或 credential。
+
+该证据仅关闭 Implementation A 的 QA nodata blocker；未开始 Implementation B。Preparation ≥70% 具备可复现 committed evidence，仍等待最终 focused freeze review。
+
 # 2026-10-05 — V0.3 clean-commit Docker probe reconciliation
 
 从临时 clean worktree 的精确 committed HEAD `a0da08ff11d7131018f64b7c7b95bc1fecb46071` 重建 `agent_service` image，并在容器内运行 `PYTHONPATH=/app python scripts/probe_landsat_pair.py`；该显式路径只匹配镜像将 package 复制到 `/app` 的布局，不改变源代码。PostgreSQL/migrate/agent_service healthy，probe exit code 0。容器版本：Rasterio 1.5.1、GDAL 3.12.4、bundled PROJ 9.8.1。
