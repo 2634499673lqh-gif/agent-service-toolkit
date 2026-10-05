@@ -46,6 +46,8 @@ _PHYSICAL_BANDS = {
     "qa_radsat": "QA_RADSAT",
     "qa_aerosol": "SR_QA_AEROSOL",
 }
+_SURFACE_REFLECTANCE_BANDS = frozenset({"SR_B4", "SR_B5"})
+_PACKED_QA_BANDS = frozenset({"QA_PIXEL", "QA_RADSAT", "SR_QA_AEROSOL"})
 # Planetary Computer's Landsat accounts.  Keep this explicit so a signed URL
 # cannot redirect a read to an arbitrary Azure storage account.
 _TRUSTED_LANDSAT_STORAGE_HOSTS = frozenset(
@@ -1253,8 +1255,28 @@ def _validate_expected_asset_metadata(asset: AssetIdentity, metadata: Mapping[st
         raise PreparationFailure("grid_alignment_failed", stage="expected_shape")
     if asset.dtype is not None and str(metadata.get("dtype")) != asset.dtype:
         raise PreparationFailure("invalid_raster_metadata", stage="expected_dtype")
-    if asset.nodata is not None:
-        actual_nodata = metadata.get("nodata")
+    actual_nodata = metadata.get("nodata")
+    if asset.physical_band in _SURFACE_REFLECTANCE_BANDS:
+        # Collection 2 SR uses DN=0 as its fill value.  Keep this binding
+        # strict: missing or contradictory COG metadata must not silently
+        # change the trusted STAC/MTL nodata contract.
+        if asset.nodata is None or actual_nodata is None or not math.isclose(
+            float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
+        ):
+            raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
+    elif asset.physical_band in _PACKED_QA_BANDS:
+        # Packed QA bands encode Fill in bit 0.  A provider may therefore
+        # omit the GDAL nodata tag; when STAC supplies one, only an equal
+        # explicit COG value is accepted and the bit semantics remain the
+        # authoritative decoder.
+        if asset.nodata is not None:
+            if not math.isclose(float(asset.nodata), 1.0, rel_tol=0, abs_tol=1e-9):
+                raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
+            if actual_nodata is not None and not math.isclose(
+                float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
+            ):
+                raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
+    elif asset.nodata is not None:
         if actual_nodata is None or not math.isclose(
             float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
         ):

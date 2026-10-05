@@ -307,6 +307,31 @@ def test_expected_stac_nodata_must_bind_to_opened_cog(actual_nodata, accepted) -
             landsat._validate_expected_asset_metadata(asset, metadata)
 
 
+@pytest.mark.parametrize("physical_band", ["QA_PIXEL", "SR_QA_AEROSOL"])
+def test_packed_qa_fill_nodata_tag_is_optional(physical_band: str) -> None:
+    asset = landsat.AssetIdentity(
+        key=physical_band.lower(),
+        physical_band=physical_band,
+        identity_hash="0" * 64,
+        href="https://example.test/qa.tif",
+        nodata=1,
+    )
+    landsat._validate_expected_asset_metadata(asset, {"nodata": None})
+
+
+@pytest.mark.parametrize("physical_band", ["QA_PIXEL", "SR_QA_AEROSOL"])
+def test_packed_qa_contradictory_nodata_tag_fails_closed(physical_band: str) -> None:
+    asset = landsat.AssetIdentity(
+        key=physical_band.lower(),
+        physical_band=physical_band,
+        identity_hash="0" * 64,
+        href="https://example.test/qa.tif",
+        nodata=1,
+    )
+    with pytest.raises(PreparationFailure, match="invalid_raster_metadata"):
+        landsat._validate_expected_asset_metadata(asset, {"nodata": 0})
+
+
 def test_aerosol_expected_projection_mismatch_fails_closed(monkeypatch) -> None:
     aoi = load_trusted_aoi()
     scene = _scene_for_grid("LC08_AEROSOL_EXPECTED")
