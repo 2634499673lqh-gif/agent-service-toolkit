@@ -6230,6 +6230,22 @@ Real-provider bounded probe (host execution of the same production path, 2026-10
 
 Docker execution remains pending because Docker Desktop cannot mount its WSL data disk (`ERROR_NO_SYSTEM_RESOURCES`); the successful host probe is evidence for provider/raster behavior but is not substituted for the required in-container probe.
 
+# 2026-10-05 — V0.3 Implementation A final focused blocker closure
+
+基于远端 clean HEAD `c3dab55` 完成最后一轮 A blocker correction。discovery 与 preparation 现在可以接收同一个 `deadline_monotonic`；生产 probe 在调用方创建一个 180 s deadline，STAC search、SAS/sign、Range probe、MTL、aerosol 和 supervised GDAL child 都消费同一剩余预算，重试不会重置 deadline。增加了 discovery 已消耗预算后 preparation fail-closed 的回归测试。
+
+冻结资源 authority 的解释是 **per active run**：`array_cache_bytes=96 MiB` 与 `gdal_cache_bytes=32 MiB` 合计 `array_plus_gdal_cache_bytes=128 MiB` 是每次 preparation run 的 hard limit；`process_global_array_gdal_cap=false` 明确不声称跨并发 run 的进程级 128 MiB cap。provider semaphore 仍限制最多 2 个远程 asset operations；过程 RSS 是 operational metric。新增测试验证该分类，不实现全局 memory scheduler。
+
+`AssetIdentity` 现在保留 STAC expected CRS、transform、width/height，并在打开 Red、NIR、QA_PIXEL、QA_RADSAT 和 SR_QA_AEROSOL COG 后逐资产比较实际 Rasterio metadata；asset-level projection 优先，缺失时使用语义有效的 item-level `proj:*` evidence，缺失 optional fields 不会被伪造。expected transform、shape、CRS、aerosol projection 和 consistent-but-wrong actual raster 的负例均 fail closed。raw COG scale=1/offset=0 只有在 STAC calibration 与 MTL 独立一致时才允许。
+
+MTL 读取现在在签名前拒绝输入 SAS/token query，签名结果再次执行 trusted host 和 redirect 检查；失败诊断、provenance 和日志不包含 signed query。新增 MTL query、untrusted signed host、redirect 和 credential leakage 测试。
+
+新增/更新测试覆盖云景互补 priority-fill、单景达标停止、覆盖率不足、shared deadline、per-run memory/GDAL budget、STAC/actual raster metadata mismatch、aerosol alignment、raw scale MTL requirement、MTL SSRF/SAS boundary。Focused provider/Landsat/AOI tests：`40 passed`；完整 `tests/geochange`：`170 passed, 7 failed`，7 个失败均为既有无关 Sentinel-2 NDBI fixture `manifest.json` hash mismatch，不修改 fixture；runtime regression：`5 passed`。Ruff check/format、Pyrefly、`uv lock --check`、`git diff --check` 和 Compose config 通过。
+
+从精确 committed clean worktree `c3dab55` 重建 production `agent_service` image，并在隔离 Compose project 内执行 `PYTHONPATH=/app python scripts/probe_landsat_pair.py`，exit code 0。Docker Rasterio `1.5.1`、GDAL `3.12.4`、PROJ `9.8.1`；真实 Jianghan AOI probe 结果保持：AOI pixels `31,857`，pair grid EPSG:32649、30 m、`296×264`，2023 preparation `26,108/31,857 = 81.9537307%`，2024 `31,856/31,857 = 99.9968610%`，common `26,107`。selected scenes 为 `LC08_L2SP_123039_20230727_02_T1` 和 `LC09_L2SP_123039_20240721_02_T1`，两期 scene count 均为 1。STAC asset map、MTL scale/offset、QA_PIXEL/QA_RADSAT 和 aerosol diagnostics 均在 clean container 路径通过；容器输出无 SAS URL、signed query、credential 或 secret。
+
+此轮没有修改 V0.2、Sentinel-2 或 NDBI fixture，没有开始 Implementation B，没有把 preparation、final NDVI 或 common-comparison 阈值写成代码冻结。clean Docker evidence 仍支持 `preparation-valid coverage >= 70%`，但该阈值继续等待独立 Strong Review/final approval；final NDVI-valid `>=60%` 与 final common-comparison `>=50%` 仍为 B-owned provisional thresholds。
+
 # 2026-10-05 — V0.3 clean-commit Docker probe reconciliation
 
 从临时 clean worktree 的精确 committed HEAD `a0da08ff11d7131018f64b7c7b95bc1fecb46071` 重建 `agent_service` image，并在容器内运行 `PYTHONPATH=/app python scripts/probe_landsat_pair.py`；该显式路径只匹配镜像将 package 复制到 `/app` 的布局，不改变源代码。PostgreSQL/migrate/agent_service healthy，probe exit code 0。容器版本：Rasterio 1.5.1、GDAL 3.12.4、bundled PROJ 9.8.1。
