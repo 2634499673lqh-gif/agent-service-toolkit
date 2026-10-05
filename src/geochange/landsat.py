@@ -1587,6 +1587,7 @@ def _prepare_period(
         target_grid=target_grid,
         coverage=coverage,
         provenance={
+            "aoi_area_m2": float(aoi.area_m2),
             "scene_ids": [scene["item_id"] for scene in provenance_scenes],
             "acquisition_dates": [scene["acquisition_date"] for scene in provenance_scenes],
             "asset_key_map": [scene["asset_key_map"] for scene in provenance_scenes],

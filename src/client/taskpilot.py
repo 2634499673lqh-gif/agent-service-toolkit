@@ -327,10 +327,15 @@ class TaskPilotClient:
         )
         expected_type = (
             "image/tiff"
-            if artifact_name.endswith(("_raster", "_comparison", "_before", "_after"))
-            and artifact_name.startswith("ndvi_")
-            and "raster" in artifact_name
-            or artifact_name.startswith("ndvi_valid_")
+            if artifact_name
+            in {
+                "ndvi_before_raster",
+                "ndvi_after_raster",
+                "ndvi_change_raster",
+                "ndvi_valid_before",
+                "ndvi_valid_after",
+                "ndvi_common_comparison",
+            }
             else "image/png"
         )
         if response.headers.get("content-type", "").split(";", 1)[0] != expected_type:

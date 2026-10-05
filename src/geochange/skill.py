@@ -1,12 +1,14 @@
 """Static, code-owned Skill constraints for supported GeoChange analyses."""
 
+import hashlib
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 from typing import Final
 
-from geochange.aoi import resolve_aoi
+from geochange.aoi import TrustedAOI, resolve_aoi
 from geochange.fixture import scene_evidence, validate_binding
 from geochange.models import GeoChangeTask
 from geochange.ndbi import scene_evidence as ndbi_scene_evidence
@@ -157,7 +159,12 @@ class SkillSpec:
                 execution_mode != "real_stac_landsat_local"
                 and set(provenance) != set(self.required_provenance)
             )
-            or any(not isinstance(value, str) or not value.strip() for value in provenance.values())
+            or (
+                execution_mode != "real_stac_landsat_local"
+                and any(
+                    not isinstance(value, str) or not value.strip() for value in provenance.values()
+                )
+            )
         ):
             raise SkillValidationError("terminal result provenance is invalid")
         if execution_mode is not None and (
@@ -182,6 +189,13 @@ class SkillSpec:
                 raise SkillValidationError("Landsat execution requires NDVI vegetation change")
             if payload.get("analysis_area") not in {"jianghan_district_420103", "武汉市江汉区"}:
                 raise SkillValidationError("Landsat execution requires the trusted Jianghan AOI")
+            if task is not None:
+                expected_periods = {
+                    "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
+                    "period_b": f"{task.period_b.start.isoformat()}/{task.period_b.end.isoformat()}",
+                }
+                if payload.get("analysis_periods") != expected_periods:
+                    raise SkillValidationError("Landsat periods do not match confirmed intent")
             metrics = payload.get("metrics")
             if not isinstance(metrics, dict) or not {
                 "mean_ndvi_period_a",
@@ -209,6 +223,37 @@ class SkillSpec:
                 raise SkillValidationError("Landsat numeric artifacts are incomplete")
             if payload.get("verifier_status") != "passed":
                 raise SkillValidationError("Landsat verifier status is invalid")
+            provenance = payload.get("provenance")
+            if (
+                not isinstance(provenance, dict)
+                or provenance.get("aoi_id") != "jianghan_district_420103"
+                or not isinstance(provenance.get("aoi_hash"), str)
+                or provenance.get("target_crs") != "EPSG:32649"
+                or provenance.get("target_dimensions") != [296, 264]
+                or not isinstance(provenance.get("scene_provenance"), dict)
+            ):
+                raise SkillValidationError("Landsat provenance is incomplete")
+            selected_scene = payload.get("selected_scene_evidence")
+            if not isinstance(selected_scene, dict) or not all(
+                isinstance(selected_scene.get(key), str)
+                for key in ("period_a", "period_b", "target_grid")
+            ):
+                raise SkillValidationError("Landsat scene evidence is incomplete")
+            checksums = provenance.get("artifact_checksums")
+            if not isinstance(checksums, dict) or set(checksums) != set(artifacts):
+                raise SkillValidationError("Landsat artifact checksums are incomplete")
+            if any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value)
+                for value in checksums.values()
+            ):
+                raise SkillValidationError("Landsat artifact checksums are invalid")
+            metrics_digest = hashlib.sha256(
+                json.dumps(metrics, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest()
+            if provenance.get("metrics_sha256") != metrics_digest:
+                raise SkillValidationError("Landsat metrics are not verifier-bound")
             return
         selected_scene = payload.get("selected_scene_evidence")
         if require_trusted_evidence and (execution_mode is None or selected_scene is None):
@@ -358,6 +403,13 @@ def validate_terminal_result(
     if dict(aoi_evidence) != canonical_aoi:
         raise SkillValidationError("AOI evidence is not server-authorized")
     if isinstance(payload, dict) and payload.get("execution_mode") == "real_stac_landsat_local":
+        provenance = payload.get("provenance")
+        if (
+            not isinstance(aoi, TrustedAOI)
+            or not isinstance(provenance, dict)
+            or provenance.get("aoi_hash") != aoi.source_hash
+        ):
+            raise SkillValidationError("dynamic AOI hash is not server-authorized")
         skill.validate_result(
             payload, task=task, aoi_evidence=canonical_aoi, require_trusted_evidence=False
         )

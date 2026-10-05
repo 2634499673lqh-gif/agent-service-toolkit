@@ -1,5 +1,6 @@
 """Validated execution intent, persisted only by server confirmation."""
 
+import calendar
 import json
 from typing import Any, Literal, cast
 
@@ -97,6 +98,17 @@ class ConfirmedIntent(BaseModel):
     def comparison_is_ordered(self) -> "ConfirmedIntent":
         if self.period_a.end >= self.period_b.start:
             raise ValueError("comparison periods must be distinct, ordered and non-overlapping")
+        if self.analysis_area in {"武汉市江汉区", "jianghan_district_420103"}:
+            for period in (self.period_a, self.period_b):
+                if period.start.year not in {2023, 2024, 2025}:
+                    raise ValueError("Jianghan Landsat periods must be within 2023-2025")
+                if (
+                    period.start.day != 1
+                    or period.end.day != calendar.monthrange(period.end.year, period.end.month)[1]
+                ):
+                    raise ValueError("Jianghan Landsat periods must be complete calendar months")
+                if period.start.year != period.end.year or period.start.month != period.end.month:
+                    raise ValueError("Jianghan Landsat periods must stay within one calendar month")
         if len(json.dumps(self.model_dump(mode="json")).encode("utf-8")) > 4096:
             raise ValueError("confirmed intent is too large")
         if (self.analysis_type, self.indicator) == ("vegetation_change", "NDVI"):

@@ -351,6 +351,29 @@ class SummarizeChangeRuntimeCapability(_Base):
                     error_message=error_text[:200],
                 )
             metrics = product.metrics
+            period_provenance = {
+                "period_a": pair.period_a.provenance,
+                "period_b": pair.period_b.provenance,
+            }
+            product.provenance.update(
+                {
+                    "aoi_id": aoi.aoi_id,
+                    "aoi_hash": aoi.source_hash,
+                    "aoi_source_version": aoi.source_version,
+                    "aoi_source_url": aoi.source_url,
+                    "aoi_area_m2": aoi.area_m2,
+                    "aoi_bbox": list(aoi.bbox),
+                    "scene_provenance": period_provenance,
+                    "target_crs": pair.pair_grid.crs,
+                    "target_dimensions": [pair.pair_grid.height, pair.pair_grid.width],
+                }
+            )
+            product.metrics["aoi_area_m2"] = float(aoi.area_m2)
+            product.provenance["metrics_sha256"] = hashlib.sha256(
+                json.dumps(
+                    product.metrics, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode()
+            ).hexdigest()
             payload = {
                 "schema_version": "geochange.v1",
                 "analysis_type": "vegetation_change",
@@ -365,16 +388,24 @@ class SummarizeChangeRuntimeCapability(_Base):
                 },
                 "data_source": "landsat-c2-l2",
                 "provenance_summary": "Verified Jianghan AOI and A-owned Landsat preparation handoff.",
-                "provenance": {
-                    "aoi_key": task.aoi_key,
-                    "aoi_crs": "EPSG:4326",
-                    "aoi_source": "taskpilot.geochange.jianghan_osm_v1",
-                    "raster_source": LANDSAT_EXECUTION_MODE,
-                },
+                "provenance": product.provenance,
                 "artifacts": product.artifacts,
                 "verifier_status": "passed",
                 "execution_mode": LANDSAT_EXECUTION_MODE,
-                "selected_scene_evidence": {"preparation_contract_version": pair.contract_version},
+                "selected_scene_evidence": {
+                    "preparation_contract_version": pair.contract_version,
+                    "period_a": json.dumps(
+                        pair.period_a.provenance, sort_keys=True, separators=(",", ":")
+                    ),
+                    "period_b": json.dumps(
+                        pair.period_b.provenance, sort_keys=True, separators=(",", ":")
+                    ),
+                    "target_grid": json.dumps(
+                        pair.pair_grid.model_dump(mode="json"),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                },
             }
             return self._result(step, payload)
         if task.analysis_type == "water_change":

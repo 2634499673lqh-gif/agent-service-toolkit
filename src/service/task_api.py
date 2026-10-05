@@ -12,7 +12,8 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from geochange.artifacts import artifact_path
-from geochange.provenance import trusted_map_metadata
+from geochange.landsat_ndvi import artifact_sha256
+from geochange.provenance import trusted_landsat_map_metadata, trusted_map_metadata
 from persistence.repositories import TaskRepository
 from schema.conversation_api import InterpretationRequest, ResultInterpretation
 from schema.geochange_api import GeoChangeMapResponse
@@ -276,7 +277,8 @@ async def get_task_run_map(
         or not all(isinstance(v, str) and v.strip() for v in periods.values())
     ):
         raise HTTPException(status_code=422, detail="分析结果缺少可信时段")
-    trusted = trusted_map_metadata(indicator)
+    dynamic = metadata.get("execution_mode") == "real_stac_landsat_local"
+    trusted = trusted_landsat_map_metadata(metadata) if dynamic else trusted_map_metadata(indicator)
     artifacts = metadata.get("artifact_references")
     safe_artifacts = artifacts if isinstance(artifacts, dict) else {}
     allowed_artifacts = {
@@ -317,7 +319,7 @@ async def get_task_run_map(
     return GeoChangeMapResponse(
         indicator=indicator,
         period={str(k): str(v) for k, v in periods.items()},
-        aoi_label="武汉东湖研究区内的受限缓存窗口",
+        aoi_label=("武汉市江汉区" if dynamic else "武汉东湖研究区内的受限缓存窗口"),
         data_source=str(metadata.get("data_source", "已验证的 Sentinel-2 缓存样例")),
         bounds=trusted["aoi_bounds_wgs84"],
         crs=trusted["crs"],
@@ -339,7 +341,9 @@ async def get_task_run_map(
             for key in safe_artifacts
         },
         scientific_limit=(
-            _SCIENTIFIC_LIMITS[indicator]
+            "统计仅针对通过最终 NDVI/common mask 的江汉区像元，不推导植被面积或因果归因。"
+            if dynamic
+            else _SCIENTIFIC_LIMITS[indicator]
             + "；统计仅针对缓存窗口中的有效像元，不代表整个东湖研究区。"
         ),
     )
@@ -433,6 +437,14 @@ async def get_task_artifact(
     if not path.is_file() or not 0 < path.stat().st_size <= (
         16_000_000 if path.suffix == ".tif" else 2_000_000
     ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
+    checksums = (
+        metadata.get("provenance", {}).get("artifact_checksums", {})
+        if isinstance(metadata.get("provenance"), dict)
+        else {}
+    )
+    expected_checksum = checksums.get(artifact_name) if isinstance(checksums, dict) else None
+    if expected_checksum is not None and artifact_sha256(path) != expected_checksum:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
     if path.suffix == ".tif":
         return Response(content=path.read_bytes(), media_type="image/tiff")

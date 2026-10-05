@@ -25,6 +25,7 @@ from .landsat_ndvi import (
     LandsatNDVIProduct,
     compute_landsat_ndvi_product,
     verify_landsat_ndvi_product,
+    verify_landsat_ndvi_metadata,
 )
 from .service import run_local_analysis
 from .stac import Sentinel2Item, search_sentinel2
@@ -63,4 +64,5 @@ __all__ = [
     "LandsatNDVIProduct",
     "compute_landsat_ndvi_product",
     "verify_landsat_ndvi_product",
+    "verify_landsat_ndvi_metadata",
 ]

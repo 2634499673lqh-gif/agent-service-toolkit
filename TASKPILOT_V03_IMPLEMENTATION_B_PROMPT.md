@@ -88,7 +88,7 @@ delta = NDVI_period_b - NDVI_period_a
 - valid/common counts/coverage、metrics、execution mode、verifier status、`hard_limits_applied`、`operational_metrics`、`best_effort_warnings`；
 - numeric raster/mask/PNG artifact names and SHA-256。
 
-不得保存 SAS、raw credential、完整 provider response 或任意 URL。服务端固定 allowlist：`ndvi_before`, `ndvi_after`, `ndvi_change` 为 numeric GeoTIFF `.tif`/`image/tiff`，每个 ≤16 MiB；`ndvi_valid_before`, `ndvi_valid_after`, `ndvi_common_comparison` 为 uint8 mask GeoTIFF `.tif`/`image/tiff`，每个 ≤16 MiB；现有 nine legacy PNG names/URLs 仍为 `.png`/`image/png`、≤2 MiB。调用方不能提交 extension/path；每个 reference 必须绑定 tenant/task/run、SHA-256、AOI/period/grid/provenance hash，并重新以原始 numeric dtype/CRS/transform 打开校验。GeoTIFF/数字 mask 是科学权威；PNG/map tiles 只做展示。artifact path 仍需 tenant/run authorization、allowlist 和大小上限，容器重建后从现有 mount 可恢复。若必须新 migration 才能保存上述 bounded metadata，停止并说明为什么 `result_metadata` 不足，不自行改变数据库契约。
+不得保存 SAS、raw credential、完整 provider response 或任意 URL。服务端固定 allowlist：PNG IDs `ndvi_before`, `ndvi_after`, `ndvi_change` remain display-only `.png`/`image/png` ≤2 MiB；numeric IDs `ndvi_before_raster`, `ndvi_after_raster`, `ndvi_change_raster` are float32 GeoTIFF `.tif`/`image/tiff` ≤16 MiB each；mask IDs `ndvi_valid_before`, `ndvi_valid_after`, `ndvi_common_comparison` are uint8 GeoTIFF `.tif`/`image/tiff` ≤16 MiB each；调用方不能提交 extension/path；每个 reference 必须绑定 tenant/task/run、SHA-256、AOI/period/grid/provenance hash，并重新以原始 numeric dtype/CRS/transform 打开校验。GeoTIFF/数字 mask 是科学权威；PNG/map tiles 只做展示。artifact path 仍需 tenant/run authorization、allowlist 和大小上限，容器重建后从现有 mount 可恢复。若必须新 migration 才能保存上述 bounded metadata，停止并说明为什么 `result_metadata` 不足，不自行改变数据库契约。
 
 MapLibre 接入现有左聊天/右地图：
 

@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 import numpy as np
 import pytest
 
@@ -9,6 +12,9 @@ from geochange.landsat import (
     TargetGrid,
 )
 from geochange.landsat_ndvi import compute_landsat_ndvi_product, verify_landsat_ndvi_product
+from geochange.provenance import trusted_landsat_map_metadata
+from geochange.skill import VEGETATION_CHANGE_NDVI, SkillValidationError
+from schema.confirmed_intent import ConfirmedIntent
 
 
 def _pair() -> PreparedPeriodPair:
@@ -52,16 +58,133 @@ def _pair() -> PreparedPeriodPair:
 
 def test_landsat_ndvi_uses_common_mask_and_negative_reflectance():
     pair = _pair()
-    product = compute_landsat_ndvi_product(
-        pair, final_ndvi_coverage_gate=20, final_common_coverage_gate=20
-    )
-    assert product.final_common_comparison_mask.sum() == 1
-    assert np.isnan(product.ndvi_before[0, 1])
-    assert not product.final_ndvi_valid_mask_a[0, 1]
-    assert product.metrics["final_common_comparison_pixels"] == 1
+    # The production gates are server-owned; this fixture is intentionally
+    # below them and therefore exercises the bounded failure path.
+    with pytest.raises(ValueError, match="insufficient_ndvi_coverage"):
+        compute_landsat_ndvi_product(pair)
+
+
+def test_landsat_ndvi_aoi_masks_must_match():
+    pair = _pair()
+    object.__setattr__(pair.period_b, "aoi_mask", np.array([[True, False], [True, True]]))
+    with pytest.raises(ValueError, match="AOI masks"):
+        compute_landsat_ndvi_product(pair)
+
+
+def test_landsat_ndvi_product_with_server_gate_fixture():
+    pair = _pair()
+    object.__setattr__(pair.period_a, "red_reflectance", np.full((2, 2), -0.1, dtype=np.float32))
+    object.__setattr__(pair.period_a, "nir_reflectance", np.full((2, 2), -0.15, dtype=np.float32))
+    object.__setattr__(pair.period_b, "red_reflectance", np.full((2, 2), 0.1, dtype=np.float32))
+    object.__setattr__(pair.period_b, "nir_reflectance", np.full((2, 2), 0.5, dtype=np.float32))
+    object.__setattr__(pair.period_a, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair.period_b, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair, "common_preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    product = compute_landsat_ndvi_product(pair)
+    assert product.final_common_comparison_mask.sum() == 4
+    assert product.ndvi_before[0, 0] == pytest.approx(0.2)
+    assert product.metrics["final_common_comparison_pixels"] == 4
     assert verify_landsat_ndvi_product(product, pair)["status"] == "passed"
 
 
 def test_landsat_ndvi_rejects_coverage_gate():
     with pytest.raises(ValueError, match="insufficient_ndvi_coverage"):
         compute_landsat_ndvi_product(_pair())
+
+
+def test_dynamic_terminal_rejects_forged_metrics():
+    pair = _pair()
+    object.__setattr__(pair.period_a, "red_reflectance", np.full((2, 2), -0.1, dtype=np.float32))
+    object.__setattr__(pair.period_a, "nir_reflectance", np.full((2, 2), -0.15, dtype=np.float32))
+    object.__setattr__(pair.period_b, "red_reflectance", np.full((2, 2), 0.1, dtype=np.float32))
+    object.__setattr__(pair.period_b, "nir_reflectance", np.full((2, 2), 0.5, dtype=np.float32))
+    object.__setattr__(pair.period_a, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair.period_b, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair, "common_preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    product = compute_landsat_ndvi_product(pair)
+    product.provenance.update(
+        {
+            "aoi_id": "jianghan_district_420103",
+            "aoi_hash": "a" * 64,
+            "target_crs": "EPSG:32649",
+            "target_dimensions": [296, 264],
+            "scene_provenance": {"period_a": {}, "period_b": {}},
+        }
+    )
+    product.provenance["metrics_sha256"] = hashlib.sha256(
+        json.dumps(product.metrics, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    ).hexdigest()
+    artifacts = {
+        name: name
+        for name in (
+            "ndvi_before",
+            "ndvi_after",
+            "ndvi_change",
+            "ndvi_before_raster",
+            "ndvi_after_raster",
+            "ndvi_change_raster",
+            "ndvi_valid_before",
+            "ndvi_valid_after",
+            "ndvi_common_comparison",
+        )
+    }
+    product.provenance["artifact_checksums"] = {name: "a" * 64 for name in artifacts}
+    payload = {
+        "schema_version": "geochange.v1",
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "mode": "real_stac_landsat_local",
+        "summary": "x",
+        "metrics": dict(product.metrics),
+        "analysis_area": "jianghan_district_420103",
+        "analysis_periods": {
+            "period_a": "2023-07-01/2023-07-31",
+            "period_b": "2024-07-01/2024-07-31",
+        },
+        "data_source": "landsat-c2-l2",
+        "provenance_summary": "x",
+        "provenance": product.provenance,
+        "artifacts": artifacts,
+        "verifier_status": "passed",
+        "execution_mode": "real_stac_landsat_local",
+        "selected_scene_evidence": {"period_a": "x", "period_b": "x", "target_grid": "x"},
+    }
+    payload["metrics"]["mean_delta_ndvi"] = 0.9
+    with pytest.raises(SkillValidationError, match="metrics"):
+        VEGETATION_CHANGE_NDVI.validate_result(payload)
+
+
+def test_jianghan_confirmation_rejects_non_month_and_out_of_range():
+    base = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "武汉市江汉区",
+        "period_a": {"start": "2023-07-02", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+        "parameters": {"source": "Landsat-8/9"},
+    }
+    with pytest.raises(ValueError, match="complete calendar months"):
+        ConfirmedIntent.model_validate(base)
+    base["period_a"] = {"start": "2022-07-01", "end": "2022-07-31"}
+    with pytest.raises(ValueError, match="2023-2025"):
+        ConfirmedIntent.model_validate(base)
+
+
+def test_dynamic_map_metadata_is_not_east_lake_fixture():
+    metadata = {
+        "provenance": {
+            "aoi_id": "jianghan_district_420103",
+            "target_crs": "EPSG:32649",
+            "target_dimensions": [296, 264],
+            "aoi_bbox": [114.2, 30.5, 114.3, 30.7],
+            "target_grid": {"transform": [30, 0, 1, 0, -30, 2]},
+            "scene_provenance": {
+                "period_a": {"scene_ids": ["a"]},
+                "period_b": {"scene_ids": ["b"]},
+            },
+        }
+    }
+    result = trusted_landsat_map_metadata(metadata)
+    assert result["crs"] == "EPSG:32649"
+    assert result["dimensions"] == [296, 264]
+    assert result["periods"]["period_a"]["scene_identity"] == "a"

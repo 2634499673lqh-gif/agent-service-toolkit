@@ -6307,3 +6307,16 @@ the Docker GDAL/PROJ runtime (`proj.db` is not available in the host virtualenv)
 Docker images built successfully. Compose startup was blocked by the existing
 host PostgreSQL port allocation on `0.0.0.0:5432`; no existing container was
 stopped or altered.
+
+# V0.3 B focused Strong Review fix (2026-10-05)
+
+Closed dynamic-result blockers: terminal validation now binds Jianghan AOI
+hash, confirmed monthly periods, scene/grid evidence, metrics digest and all
+artifact checksums; dynamic map metadata uses EPSG:32649 and the real 296×264
+grid; result metadata accepts only the approved nine dynamic artifact IDs;
+GeoTIFFs are reopened and checked after writing. Confirmation rejects
+non-calendar-month and out-of-range Jianghan periods before task creation.
+
+Focused tests and Ruff/Pyrefly pass. A clean rebuilt Docker compose smoke ran
+the real Jianghan A→B→verifier path and produced all nine artifacts; verifier
+passed with final coverage 81.9537% / 99.9969% and common 81.9506%.

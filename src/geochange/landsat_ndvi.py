@@ -7,6 +7,7 @@ Implementation A.  It deliberately has no STAC, URL, QA, or reprojection code.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,8 @@ MASK_ARTIFACTS = (
 PNG_ARTIFACTS = ("ndvi_before", "ndvi_after", "ndvi_change")
 FINAL_NDVI_COVERAGE_GATE = 60.0  # provisional until user/reviewer freeze
 FINAL_COMMON_COVERAGE_GATE = 50.0  # provisional until user/reviewer freeze
+MAX_NUMERIC_ARTIFACT_BYTES = 16 * 1024 * 1024
+MAX_DISPLAY_ARTIFACT_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -79,16 +82,14 @@ def compute_landsat_ndvi_product(
     pair: PreparedPeriodPair,
     *,
     artifact_dir: str | Path | None = None,
-    final_ndvi_coverage_gate: float = FINAL_NDVI_COVERAGE_GATE,
-    final_common_coverage_gate: float = FINAL_COMMON_COVERAGE_GATE,
 ) -> LandsatNDVIProduct:
     """Calculate NDVI/delta and optionally write numeric and display artifacts."""
     if pair.contract_version != "v0.3-preparation-1":
         raise ValueError("unsupported preparation contract")
-    if not (0 <= final_ndvi_coverage_gate <= 100 and 0 <= final_common_coverage_gate <= 100):
-        raise ValueError("coverage gates are invalid")
     a = pair.period_a
     b = pair.period_b
+    if not np.array_equal(a.aoi_mask, b.aoi_mask):
+        raise ValueError("period AOI masks do not match")
     if not np.array_equal(
         pair.common_preparation_valid_mask,
         a.aoi_mask & a.preparation_valid_mask & b.preparation_valid_mask,
@@ -106,16 +107,19 @@ def compute_landsat_ndvi_product(
     )
     common = np.asarray(pair.common_preparation_valid_mask & valid_a & valid_b, dtype=bool)
     if (
-        _coverage(valid_a, denominator) < final_ndvi_coverage_gate
-        or _coverage(valid_b, denominator) < final_ndvi_coverage_gate
+        _coverage(valid_a, denominator) < FINAL_NDVI_COVERAGE_GATE
+        or _coverage(valid_b, denominator) < FINAL_NDVI_COVERAGE_GATE
     ):
         raise ValueError("insufficient_ndvi_coverage")
-    if _coverage(common, denominator) < final_common_coverage_gate:
+    if _coverage(common, denominator) < FINAL_COMMON_COVERAGE_GATE:
         raise ValueError("insufficient_comparison_coverage")
     delta = np.full(ndvi_a.shape, np.nan, dtype=np.float32)
     delta[common] = ndvi_b[common] - ndvi_a[common]
     values = {
         "aoi_rasterized_pixels": denominator,
+        "aoi_area_m2": float(
+            a.provenance.get("aoi_area_m2", denominator * a.target_grid.resolution_m**2)
+        ),
         "preparation_valid_pixels_period_a": int(
             np.count_nonzero(a.preparation_valid_mask & a.aoi_mask)
         ),
@@ -147,6 +151,7 @@ def compute_landsat_ndvi_product(
         artifacts = _write_artifacts(
             Path(artifact_dir), pair, ndvi_a, ndvi_b, delta, valid_a, valid_b, common
         )
+    artifact_root = Path(artifact_dir) if artifact_dir is not None else None
     provenance = {
         "execution_mode": EXECUTION_MODE,
         "preparation_contract_version": pair.contract_version,
@@ -157,7 +162,15 @@ def compute_landsat_ndvi_product(
         "operational_metrics": dict(pair.operational_metrics),
         "best_effort_warnings": list(pair.best_effort_warnings),
         "coverage_gates_provisional": True,
+        "artifact_checksums": {
+            name: artifact_sha256(artifact_root / filename) for name, filename in artifacts.items()
+        }
+        if artifact_root is not None
+        else {},
     }
+    provenance["metrics_sha256"] = hashlib.sha256(
+        json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    ).hexdigest()
     return LandsatNDVIProduct(
         ndvi_a, ndvi_b, delta, valid_a, valid_b, common, values, artifacts, provenance
     )
@@ -205,6 +218,9 @@ def _write_artifacts(
             compress="deflate",
         ) as dst:
             dst.write(np.asarray(array, dtype=np.float32), 1)
+        _verify_numeric_artifact(path, grid, "float32", np.nan)
+        if path.stat().st_size > MAX_NUMERIC_ARTIFACT_BYTES:
+            raise ValueError("numeric artifact exceeds the bounded size")
         artifacts[name] = path.name
     for name, array in mask_arrays.items():
         path = root / f"{name}.tif"
@@ -222,6 +238,9 @@ def _write_artifacts(
             compress="deflate",
         ) as dst:
             dst.write(np.asarray(array, dtype=np.uint8), 1)
+        _verify_numeric_artifact(path, grid, "uint8", 0.0)
+        if path.stat().st_size > MAX_NUMERIC_ARTIFACT_BYTES:
+            raise ValueError("mask artifact exceeds the bounded size")
         artifacts[name] = path.name
     for name, array in {"ndvi_before": ndvi_a, "ndvi_after": ndvi_b, "ndvi_change": delta}.items():
         path = root / f"{name}.png"
@@ -231,8 +250,31 @@ def _write_artifacts(
         Image.fromarray(np.clip(scaled, 0, 255).astype(np.uint8), mode="L").save(
             path, format="PNG", optimize=True
         )
+        if path.stat().st_size > MAX_DISPLAY_ARTIFACT_BYTES:
+            raise ValueError("display artifact exceeds the bounded size")
         artifacts[name] = path.name
     return artifacts
+
+
+def _verify_numeric_artifact(path: Path, grid: Any, dtype: str, nodata: float) -> None:
+    if rasterio is None or Affine is None:
+        raise RuntimeError("rasterio is required for numeric artifact verification")
+    with rasterio.open(path) as dataset:
+        nodata_matches = (
+            math.isnan(float(dataset.nodata))
+            if math.isnan(float(nodata))
+            else dataset.nodata == nodata
+        )
+        if (
+            dataset.count != 1
+            or dataset.width != grid.width
+            or dataset.height != grid.height
+            or str(dataset.crs) != str(grid.crs)
+            or tuple(dataset.transform) != tuple(Affine(*grid.transform))
+            or dataset.dtypes[0] != dtype
+            or not nodata_matches
+        ):
+            raise ValueError("numeric artifact metadata mismatch")
 
 
 def verify_landsat_ndvi_product(
@@ -273,6 +315,31 @@ def verify_landsat_ndvi_product(
     return {"status": "passed", "common_pixels": int(np.count_nonzero(common))}
 
 
+def verify_landsat_ndvi_metadata(
+    product: LandsatNDVIProduct,
+    pair: PreparedPeriodPair,
+    *,
+    expected_aoi: dict[str, Any],
+    expected_periods: dict[str, Any],
+) -> dict[str, Any]:
+    """Verify the server-owned evidence projection used by terminal results."""
+    result = verify_landsat_ndvi_product(product, pair)
+    if result["status"] != "passed":
+        return result
+    if product.provenance.get("aoi_hash") != expected_aoi.get("source_hash"):
+        return {"status": "failed", "code": "aoi_evidence_mismatch"}
+    if product.provenance.get("period_a") != expected_periods.get("period_a"):
+        return {"status": "failed", "code": "period_a_evidence_mismatch"}
+    if product.provenance.get("period_b") != expected_periods.get("period_b"):
+        return {"status": "failed", "code": "period_b_evidence_mismatch"}
+    checksums = product.provenance.get("artifact_checksums", {})
+    if not isinstance(checksums, dict) or any(
+        not isinstance(value, str) or len(value) != 64 for value in checksums.values()
+    ):
+        return {"status": "failed", "code": "artifact_checksum_missing"}
+    return {"status": "passed", "common_pixels": result["common_pixels"]}
+
+
 def artifact_sha256(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -282,5 +349,6 @@ __all__ = [
     "LandsatNDVIProduct",
     "compute_landsat_ndvi_product",
     "verify_landsat_ndvi_product",
+    "verify_landsat_ndvi_metadata",
     "artifact_sha256",
 ]
