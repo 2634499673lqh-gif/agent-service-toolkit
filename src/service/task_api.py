@@ -305,7 +305,7 @@ async def get_task_run_map(
     return GeoChangeMapResponse(
         indicator=indicator,
         period={str(k): str(v) for k, v in periods.items()},
-        aoi_label=str(metadata.get("analysis_area", "武汉东湖（受限缓存覆盖区）")),
+        aoi_label="武汉东湖研究区内的受限缓存窗口",
         data_source=str(metadata.get("data_source", "已验证的 Sentinel-2 缓存样例")),
         bounds=trusted["aoi_bounds_wgs84"],
         crs=trusted["crs"],
@@ -326,7 +326,10 @@ async def get_task_run_map(
             str(key): f"/api/v1/tasks/{task_id}/runs/{run_id}/artifacts/{key}"
             for key in safe_artifacts
         },
-        scientific_limit=_SCIENTIFIC_LIMITS[indicator],
+        scientific_limit=(
+            _SCIENTIFIC_LIMITS[indicator]
+            + "；统计仅针对缓存窗口中的有效像元，不代表整个东湖研究区。"
+        ),
     )
 
 

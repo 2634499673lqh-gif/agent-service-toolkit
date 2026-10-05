@@ -25,7 +25,12 @@ class GeoChangeMapResponse(BaseModel):
     period: dict[str, str]
     aoi_label: str
     data_source: str
-    bounds: list[float] | None = Field(default=None, min_length=4, max_length=4)
+    bounds: list[float] | None = Field(
+        default=None,
+        min_length=4,
+        max_length=4,
+        description="Study AOI bounds in WGS84; raster coverage is given by native_bounds and crs.",
+    )
     crs: str | None = None
     native_bounds: dict[str, list[float]]
     raster_dimensions: dict[str, list[int]]

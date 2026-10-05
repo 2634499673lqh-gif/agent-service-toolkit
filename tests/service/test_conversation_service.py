@@ -344,7 +344,7 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
 
     service = TaskService.__new__(TaskService)
     service.tasks = DraftRepository()
-    service.session = SimpleNamespace(rollback=AsyncMock())
+    service.session = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
     principal = SimpleNamespace(
         user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4()
     )
@@ -356,6 +356,7 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
     )
 
     assert result is existing
+    service.session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

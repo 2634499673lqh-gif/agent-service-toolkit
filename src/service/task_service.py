@@ -48,6 +48,7 @@ class TaskService:
                 )
                 if existing is not None:
                     if getattr(existing.status, "value", existing.status) == "draft":
+                        await self.session.commit()
                         return existing
                     raise ValueError("proposal has already been confirmed")
             task = Task(

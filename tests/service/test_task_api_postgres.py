@@ -15,7 +15,7 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from psycopg import AsyncConnection, sql
-from sqlalchemy import func, make_url, select
+from sqlalchemy import func, make_url, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from persistence.engine import create_async_engine
@@ -30,6 +30,8 @@ from persistence.models import (
     User,
 )
 from persistence.passwords import hash_password
+from persistence.repositories import TaskRepository
+from schema.confirmed_intent import ConfirmedIntent
 from service.auth_dependency import get_session_factory
 from service.service import app
 from service.session import AuthService, CurrentPrincipal
@@ -241,18 +243,51 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
     owner_principal = principal_for(owner, owner_membership)
     foreign_principal = principal_for(foreign, foreign_membership)
 
+    request_sessions = []
+
     async def create(principal: CurrentPrincipal, suffix: str):
         async with factory() as session:
-            return await TaskService(session).create_task(
+            request_sessions.append(session)
+            task = await TaskService(session).create_task(
                 principal,
                 title=f"atomic-{suffix}",
                 confirmed_intent=intent,
             )
+            assert not session.in_transaction()
+            return task
 
-    first, second = await asyncio.gather(
-        create(owner_principal, "one"),
-        create(owner_principal, "two"),
-    )
+    # Hold the row until both independent PostgreSQL transactions are waiting.
+    async with factory() as blocker:
+        blocker_pid = await blocker.scalar(text("SELECT pg_backend_pid()"))
+        await TaskRepository(blocker).lock_confirmation_scope(
+            owner_principal.membership_id,
+            owner_principal.user_id,
+            owner_principal.organization_id,
+        )
+        requests = [
+            asyncio.create_task(create(owner_principal, "one")),
+            asyncio.create_task(create(owner_principal, "two")),
+        ]
+        try:
+            async with asyncio.timeout(10):
+                while True:
+                    async with factory() as observer:
+                        waiting = await observer.scalar(
+                            text(
+                                "SELECT count(*) FROM pg_stat_activity "
+                                "WHERE :blocker = ANY(pg_blocking_pids(pid))"
+                            ),
+                            {"blocker": blocker_pid},
+                        )
+                    # PostgreSQL reports the first waiter directly; a second
+                    # request may be blocked behind that waiter instead.
+                    if waiting >= 1:
+                        break
+                    await asyncio.sleep(0.02)
+        finally:
+            await blocker.rollback()
+        first, second = await asyncio.wait_for(asyncio.gather(*requests), timeout=10)
+    assert len(request_sessions) == 2 and request_sessions[0] is not request_sessions[1]
     assert first.id == second.id
 
     async with factory() as session:
@@ -267,27 +302,69 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
     foreign_task = await create(foreign_principal, "foreign")
     assert foreign_task.id != first.id
 
+    # Isolate each dimension: different user/same tenant and same user/different tenant.
     async with factory() as session:
-        task = await session.get(Task, first.id)
-        assert task is not None
-        task.status = TaskStatus.SUCCEEDED
-        await session.commit()
-
-    async with factory() as session:
-        with pytest.raises(ValueError, match="already been confirmed"):
-            await TaskService(session).create_task(
-                owner_principal,
-                title="replay",
-                confirmed_intent=intent,
-            )
-
-    changed_intent = {**intent, "period_b": {"start": "2025-07-01", "end": "2025-07-31"}}
-    async with factory() as session:
-        recovered = await TaskService(session).create_task(
-            owner_principal,
-            title="after-rollback",
-            confirmed_intent=changed_intent,
+        same_tenant_membership = Membership(
+            user_id=foreign.id, organization_id=owner_principal.organization_id, role=Role.MEMBER
         )
+        other_tenant_membership = Membership(
+            user_id=owner.id, organization_id=foreign_principal.organization_id, role=Role.MEMBER
+        )
+        session.add_all([same_tenant_membership, other_tenant_membership])
+        await session.commit()
+    separate = await asyncio.gather(
+        create(principal_for(foreign, same_tenant_membership), "same-tenant"),
+        create(principal_for(owner, other_tenant_membership), "same-user"),
+    )
+    assert len({first.id, foreign_task.id, *(task.id for task in separate)}) == 4
+
+    for status in TaskStatus:
+        if status is TaskStatus.DRAFT:
+            continue
+        async with factory() as session:
+            task = await session.get(Task, first.id)
+            assert task is not None
+            task.status = status
+            await session.commit()
+        async with factory() as session:
+            with pytest.raises(ValueError, match="already been confirmed"):
+                await TaskService(session).create_task(
+                    owner_principal, title="replay", confirmed_intent=intent
+                )
+            assert not session.in_transaction()
+
+    # Fail after a real INSERT/flush, keep that session open, and prove another
+    # session can acquire the same membership lock and create the same intent.
+    changed_intent = ConfirmedIntent.model_validate(
+        {**intent, "period_b": {"start": "2025-07-01", "end": "2025-07-31"}}
+    ).model_dump(mode="json")
+    async with factory() as failed_session:
+        service = TaskService(failed_session)
+        original_add = service.tasks.add
+
+        async def fail_after_insert(task: Task) -> Task:
+            await original_add(task)
+            raise RuntimeError("injected failure after insert")
+
+        service.tasks.add = fail_after_insert
+        with pytest.raises(RuntimeError, match="after insert"):
+            await service.create_task(
+                owner_principal, title="rolled-back", confirmed_intent=changed_intent
+            )
+        assert not failed_session.in_transaction()
+        async with factory() as recovery_session:
+            dirty_count = await recovery_session.scalar(
+                select(func.count(Task.id)).where(Task.confirmed_intent == changed_intent)
+            )
+            assert dirty_count == 0
+            recovered = await asyncio.wait_for(
+                TaskService(recovery_session).create_task(
+                    owner_principal, title="after-rollback", confirmed_intent=changed_intent
+                ),
+                timeout=10,
+            )
+            assert not recovery_session.in_transaction()
+
     assert recovered.id != first.id
 
 
