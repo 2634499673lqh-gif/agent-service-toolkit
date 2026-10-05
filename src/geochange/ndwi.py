@@ -10,10 +10,9 @@ import numpy as np
 from PIL import Image
 
 from .models import GeoChangeTask
+from .paths import fixture_root
 
-FIXTURE_ROOT = (
-    Path(__file__).resolve().parents[2] / "data/geochange-fixtures/real-sentinel2-ndwi-v5"
-)
+FIXTURE_ROOT = fixture_root("real-sentinel2-ndwi-v5")
 FIXTURE_VERSION = "geochange.real-sentinel2-ndwi.v1"
 MANIFEST_SHA256 = "90416a43c08d127a4ed46b313481d803123d04109c94bb4542e1e4439e867aad"
 FIXTURE_SHA256 = {

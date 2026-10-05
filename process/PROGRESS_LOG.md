@@ -6123,3 +6123,49 @@ Validation: focused Runtime/Skill/offline authority suite passed 110 tests with 
 ## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
 
 Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.
+# 2026-10-03 — TaskPilot V0.2 Implementation A
+
+Implemented the first user-acceptance slice: fixture roots resolve independently of the working directory in local/Docker layouts; NDBI manifest bytes are restored to the trusted hash; RuntimeDispatch closes queued/pending orphan runs with a bounded failure classification; GeoChange capabilities and verified map metadata routes are tenant-protected; and a React/TypeScript/Vite workspace frontend with same-origin `/api` proxy is available under `web/`. Streamlit remains unchanged as fallback.
+
+Changed files include `AGENTS.md`, `src/geochange/{paths,fixture,ndwi,ndbi}.py`, `src/service/{runtime_dispatch,task_lifecycle,task_api,geochange_api}.py`, `src/schema/geochange_api.py`, `web/`, `docker/Dockerfile.web`, `compose.yaml`, `USER_ACCEPTANCE_GUIDE.md`, and `IMPLEMENTATION_B_HANDOFF.md`.
+
+Validation: `uv run pytest -q tests/geochange tests/service/test_runtime_dispatch.py tests/runtime/test_task_runtime.py` (216 passed); `pnpm --dir web run build` and `pnpm --dir web run typecheck` (passed); Ruff, Ruff format, Pyrefly, and `git diff --check` (passed); Vite HTTP smoke at `http://localhost:5173/` returned 200. Docker/PostgreSQL/browser authenticated E2E and real LLM execution remain environment-dependent and are explicitly deferred to B or user acceptance.
+
+Learner focus: server-owned fixture roots and hashes are evidence boundaries; runtime recovery must never replay side effects; product APIs expose a sanitized projection instead of persistence JSON; the browser stores the token only in memory. Next task is Implementation B's real structured LLM path and verified artifact map loading.
+# 2026-10-03 — Implementation A acceptance blocker fix
+
+修复 A 验收阻塞：新增普通邮箱/密码登录和注销，opaque token 只存在 React 运行时内存；左侧改为持续中文消息流、日期澄清和显式确认卡；右侧实际初始化 MapLibre、OpenStreetMap 底图、定位/缩放/AOI/图层控件和 attribution。服务端地图 API 现在从受信 NDVI/NDWI/NDBI fixture manifest 派生 CRS、native bounds、dimensions、scene identity、transform 与 artifact URL，禁止使用客户端或未验证 bounds。结果卡、历史结果和失败/no-data 提示已接入。
+
+前端 build/typecheck、focused GeoChange/Runtime tests、Ruff、Pyrefly、Compose config 和 web image build 已通过。真实登录、真实缓存任务、真实 artifact 叠加仍需在具备 bootstrap 账号和 PostgreSQL 的浏览器环境中现场验收；当前环境无 Playwright 浏览器自动化。
+
+# 2026-10-04 — Implementation A final focused fixes
+
+修复正常武汉东湖中文月份请求的受控区域与月份时段解析，未知区域仍拒绝；确认接口将 Pydantic 校验失败映射为简洁中文错误；MapLibre 仅显示底图/结果源真实错误并支持恢复清除，结果 artifact 请求携带当前内存会话并按受信投影信息叠加。Focused conversation/GeoChange/Runtime tests 通过，前端 build/typecheck 通过，Docker 后端与 Web healthy，未实施真实 LLM。
+
+# 2026-10-04 — Implementation A raster visualization correction
+
+修复结果图层在 MapLibre style 尚未完成时一次性 return、导致永不重试的问题。现在监听地图 load 生命周期，检查受认证 artifact 的 HTTP 状态、PNG 内容和解码尺寸，按受信 native bounds 与投影四角添加 image source/raster layer，并等待 MapLibre idle 后才报告渲染成功。结果卡区分计算完成、图层获取和地图渲染状态；失败显示简洁中文信息，不再提前宣称 artifact 已叠加。
+
+验证：`pnpm --dir web run build`、`pnpm --dir web run typecheck` 通过；此前受影响后端 focused tests 通过。浏览器自动化不可用，真实账号下的 authenticated raster 视觉证据仍需人工验收。
+
+# 2026-10-04 — Implementation B live conversation foundation
+
+基于 A 的 `e86edac` 创建 `codex/taskpilot-v02-b`。新增受限 LLMIntent/ResultInterpretation schema、平台 DeepSeek 调用的超时/重试/并发边界、受控上下文、无 key/provider 失败分类和租户授权的结果解读接口；前端增加结果解读入口与连续指数图例。Compose 正式 live 路径关闭 FakeModel；没有平台 key 时明确返回 AI 不可用，不伪造成功。
+
+验证：conversation/core focused tests 64 passed；Ruff、Pyrefly、前端 build/typecheck 通过。真实 DeepSeek key 与浏览器端到端证据尚未提供，不能宣称 B 完成。
+
+# 2026-10-04 — Final consolidated acceptance fix
+
+修复历史结果加载生命周期、真实历史接口、模型输出兼容和提案确认一致性：新增受保护的 `GET /api/v1/conversation/history`，历史视图按成功运行回退并区分验证/artifact/权限/超时失败；MapLibre 状态只在 artifact 获取、source loaded 和实际渲染完成后报告成功；模型身份回答使用受信配置而非模型自报，DeepSeek 常见 provider 字段映射到有界 `LLMIntent`/`ResultInterpretation`；结果解释补齐可信 task intent 证据，指标摘要显示中文名称、三位小数和 m²/像元单位；确认卡保留时段、过期卡不可重复确认并防止快速重复创建。
+
+验证：`uv run pytest -q tests/service/test_conversation_service.py tests/geochange tests/service/test_runtime_dispatch.py`（151 passed，6 warnings）；`uv run ruff check`、`uv run pyrefly check`、前端 `tsc -b`/Vite build 通过；Docker Compose 重建后 agent readiness 与 web 首页均为 200；容器真实 DeepSeek smoke 成功完成模型身份、武汉东湖 NDVI 双时段意图和 verifier 证据解释。浏览器自动化不可用，真实账号历史/地图视觉验收仍需人工完成。
+
+Learner notes: history loading is a server-authorized read path, while confirmation remains the only task creation boundary; MapLibre success must be tied to source lifecycle rather than a fetch alone; provider JSON is untrusted and must be normalized before bounded validation. Read `src/service/conversation_api.py`, `src/service/conversation_service.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `src/schema/conversation_api.py`. Exercise: open a successful history item and inspect the Network request, then switch A/B/change and confirm each artifact request. Do not worry yet about richer charts, calibrated classes, or arbitrary AOI support.
+
+# 2026-10-04 — Runtime and user acceptance blocker fix
+
+核对确认用户从错误目录执行 Compose 会得到“no configuration file”；正确入口是仓库根目录 `D:\github\agent-service\agent-service-toolkit` 的 `compose.yaml`。新增受控 artifact bind mount，修复数据库 succeeded Run 与 PNG 生命周期脱节。历史检查确认旧容器中大量成功记录没有对应 PNG；这些旧结果不伪造恢复。新 NDVI Run `aeb4ca75-b687-4696-b566-f5ed4ded455c` / `98da98c8-e847-4c20-895a-16a6bbfeeb69` 真实执行成功并生成三张图，trusted `/map` 成功，强制重建 agent/web 后同一文件仍在。
+
+真实日志定位到 `geochange_output_oversized` 是 provider 解读文本与受信 scene evidence 合并后超过旧 2 KiB envelope；现在仅截断展示摘要，保留 metrics/artifact/scene evidence。DeepSeek provider 还会对能力问答返回 `capability_query`、空 period 字段；边界层已归一化并区分 malformed/timeout/provider 日志。真实复测“你好”“你是什么模型”“你能做什么”和 NDVI 请求成功；已有 NDWI 成功 Run 的真实解释也通过。
+
+验证：focused conversation/runtime-cap tests 通过；Ruff、Pyrefly、git diff check、前端 build/typecheck 通过；Docker compose rebuild/force-recreate 后四服务健康，artifact 持久化前后验证完成。浏览器自动化工具不可用，登录后的视觉与点击流程仍需人工确认。

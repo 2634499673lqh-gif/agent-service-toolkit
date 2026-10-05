@@ -10,12 +10,10 @@ import numpy as np
 
 from .aoi import resolve_aoi
 from .models import GeoChangeTask
+from .paths import fixture_root
 from .raster import VegetationChange, compute_vegetation_change
 
-_MODULE_ROOT = Path(__file__).resolve().parent.parent
-FIXTURE_ROOT = (
-    _MODULE_ROOT.parent if _MODULE_ROOT.name == "src" else _MODULE_ROOT
-) / "data/geochange-fixtures/real-sentinel2-v1"
+FIXTURE_ROOT = fixture_root("real-sentinel2-v1")
 MANIFEST_SHA256 = "875e22bd8c188e0c0eaf1a1f7c28eef8687454ff62dd4442ce29d4adf0b36b12"
 FIXTURE_VERSION = "geochange.real-sentinel2.v1"
 EXECUTION_MODE = "CACHED_REAL_SENTINEL2_RASTER"

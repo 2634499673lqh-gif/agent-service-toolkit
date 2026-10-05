@@ -110,6 +110,70 @@ class TaskRepository:
         result = await self.session.scalars(statement)
         return list(result)
 
+    async def find_for_user_with_intent(
+        self,
+        user_id: UUID,
+        organization_id: UUID,
+        confirmed_intent: dict[str, object],
+    ) -> Task | None:
+        """Return an existing task for the same server-validated proposal."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.created_by_user_id == user_id,
+                Task.organization_id == organization_id,
+                Task.confirmed_intent == confirmed_intent,
+            )
+            .order_by(Task.created_at, Task.id)
+            .limit(1)
+        )
+        return await self.session.scalar(statement)
+
+    async def find_for_user_with_proposal_id(
+        self, user_id: UUID, organization_id: UUID, proposal_id: UUID
+    ) -> Task | None:
+        """Return the task created from this exact proposal instance."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.created_by_user_id == user_id,
+                Task.organization_id == organization_id,
+                Task.proposal_id == proposal_id,
+            )
+            .order_by(Task.created_at, Task.id)
+            .limit(1)
+        )
+        return await self.session.scalar(statement)
+
+    async def lock_confirmation_scope(
+        self,
+        membership_id: UUID,
+        user_id: UUID,
+        organization_id: UUID,
+    ) -> Membership:
+        """Lock the authenticated tenant membership for proposal confirmation.
+
+        Membership is a stable, unique row for one user/tenant pair. Locking it
+        serializes confirmation lookup and insert across independent sessions
+        without introducing a process-local lock or a global queue.
+        """
+
+        statement = (
+            select(Membership)
+            .where(
+                Membership.id == membership_id,
+                Membership.user_id == user_id,
+                Membership.organization_id == organization_id,
+            )
+            .with_for_update()
+        )
+        membership = await self.session.scalar(statement)
+        if membership is None:
+            raise ValueError("confirmation scope is no longer authorized")
+        return membership
+
 
 class TaskRunRepository:
     """Tenant-scoped persistence operations for TaskRun history."""

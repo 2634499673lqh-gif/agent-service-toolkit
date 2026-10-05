@@ -1,20 +1,27 @@
 """Protected `/api/v1/tasks` routes for T036–T038."""
 
 from collections.abc import AsyncIterator
+from io import BytesIO
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from geochange.artifacts import artifact_path
+from geochange.provenance import trusted_map_metadata
+from persistence.repositories import TaskRepository
+from schema.conversation_api import InterpretationRequest, ResultInterpretation
+from schema.geochange_api import GeoChangeMapResponse
 from schema.task_api import TaskCreateRequest, TaskResponse, TaskUpdateRequest
 from schema.task_run_api import TaskRunResponse
 from schema.trace_api import TraceEventResponse
 from service.auth_dependency import PrincipalDependency, get_session_factory
 from service.authorization import RESOURCE_NOT_FOUND_DETAIL, AuthorizationError
+from service.conversation_service import LLMConversationError, explain_result
 from service.task_lifecycle import (
     TaskLifecycleConflictError,
     TaskLifecycleInconsistentStateError,
@@ -39,6 +46,55 @@ async def get_task_session(
 TaskSessionDependency = Annotated[AsyncSession, Depends(get_task_session)]
 
 task_router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
+
+_SCIENTIFIC_LIMITS = {
+    "NDVI": "NDVI 是植被指数变化，不等同于植被面积变化。",
+    "NDWI": "NDWI 是连续水体相关指数，不足以确认水域面积或扩张。",
+    "NDBI": "NDBI 是连续建成区相关指数，不足以确认建设用地或城市扩张面积。",
+}
+
+
+def _colorized_index_response(path: Path, artifact_name: str) -> Response:
+    """Render the trusted [-1, 1] encoded index PNG with a transparent NoData mask."""
+
+    with Image.open(path) as source:
+        if source.mode != "L":
+            output = BytesIO()
+            source.save(output, format="PNG", optimize=True)
+            return Response(
+                output.getvalue(),
+                media_type="image/png",
+                headers={"X-Artifact-Role": artifact_name},
+            )
+        pixels = [int(value) for value in source.getdata()]  # type: ignore[bad-argument-type]
+        rgba: list[tuple[int, int, int, int]] = []
+        stops = (
+            (0, (215, 48, 39)),
+            (96, (254, 224, 139)),
+            (160, (166, 217, 106)),
+            (255, (26, 152, 80)),
+        )
+        for value in pixels:
+            if value == 0:
+                rgba.append((0, 0, 0, 0))
+                continue
+            left, right = stops[0], stops[-1]
+            for candidate in stops[1:]:
+                if value <= candidate[0]:
+                    right = candidate
+                    break
+                left = candidate
+            span = max(1, right[0] - left[0])
+            ratio = (value - left[0]) / span
+            rgb = tuple(round(left[1][i] + (right[1][i] - left[1][i]) * ratio) for i in range(3))
+            rgba.append((*rgb, 255))  # type: ignore[bad-argument-type]
+        colored = Image.new("RGBA", source.size)
+        colored.putdata(rgba)
+        output = BytesIO()
+        colored.save(output, format="PNG", optimize=True)
+    return Response(
+        output.getvalue(), media_type="image/png", headers={"X-Artifact-Role": artifact_name}
+    )
 
 
 @task_router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
@@ -192,6 +248,129 @@ async def get_task_run(
     return TaskRunResponse.model_validate(task_run)
 
 
+@task_router.get("/{task_id}/runs/{run_id}/map", response_model=GeoChangeMapResponse)
+async def get_task_run_map(
+    task_id: UUID,
+    run_id: UUID,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> GeoChangeMapResponse:
+    run_service = TaskRunService(session)
+    run = await run_service.get_run(principal, task_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=RESOURCE_NOT_FOUND_DETAIL)
+    if run.status.value != "succeeded":
+        raise HTTPException(status_code=409, detail="分析尚未完成")
+    metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
+    if metadata.get("verifier_status") != "passed":
+        raise HTTPException(status_code=409, detail="分析结果尚未验证")
+    task = await TaskRepository(session).get_in_principal_tenant(task_id, principal.organization_id)
+    intent = task.confirmed_intent if task is not None else None
+    indicator = intent.get("indicator") if isinstance(intent, dict) else metadata.get("indicator")
+    periods = metadata.get("analysis_periods")
+    if not isinstance(indicator, str) or indicator not in _SCIENTIFIC_LIMITS:
+        raise HTTPException(status_code=422, detail="分析结果缺少可信指标")
+    if (
+        not isinstance(periods, dict)
+        or set(periods) != {"period_a", "period_b"}
+        or not all(isinstance(v, str) and v.strip() for v in periods.values())
+    ):
+        raise HTTPException(status_code=422, detail="分析结果缺少可信时段")
+    trusted = trusted_map_metadata(indicator)
+    artifacts = metadata.get("artifact_references")
+    safe_artifacts = artifacts if isinstance(artifacts, dict) else {}
+    allowed_artifacts = {
+        "ndvi_before",
+        "ndvi_after",
+        "ndvi_change",
+        "ndwi_before",
+        "ndwi_after",
+        "ndwi_change",
+        "ndbi_before",
+        "ndbi_after",
+        "ndbi_change",
+    }
+    if any(
+        not isinstance(key, str) or key not in allowed_artifacts or value != key
+        for key, value in safe_artifacts.items()
+    ):
+        raise HTTPException(status_code=422, detail="分析结果包含未验证的图层引用")
+    for artifact_name in safe_artifacts:
+        try:
+            artifact = artifact_path(str(task_id), str(run_id), artifact_name)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="分析结果包含未验证的图层引用") from None
+        if not artifact.is_file() or not 0 < artifact.stat().st_size <= 2_000_000:
+            raise HTTPException(status_code=409, detail="分析图层尚未准备好")
+    return GeoChangeMapResponse(
+        indicator=indicator,
+        period={str(k): str(v) for k, v in periods.items()},
+        aoi_label="武汉东湖研究区内的受限缓存窗口",
+        data_source=str(metadata.get("data_source", "已验证的 Sentinel-2 缓存样例")),
+        bounds=trusted["aoi_bounds_wgs84"],
+        crs=trusted["crs"],
+        native_bounds={key: value["native_bounds"] for key, value in trusted["periods"].items()},
+        raster_dimensions={
+            key: value["raster_dimensions"] for key, value in trusted["periods"].items()
+        },
+        scene_identity={
+            key: str(value["scene_identity"]) for key, value in trusted["periods"].items()
+        },
+        target_transform=trusted["transform"],
+        fixture_version=trusted["fixture_version"],
+        valid_value_summary=metadata.get("metrics")
+        if isinstance(metadata.get("metrics"), dict)
+        else None,
+        artifacts={str(k): str(v) for k, v in safe_artifacts.items() if isinstance(v, str)},
+        artifact_urls={
+            str(key): f"/api/v1/tasks/{task_id}/runs/{run_id}/artifacts/{key}"
+            for key in safe_artifacts
+        },
+        scientific_limit=(
+            _SCIENTIFIC_LIMITS[indicator]
+            + "；统计仅针对缓存窗口中的有效像元，不代表整个东湖研究区。"
+        ),
+    )
+
+
+@task_router.post(
+    "/{task_id}/runs/{run_id}/interpretation",
+    response_model=ResultInterpretation,
+)
+async def interpret_task_run(
+    task_id: UUID,
+    run_id: UUID,
+    payload: InterpretationRequest,
+    principal: PrincipalDependency,
+    session: TaskSessionDependency,
+) -> ResultInterpretation:
+    run = await TaskRunService(session).get_run(principal, task_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=RESOURCE_NOT_FOUND_DETAIL)
+    metadata = run.result_metadata if isinstance(run.result_metadata, dict) else {}
+    if run.status.value != "succeeded" or metadata.get("verifier_status") != "passed":
+        raise HTTPException(status_code=409, detail="分析结果尚未验证，暂时不能生成解读")
+    # Fill only missing evidence fields from the tenant-scoped confirmed
+    # intent.  The model never receives caller-supplied coordinates or an
+    # untrusted result override.
+    task = await TaskRepository(session).get_in_principal_tenant(
+        task_id, principal.organization_id
+    )
+    evidence = dict(metadata)
+    intent = getattr(task, "confirmed_intent", None)
+    if isinstance(intent, dict):
+        evidence.setdefault("indicator", intent.get("indicator"))
+        evidence.setdefault("analysis_periods", {
+            "period_a": intent.get("period_a"),
+            "period_b": intent.get("period_b"),
+        })
+        evidence.setdefault("analysis_area", intent.get("analysis_area"))
+    try:
+        return await explain_result(evidence, payload.question)
+    except LLMConversationError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from None
+
+
 @task_router.get(
     "/{task_id}/runs/{run_id}/trace",
     response_model=list[TraceEventResponse],
@@ -224,7 +403,7 @@ async def get_task_artifact(
     artifact_name: str,
     principal: PrincipalDependency,
     session: TaskSessionDependency,
-) -> FileResponse:
+) -> Response:
     run = await TaskRunService(session).get_run(principal, task_id, run_id)
     if run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
@@ -249,7 +428,7 @@ async def get_task_artifact(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
         ) from None
-    return FileResponse(path, media_type="image/png", filename=path.name)
+    return _colorized_index_response(path, artifact_name)
 
 
 __all__ = ["TASK_LIFECYCLE_CONFLICT_DETAIL", "get_task_session", "task_router"]

@@ -7,9 +7,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import Task
 from persistence.repositories import TaskRepository
+from schema.confirmed_intent import ConfirmedIntent
 from service.authorization import require_task_management
 from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService, TaskNotFoundError
+
+
+class ExistingAnalysisError(ValueError):
+    """The proposal instance already produced a non-draft task."""
+
+    def __init__(self, task: Task) -> None:
+        super().__init__("proposal has already been confirmed")
+        # Snapshot the values needed by the API before the caller's rollback.
+        # SQLAlchemy expires ORM attributes during rollback, and reading the
+        # original Task afterwards from async code can trigger MissingGreenlet.
+        self.task_id = task.id
+        self.task_status = getattr(task.status, "value", task.status)
+
+
+class ProposalIdentityMismatchError(ValueError):
+    """The proposal id was reused with a different canonical intent."""
+
+    def __init__(self) -> None:
+        super().__init__("proposal id does not match the confirmed intent")
 
 
 class TaskService:
@@ -26,16 +46,47 @@ class TaskService:
         title: str,
         description: str | None = None,
         confirmed_intent: dict[str, Any] | None = None,
+        proposal_id: UUID | None = None,
     ) -> Task:
         """Create a draft Task with ownership derived from the principal."""
 
         try:
+            canonical_intent: dict[str, Any] | None = None
+            if confirmed_intent is not None:
+                canonical_intent = ConfirmedIntent.model_validate(confirmed_intent).model_dump(
+                    mode="json"
+                )
+                await self.tasks.lock_confirmation_scope(
+                    principal.membership_id,
+                    principal.user_id,
+                    principal.organization_id,
+                )
+                existing = (
+                    await self.tasks.find_for_user_with_proposal_id(
+                        principal.user_id, principal.organization_id, proposal_id
+                    )
+                    if proposal_id is not None
+                    else await self.tasks.find_for_user_with_intent(
+                        principal.user_id, principal.organization_id, canonical_intent
+                    )
+                )
+                if existing is not None:
+                    if (
+                        proposal_id is not None
+                        and getattr(existing, "confirmed_intent", None) != canonical_intent
+                    ):
+                        raise ProposalIdentityMismatchError()
+                    if getattr(existing.status, "value", existing.status) == "draft":
+                        await self.session.commit()
+                        return existing
+                    raise ExistingAnalysisError(existing)
             task = Task(
                 organization_id=principal.organization_id,
                 created_by_user_id=principal.user_id,
                 title=title,
                 description=description,
-                confirmed_intent=confirmed_intent,
+                confirmed_intent=canonical_intent,
+                proposal_id=proposal_id,
             )
             await self.tasks.add(task)
             await self.session.commit()
@@ -98,4 +149,4 @@ class TaskService:
         )
 
 
-__all__ = ["TaskService"]
+__all__ = ["ExistingAnalysisError", "ProposalIdentityMismatchError", "TaskService"]

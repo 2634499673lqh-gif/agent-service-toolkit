@@ -53,10 +53,14 @@ class RuntimeDispatchService:
                     pair = await TaskRunRepository(
                         recovery_session
                     ).get_task_and_run_in_principal_tenant(task_id, task_run_id, organization_id)
-                    if pair is not None and pair[1].status is TaskRunStatus.RUNNING:
-                        await TaskLifecycleService(recovery_session).fail_run(
-                            task_id, organization_id, task_run_id
-                        )
+                    if pair is not None:
+                        lifecycle = TaskLifecycleService(recovery_session)
+                        if pair[1].status is TaskRunStatus.RUNNING:
+                            await lifecycle.fail_run(task_id, organization_id, task_run_id)
+                        else:
+                            await lifecycle.fail_unstarted_run(
+                                task_id, organization_id, task_run_id
+                            )
             except Exception:
                 logger.exception(
                     "runtime.dispatch.recovery_failed",

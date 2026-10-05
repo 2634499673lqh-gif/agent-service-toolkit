@@ -49,8 +49,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agent_service}
       TASKPILOT_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-agent_service}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      USE_FAKE_MODEL: ${USE_FAKE_MODEL:-true}
-      GEOCHANGE_LIVE_LLM: ${GEOCHANGE_LIVE_LLM:-false}
+      USE_FAKE_MODEL: "false"
+      ALLOW_NO_LLM: "true"
+      GEOCHANGE_LIVE_LLM: "true"
       GEOCHANGE_LIVE_STAC: ${GEOCHANGE_LIVE_STAC:-false}
     depends_on:
       postgres:
@@ -65,6 +66,7 @@ services:
       start_period: 10s
     volumes:
       - ./privatecredentials:/privatecredentials
+      - ./data/geochange-artifacts:/app/data/geochange-artifacts
     restart: unless-stopped
     stop_grace_period: 30s
     develop:
@@ -115,6 +117,24 @@ services:
         - path: src/streamlit_app.py
           action: sync+restart
           target: /app/streamlit_app.py
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_BACKEND: http://agent_service:8080
+    depends_on:
+      agent_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   postgres_data:

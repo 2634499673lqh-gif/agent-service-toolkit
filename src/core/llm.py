@@ -50,6 +50,19 @@ class FakeToolModel(FakeListChatModel):
         return self
 
 
+def configured_model_identity() -> tuple[str, str]:
+    """Return non-secret provider metadata for trusted user-facing replies."""
+
+    model = settings.DEFAULT_MODEL
+    if isinstance(model, DeepseekModelName):
+        return "DeepSeek", str(getattr(model, "value", model))
+    if isinstance(model, (OpenAIModelName, OpenAICompatibleName, AzureOpenAIModelName)):
+        return "OpenAI", str(getattr(model, "value", model))
+    if isinstance(model, FakeModelName):
+        return "测试模型", str(getattr(model, "value", model))
+    return "平台配置模型", str(getattr(model, "value", model or "未配置"))
+
+
 type ModelT = (
     AzureChatOpenAI
     | ChatOpenAI
@@ -98,12 +111,16 @@ def get_model(model_name: AllModelEnum, /) -> ModelT:
             max_retries=3,
         )
     if model_name in DeepseekModelName:
+        if not settings.DEEPSEEK_API_KEY:
+            raise ValueError("DeepSeek API key is not configured")
         return ChatOpenAI(
             model=api_model_name,
             temperature=0.5,
             streaming=True,
             openai_api_base="https://api.deepseek.com",
             openai_api_key=settings.DEEPSEEK_API_KEY,
+            timeout=settings.LLM_REQUEST_TIMEOUT,
+            max_retries=1,
         )
     if model_name in AnthropicModelName:
         if model_name == AnthropicModelName.SONNET_5:
