@@ -51,3 +51,4 @@ Live DeepSeek diagnostics found alternate provider intents (`capability_query`) 
 - Replayed identical, server-validated proposals now reuse the caller's existing draft within the same tenant; a started or terminal task is not silently replaced.
 - The Sentinel-2 fixture remains EPSG:32650 with a trusted native 640 m × 640 m footprint. Its transformed WGS84 footprint is approximately 114.3007–114.3075 E, 30.5910–30.5969 N, a verified sub-window inside the broader Wuhan East Lake study AOI; it must not be described as full-AOI coverage.
 - The web status indicator now starts as “AI 状态待检测” and changes only after an actual conversation succeeds or fails, so provider outages are not presented as online.
+- Confirmation lookup and insertion now run after a PostgreSQL row lock on the authenticated user/tenant membership, with canonical `ConfirmedIntent` JSON; concurrent retries therefore share one draft Task ID.

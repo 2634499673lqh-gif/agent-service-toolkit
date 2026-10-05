@@ -30,3 +30,5 @@ Implementation B 的正式路径使用平台后端配置的 DeepSeek key，用�
 ### Proposal and coverage notes
 
 重复提交同一已验证方案时，服务端会复用当前账号租户内已有草稿，避免重复创建任务；已启动或终态任务不会被静默替换。武汉东湖 Sentinel-2 fixture 的真实栅格只覆盖受信的约 640 m × 640 m 子窗口（EPSG:32650 转换后的 WGS84 范围约 114.3007–114.3075 E、30.5910–30.5969 N），地图会按该范围定位，不代表整个研究区均有像元覆盖。AI 状态在首次调用前显示“待检测”，调用失败显示“暂不可用”。
+
+并发重复确认由同一 PostgreSQL 事务中的 membership 行级锁和 canonical intent 查询控制；同一用户/租户/提案只保留一个草稿 Task。
