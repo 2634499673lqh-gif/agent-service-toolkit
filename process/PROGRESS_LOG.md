@@ -6202,6 +6202,20 @@ Learner notes: 重点是把外部 STAC metadata、短期签名 URL、COG window 
 
 Suggested next task: independent Strong Review of Implementation A, followed by the separately scoped Implementation B only after review approval.
 
+# 2026-10-05 — V0.3 Implementation A Docker probe completion
+
+在 `codex/taskpilot-v03-a` / `ac9c670` 上完成生产容器证据补齐。Docker Desktop server `29.8.1` 正常；重建 `agent_service`、启动 PostgreSQL 与 migrate 后，`agent_service`、PostgreSQL、web、Streamlit 均 healthy，migration 正常退出。容器运行时报告 Rasterio `1.5.1`、GDAL `3.12.4`、PROJ `9.8.1`；`CRS.from_epsg(32649)` 和 `CRS.from_epsg(4326)` 均成功解析。
+
+使用仓库现有 `scripts/probe_landsat_pair.py` 在容器内走同一 discovery/selection/preparation 路径，结果独立确认：trusted AOI `jianghan_district_420103`、admin code `420103`、OSM relation version `21`、EPSG:4326、面积 `28521331.34 m²`，source hash `11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25`。实际准备场景为 `LC08_L2SP_123039_20230727_02_T1`（2023-07-27）和 `LC09_L2SP_123039_20240721_02_T1`（2024-07-21）；每期 scene count 为 1，因第一景达到 provisional preparation gate，未继续读取后备景。
+
+容器实际验证 physical band → Planetary Computer asset key：`SR_B4→red`、`SR_B5→nir08`、`QA_PIXEL→qa_pixel`、`QA_RADSAT→qa_radsat`、`SR_QA_AEROSOL→qa_aerosol`。真实资产 metadata 为 SR `uint16`、nodata `0`、scale `2.75e-05`、offset `-0.2`；QA_PIXEL/QA_RADSAT 和 aerosol 均成功读取，源 CRS 为 EPSG:32649、30 m。MTL validation 两期均为 true，MTL band 4/5 scale 与 offset 均与 STAC 一致。SR_QA_AEROSOL diagnostic 也在容器中实际执行：2023 pixels `78144`、fill `0`、valid retrieval `7419`、interpolated `69520`；2024 pixels `78144`、fill `0`、valid retrieval `7861`、interpolated `69432`。QA policy 继续只用 QA_PIXEL/QA_RADSAT 控制 preparation validity，aerosol 保持 diagnostic-only。
+
+Pair-wide grid 为 EPSG:32649、30 m、`296×264`；AOI rasterized pixels `31857`；2023 preparation `26108/31857 = 81.9537307%`，2024 preparation `31856/31857 = 99.9968610%`，common preparation pixels `26107`。两期与宿主 real-provider probe 的 grid、scene、coverage 和 common-valid 结果一致。容器 hard limits 记录为 max target pixels `500000`、max window pixels `262144`、array cache `100663296` bytes、GDAL cache `33554432` bytes、最大并发远程 asset operations `2`、retry limit `3`、request deadline `180 s`；本次 elapsed `83455.22 ms`。`bytes_observed=655360` 明确标注为每个资产 64 KiB Range probe 的 lower bound，不是完整网络流量统计。
+
+Probe 输出仅包含稳定 scene identity、asset identity hash、CRS、校准值、计数和 sanitized provenance；未输出或持久化 SAS URL、signed query string、credential 或 secret。与之前宿主 probe 的唯一运行指标差异是 lower-bound `bytes_observed`（容器 `655360`，宿主此前 `524288`），由当前包含 SR_QA_AEROSOL 的五资产读取路径造成；科学结果和资源边界没有差异。
+
+两期 default preparation coverage 均超过 70%，因此建议正式冻结 `preparation-valid coverage >= 70%`。不冻结 `final NDVI-valid coverage >= 60%` 或 `final common-comparison coverage >= 50%`，这些仍属于 Implementation B 的 provisional contract。此轮只补充 Docker evidence；未开始 Implementation B。
+
 # 2026-10-05 — V0.3 Implementation A focused Strong Review blocker correction
 
 修复了本轮 Strong Review 指出的 A blockers：Trusted Jianghan AOI 现在使用代码外部固定 SHA-256 与 relation/version/source/license 元数据绑定，完整校验 Polygon/MultiPolygon 所有 part、holes、闭环、有限坐标、拓扑和 pilot location，并独立计算投影/有界地理面积；每次加载返回 canonical geometry 的深拷贝。Landsat scene selection 不再以 footprint-complete 直接选单景，而是按确定性候选顺序读取真实 AOI QA 质量，必要时 bounded priority-fill 同月候选，最多三景并在 70% provisional gate 达成后停止；Red/NIR 同源填充。Provider 边界固定至真实 `landsateuwest.blob.core.windows.net` 账户，HTTP 禁止 redirects，签名后再次校验 host。
