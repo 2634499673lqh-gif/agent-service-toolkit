@@ -27,3 +27,6 @@ Implementation B 的正式路径使用平台后端配置的 DeepSeek key，用�
 本轮 Docker 真实模型证据已完成：容器使用平台配置的 `deepseek-v4-flash`，FakeModel 关闭；真实 DeepSeek 可回答模型身份、解析武汉东湖 NDVI 双时段请求并基于 verifier 证据生成解释。当前环境没有浏览器自动化工具，真实账号登录、历史结果打开及三图层视觉切换仍需人工浏览器验收，不能以 HTTP 200 代替。
 
 运行时修复后，artifact 目录已由 Compose 持久化挂载。已验证一条真实 NDVI Run 在 `succeeded/passed` 后生成 before/after/change 三个 PNG，强制重建 agent/web 容器（不删除数据库卷）后同一 Run 的文件仍存在。历史中若 PNG 在挂载前已丢失，页面会明确提示不可恢复，不会伪造结果。真实 DeepSeek 的“你好”“你是什么模型”“你能做什么”和 NDVI 请求均已复测成功。
+### Proposal and coverage notes
+
+重复提交同一已验证方案时，服务端会复用当前账号租户内已有草稿，避免重复创建任务；已启动或终态任务不会被静默替换。武汉东湖 Sentinel-2 fixture 的真实栅格只覆盖受信的约 640 m × 640 m 子窗口（EPSG:32650 转换后的 WGS84 范围约 114.3007–114.3075 E、30.5910–30.5969 N），地图会按该范围定位，不代表整个研究区均有像元覆盖。AI 状态在首次调用前显示“待检测”，调用失败显示“暂不可用”。

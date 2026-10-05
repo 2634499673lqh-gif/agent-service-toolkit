@@ -23,6 +23,7 @@ from service.conversation_service import (
     proposal_from_message,
     validate_proposal,
 )
+from service.task_service import TaskService
 
 
 def test_proposal_from_chinese_request_extracts_area_and_years() -> None:
@@ -320,3 +321,26 @@ async def test_confirmation_persists_structured_proposal_without_starting_a_run(
     result = await create_confirmed_task(object(), object(), proposal)
 
     assert result is created
+
+
+@pytest.mark.asyncio
+async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> None:
+    existing = object()
+
+    class DraftRepository:
+        async def find_draft_for_user_with_intent(self, user_id, organization_id, intent):
+            assert intent["indicator"] == "NDVI"
+            return existing
+
+    service = TaskService.__new__(TaskService)
+    service.tasks = DraftRepository()
+    service.session = object()
+    principal = SimpleNamespace(user_id=uuid4(), organization_id=uuid4())
+
+    result = await service.create_task(
+        principal,
+        title="武汉东湖 NDVI",
+        confirmed_intent={"indicator": "NDVI"},
+    )
+
+    assert result is existing

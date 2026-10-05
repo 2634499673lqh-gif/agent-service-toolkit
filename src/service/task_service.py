@@ -30,6 +30,14 @@ class TaskService:
         """Create a draft Task with ownership derived from the principal."""
 
         try:
+            if confirmed_intent is not None:
+                existing = await self.tasks.find_draft_for_user_with_intent(
+                    principal.user_id,
+                    principal.organization_id,
+                    confirmed_intent,
+                )
+                if existing is not None:
+                    return existing
             task = Task(
                 organization_id=principal.organization_id,
                 created_by_user_id=principal.user_id,
