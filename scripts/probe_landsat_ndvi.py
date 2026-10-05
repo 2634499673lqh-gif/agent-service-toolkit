@@ -28,7 +28,7 @@ def main() -> int:
         prefix="taskpilot-ndvi-"
     )
     product = compute_landsat_ndvi_product(prepared, artifact_dir=artifact_dir)
-    verification = verify_landsat_ndvi_product(product, prepared)
+    verification = verify_landsat_ndvi_product(product, prepared, artifact_root=artifact_dir)
     print(
         json.dumps(
             {
