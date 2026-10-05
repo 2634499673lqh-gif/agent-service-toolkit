@@ -131,6 +131,13 @@ class AssetIdentity(BaseModel):
     scale: float | None = None
     offset: float | None = None
     nodata: int | float | None = None
+    # STAC projection evidence is retained separately from the metadata
+    # reported by the opened COG.  The latter is checked against these values
+    # before any pixels are accepted.
+    expected_crs: str | None = Field(default=None, max_length=80)
+    expected_transform: tuple[float, float, float, float, float, float] | None = None
+    expected_width: int | None = Field(default=None, gt=0)
+    expected_height: int | None = Field(default=None, gt=0)
 
 
 class LandsatScene(BaseModel):
@@ -335,6 +342,17 @@ def _remaining_seconds(deadline_monotonic: float | None, default: float = 30.0) 
     return max(0.001, min(default, remaining))
 
 
+def _operation_deadline(limits: DiscoveryLimits, deadline_monotonic: float | None) -> float:
+    deadline = (
+        time.monotonic() + limits.request_deadline_seconds
+        if deadline_monotonic is None
+        else deadline_monotonic
+    )
+    if deadline <= time.monotonic():
+        raise PreparationFailure("timeout", stage="deadline", retryable=True)
+    return deadline
+
+
 def _http_get(
     client: httpx.Client,
     url: str,
@@ -364,10 +382,86 @@ def _asset_basename(href: str) -> str:
     return Path(urlparse(href).path).name.upper()
 
 
-def _asset_mapping(feature: Mapping[str, Any]) -> tuple[dict[str, AssetIdentity], dict[str, str]]:
+def _projection_crs(value: Any) -> str | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return f"EPSG:{value}"
+    if isinstance(value, str) and value.strip():
+        candidate = value.strip()
+        if candidate.upper().startswith("EPSG:"):
+            return candidate.upper()
+    return None
+
+
+def _projection_evidence(
+    raw_asset: Mapping[str, Any], properties: Mapping[str, Any]
+) -> tuple[
+    str | None, tuple[float, float, float, float, float, float] | None, int | None, int | None
+]:
+    """Read asset-level STAC projection fields, falling back to item fields.
+
+    STAC's projection extension permits item-level values when every asset in
+    the item shares the same grid.  We preserve missing optional values as
+    ``None``; no geometry, dimensions, or transform is fabricated here.
+    """
+
+    def value(key: str) -> Any:
+        return raw_asset[key] if key in raw_asset else properties.get(key)
+
+    crs = _projection_crs(value("proj:epsg")) or _projection_crs(value("proj:code"))
+    raw_transform = value("proj:transform")
+    transform: tuple[float, float, float, float, float, float] | None = None
+    if raw_transform is not None:
+        if (
+            not isinstance(raw_transform, (list, tuple))
+            or len(raw_transform) != 6
+            or not all(
+                isinstance(item, (int, float)) and math.isfinite(float(item))
+                for item in raw_transform
+            )
+        ):
+            raise PreparationFailure("invalid_raster_metadata", stage="asset_mapping")
+        transform = tuple(float(item) for item in raw_transform)  # type: ignore[assignment]
+    raw_shape = value("proj:shape")
+    width: int | None = None
+    height: int | None = None
+    if raw_shape is not None:
+        if (
+            not isinstance(raw_shape, (list, tuple))
+            or len(raw_shape) != 2
+            or any(
+                isinstance(item, bool) or not isinstance(item, int) or item <= 0
+                for item in raw_shape
+            )
+        ):
+            raise PreparationFailure("invalid_raster_metadata", stage="asset_mapping")
+        height, width = int(raw_shape[0]), int(raw_shape[1])
+    raw_width = value("proj:width")
+    raw_height = value("proj:height")
+    if raw_width is not None or raw_height is not None:
+        if (
+            isinstance(raw_width, bool)
+            or isinstance(raw_height, bool)
+            or not isinstance(raw_width, int)
+            or not isinstance(raw_height, int)
+            or raw_width <= 0
+            or raw_height <= 0
+        ):
+            raise PreparationFailure("invalid_raster_metadata", stage="asset_mapping")
+        if width is not None and (width != raw_width or height != raw_height):
+            raise PreparationFailure("invalid_raster_metadata", stage="asset_mapping")
+        width, height = int(raw_width), int(raw_height)
+    return crs, transform, width, height
+
+
+def _asset_mapping(
+    feature: Mapping[str, Any],
+) -> tuple[dict[str, AssetIdentity], dict[str, str]]:
     assets = feature.get("assets")
     if not isinstance(assets, Mapping):
         raise PreparationFailure("missing_asset", stage="asset_mapping")
+    properties = feature.get("properties")
+    if not isinstance(properties, Mapping):
+        properties = {}
     result: dict[str, AssetIdentity] = {}
     key_map: dict[str, str] = {}
     for role, pattern in _ASSET_BASENAMES.items():
@@ -398,6 +492,9 @@ def _asset_mapping(feature: Mapping[str, Any]) -> tuple[dict[str, AssetIdentity]
         band_metadata = raster_bands[0] if isinstance(raster_bands, list) and raster_bands else {}
         if not isinstance(band_metadata, Mapping):
             band_metadata = {}
+        expected_crs, expected_transform, expected_width, expected_height = _projection_evidence(
+            raw, properties
+        )
         result[role] = AssetIdentity(
             key=key,
             physical_band=_PHYSICAL_BANDS[role],
@@ -409,6 +506,10 @@ def _asset_mapping(feature: Mapping[str, Any]) -> tuple[dict[str, AssetIdentity]
             if band_metadata.get("offset") is not None
             else None,
             nodata=band_metadata.get("nodata"),
+            expected_crs=expected_crs,
+            expected_transform=expected_transform,
+            expected_width=expected_width,
+            expected_height=expected_height,
         )
         key_map[_PHYSICAL_BANDS[role]] = key
     for required in ("red", "nir08", "qa_pixel", "qa_radsat"):
@@ -465,12 +566,10 @@ def _scene_from_feature(feature: Mapping[str, Any], aoi: TrustedAOI) -> LandsatS
                 _reject_query_credentials(candidate)
                 mtl_href = candidate
                 break
-    source_crs = str(
-        properties.get("proj:epsg")
-        and f"EPSG:{properties['proj:epsg']}"
-        or properties.get("proj:code")
-        or ""
+    item_crs = _projection_crs(properties.get("proj:epsg")) or _projection_crs(
+        properties.get("proj:code")
     )
+    source_crs = item_crs or assets["red"].expected_crs or ""
     if not source_crs:
         raise PreparationFailure("invalid_raster_metadata", stage="scene_validation")
     ratio = _geometry_intersection_ratio(geometry, aoi.geometry)
@@ -563,11 +662,12 @@ def discover_landsat(
     limits: DiscoveryLimits | None = None,
     *,
     client: httpx.Client | None = None,
+    deadline_monotonic: float | None = None,
 ) -> DiscoveryReport:
     limits = limits or DiscoveryLimits()
+    deadline_monotonic = _operation_deadline(limits, deadline_monotonic)
     own_client = client is None
     http = client or httpx.Client(timeout=30.0, follow_redirects=False)
-    deadline_monotonic = time.monotonic() + limits.request_deadline_seconds
     candidates: dict[str, list[LandsatScene]] = {}
     try:
         for period in (periods.period_a, periods.period_b):
@@ -1069,6 +1169,11 @@ def _fetch_mtl_values(
         return None
     if not _provider_host_allowed(href):
         raise PreparationFailure("security_rejected", stage="mtl_validation")
+    # MTL hrefs arrive from STAC and are treated as unsigned provider input.
+    # A caller-supplied SAS/token query is rejected before it reaches the
+    # signing endpoint.  The signed result is allowed to contain its short
+    # lived SAS query, but its host is checked again before reading.
+    _reject_query_credentials(href)
     response: httpx.Response | None = None
     for attempt in range(3):
         try:
@@ -1119,6 +1224,41 @@ def _fetch_mtl_values(
         except ValueError as exc:
             raise PreparationFailure("invalid_radiometry", stage="mtl_validation") from exc
     return validate_mtl_text(response.content.decode("utf-8-sig", errors="strict"))
+
+
+def _validate_expected_asset_metadata(asset: AssetIdentity, metadata: Mapping[str, Any]) -> None:
+    """Bind trusted STAC projection evidence to the opened COG metadata."""
+
+    expected_crs = asset.expected_crs
+    actual_crs = metadata.get("crs")
+    if expected_crs is not None and (actual_crs is None or str(actual_crs) != expected_crs):
+        raise PreparationFailure(
+            "grid_alignment_failed", stage="expected_crs", sanitized_diagnostics={"role": asset.key}
+        )
+    expected_transform = asset.expected_transform
+    actual_transform = metadata.get("transform")
+    if expected_transform is not None:
+        if not isinstance(actual_transform, (tuple, list)) or len(actual_transform) != 6:
+            raise PreparationFailure("grid_alignment_failed", stage="expected_transform")
+        if any(
+            not math.isclose(float(expected), float(actual), rel_tol=0, abs_tol=1e-6)
+            for expected, actual in zip(expected_transform, actual_transform)
+        ):
+            raise PreparationFailure("grid_alignment_failed", stage="expected_transform")
+    expected_width, expected_height = asset.expected_width, asset.expected_height
+    actual_width, actual_height = metadata.get("width"), metadata.get("height")
+    if expected_width is not None and expected_width != actual_width:
+        raise PreparationFailure("grid_alignment_failed", stage="expected_shape")
+    if expected_height is not None and expected_height != actual_height:
+        raise PreparationFailure("grid_alignment_failed", stage="expected_shape")
+    if asset.dtype is not None and str(metadata.get("dtype")) != asset.dtype:
+        raise PreparationFailure("invalid_raster_metadata", stage="expected_dtype")
+    if asset.nodata is not None:
+        actual_nodata = metadata.get("nodata")
+        if actual_nodata is not None and not math.isclose(
+            float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
+        ):
+            raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
 
 
 def _prepare_period(
@@ -1198,9 +1338,10 @@ def _prepare_period(
                 deadline_monotonic=deadline_monotonic,
             )
             aerosol = None
+            aerosol_meta: dict[str, Any] | None = None
             aerosol_bytes = 0
             if "qa_aerosol" in scene.assets:
-                aerosol, _aerosol_meta, aerosol_bytes = _read_asset(
+                aerosol, aerosol_meta, aerosol_bytes = _read_asset(
                     scene.assets["qa_aerosol"].href,
                     target_grid,
                     resampling="nearest",
@@ -1259,13 +1400,21 @@ def _prepare_period(
                 or not all(math.isfinite(float(value)) for value in transform)
             ):
                 raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
+            _validate_expected_asset_metadata(scene.assets[role], metadata)
             if metadata.get("crs") is None or str(metadata["crs"]) != str(scene.source_crs):
                 raise PreparationFailure("grid_alignment_failed", stage="alignment")
             if not np.issubdtype(array.dtype, np.integer):
                 raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
         if aerosol is not None:
-            if aerosol.shape != shape or not np.issubdtype(aerosol.dtype, np.integer):
+            if (
+                aerosol_meta is None
+                or aerosol.shape != shape
+                or not np.issubdtype(aerosol.dtype, np.integer)
+            ):
                 raise PreparationFailure("invalid_raster_metadata", stage="aerosol_metadata")
+            if aerosol_meta.get("crs") is None or str(aerosol_meta["crs"]) != str(scene.source_crs):
+                raise PreparationFailure("grid_alignment_failed", stage="aerosol_crs")
+            _validate_expected_asset_metadata(scene.assets["qa_aerosol"], aerosol_meta)
         if red_meta.get("transform") != nir_meta.get("transform"):
             raise PreparationFailure("grid_alignment_failed", stage="alignment")
         if (red_meta.get("width"), red_meta.get("height")) != (
@@ -1280,6 +1429,12 @@ def _prepare_period(
                     raise PreparationFailure("grid_alignment_failed", stage="alignment")
             if metadata.get("transform") != red_meta.get("transform"):
                 raise PreparationFailure("grid_alignment_failed", stage="alignment")
+        if aerosol_meta is not None:
+            if aerosol_meta.get("transform") != red_meta.get("transform"):
+                raise PreparationFailure("grid_alignment_failed", stage="aerosol_alignment")
+            if aerosol_meta.get("width") is not None and aerosol_meta.get("height") is not None:
+                if (aerosol_meta["width"], aerosol_meta["height"]) != source_dims:
+                    raise PreparationFailure("grid_alignment_failed", stage="aerosol_alignment")
         if red_meta.get("width") is not None and red_meta.get("height") is not None:
             if red_meta["width"] <= 0 or red_meta["height"] <= 0:
                 raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
@@ -1300,6 +1455,14 @@ def _prepare_period(
                 ):
                     raise PreparationFailure("invalid_radiometry", stage="scale")
             if (
+                asset.scale is not None
+                and metadata.get("scale") is not None
+                and math.isclose(float(metadata["scale"]), 1.0, rel_tol=0, abs_tol=1e-12)
+                and not math.isclose(float(asset.scale), 1.0, rel_tol=0, abs_tol=1e-12)
+                and mtl_values is None
+            ):
+                raise PreparationFailure("invalid_radiometry", stage="mtl_required")
+            if (
                 asset.offset is not None
                 and metadata.get("offset") is not None
                 and not math.isclose(float(metadata["offset"]), 0.0, rel_tol=0, abs_tol=1e-12)
@@ -1308,6 +1471,14 @@ def _prepare_period(
                     float(asset.offset), float(metadata["offset"]), rel_tol=0, abs_tol=1e-9
                 ):
                     raise PreparationFailure("invalid_radiometry", stage="offset")
+            if (
+                asset.offset is not None
+                and metadata.get("offset") is not None
+                and math.isclose(float(metadata["offset"]), 0.0, rel_tol=0, abs_tol=1e-12)
+                and not math.isclose(float(asset.offset), 0.0, rel_tol=0, abs_tol=1e-12)
+                and mtl_values is None
+            ):
+                raise PreparationFailure("invalid_radiometry", stage="mtl_required")
         if (
             red_meta.get("dtype") != "uint16"
             or nir_meta.get("dtype") != "uint16"
@@ -1412,6 +1583,28 @@ def _prepare_period(
     return dataset, bytes_observed, warnings
 
 
+def _hard_limits_evidence(limits: DiscoveryLimits) -> dict[str, int | float | bool]:
+    """Return the frozen per-run resource contract without a global claim."""
+
+    array_bytes = min(limits.array_cache_bytes, _TOTAL_ARRAY_GDAL_BUDGET - _GDAL_CACHE_BYTES)
+    return {
+        "max_target_pixels": limits.max_target_pixels,
+        "max_window_pixels": limits.max_window_pixels,
+        "max_concurrent_remote_asset_operations": limits.max_concurrent_remote_asset_operations,
+        "request_deadline_seconds": limits.request_deadline_seconds,
+        "temporary_disk_bytes": 0,
+        "array_cache_bytes": array_bytes,
+        "gdal_cache_bytes": _GDAL_CACHE_BYTES,
+        "array_plus_gdal_cache_bytes": array_bytes + _GDAL_CACHE_BYTES,
+        "array_gdal_budget_bytes": _TOTAL_ARRAY_GDAL_BUDGET,
+        "array_gdal_budget_scope_per_run": True,
+        "process_global_array_gdal_cap": False,
+        "artifact_bytes": 0,
+        "retry_limit": 3,
+        "staged_temporary_writes": False,
+    }
+
+
 def prepare_landsat_pair(
     aoi: TrustedAOI,
     periods: PeriodPair,
@@ -1419,12 +1612,13 @@ def prepare_landsat_pair(
     limits: DiscoveryLimits | None = None,
     *,
     client: httpx.Client | None = None,
+    deadline_monotonic: float | None = None,
 ) -> PreparedPeriodPair:
     limits = limits or DiscoveryLimits()
+    started = time.monotonic()
+    deadline_monotonic = _operation_deadline(limits, deadline_monotonic)
     own_client = client is None
     http = client or httpx.Client(timeout=30.0, follow_redirects=False)
-    started = time.monotonic()
-    deadline_monotonic = started + limits.request_deadline_seconds
     try:
         if (
             not selected.period_a
@@ -1470,22 +1664,7 @@ def prepare_landsat_pair(
         period_b=period_b,
         common_preparation_valid_mask=common.astype(bool),
         pair_grid=grid,
-        hard_limits_applied={
-            "max_target_pixels": limits.max_target_pixels,
-            "max_window_pixels": limits.max_window_pixels,
-            "max_concurrent_remote_asset_operations": limits.max_concurrent_remote_asset_operations,
-            "request_deadline_seconds": limits.request_deadline_seconds,
-            # A does not write staged artifacts; the zero values are truthful
-            # and prevent unused budgets from being mistaken for enforcement.
-            "temporary_disk_bytes": 0,
-            "array_cache_bytes": min(
-                limits.array_cache_bytes, _TOTAL_ARRAY_GDAL_BUDGET - _GDAL_CACHE_BYTES
-            ),
-            "gdal_cache_bytes": _GDAL_CACHE_BYTES,
-            "artifact_bytes": 0,
-            "retry_limit": 3,
-            "staged_temporary_writes": False,
-        },
+        hard_limits_applied=_hard_limits_evidence(limits),
         operational_metrics={
             "bytes_observed": bytes_a + bytes_b,
             "elapsed_ms": round(elapsed_ms, 2),

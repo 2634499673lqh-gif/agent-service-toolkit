@@ -37,6 +37,8 @@ def _asset_features() -> dict:
             "platform": "landsat-8",
             "landsat:processing_level": "L2SP",
             "proj:epsg": 32649,
+            "proj:transform": [30, 0, 0, 0, -30, 30],
+            "proj:shape": [1, 1],
         },
         "assets": {
             "red": {"href": "https://landsateuwest.blob.core.windows.net/a_SR_B4.TIF"},

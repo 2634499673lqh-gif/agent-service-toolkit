@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,11 +82,23 @@ def run_probe() -> dict[str, Any]:
     # Keep the probe bounded even if the host or provider is degraded.  The
     # production default remains the source of the configured hard limits.
     limits = DiscoveryLimits(request_deadline_seconds=180.0)
+    # One logical probe owns one deadline.  Discovery, signing, metadata
+    # reads, and supervised COG children all consume this same budget.
+    deadline_monotonic = time.monotonic() + limits.request_deadline_seconds
     timeout = httpx.Timeout(connect=15.0, read=45.0, write=15.0, pool=15.0)
     with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-        report = discover_landsat(aoi, periods, limits, client=client)
+        report = discover_landsat(
+            aoi, periods, limits, client=client, deadline_monotonic=deadline_monotonic
+        )
         selected = select_landsat_scenes(report)
-        prepared = prepare_landsat_pair(aoi, periods, selected, limits, client=client)
+        prepared = prepare_landsat_pair(
+            aoi,
+            periods,
+            selected,
+            limits,
+            client=client,
+            deadline_monotonic=deadline_monotonic,
+        )
 
     provenance = {
         period_id: dataset.provenance

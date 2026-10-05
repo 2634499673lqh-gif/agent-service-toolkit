@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+import numpy as np
 import pytest
 
 import geochange.landsat as landsat
@@ -34,6 +35,8 @@ def _feature(item_id: str, timestamp: str) -> dict[str, Any]:
             "platform": "landsat-8",
             "landsat:processing_level": "L2SP",
             "proj:epsg": 32649,
+            "proj:transform": [30, 0, 0, 0, -30, 30],
+            "proj:shape": [1, 1],
         },
         "assets": {
             "red": {
@@ -83,6 +86,27 @@ class _RetrySearchClient:
 
     def close(self) -> None:
         return None
+
+
+def _scene_for_grid(item_id: str, *, width: int = 1, height: int = 1):
+    feature = _feature(item_id, "2023-07-27T03:12:00Z")
+    feature["properties"]["proj:shape"] = [height, width]
+    feature["properties"]["proj:transform"] = [30, 0, 0, 0, -30, 30]
+    return landsat._scene_from_feature(feature, load_trusted_aoi())
+
+
+def _fake_metadata(*, width: int, height: int, transform=(30, 0, 0, 0, -30, 30)):
+    return {
+        "dtype": "uint16",
+        "crs": "EPSG:32649",
+        "transform": transform,
+        "nodata": 0,
+        "scale": 2.75e-5,
+        "offset": -0.2,
+        "width": width,
+        "height": height,
+        "count": 1,
+    }
 
 
 def test_storage_boundary_rejects_arbitrary_blob_accounts() -> None:
@@ -147,6 +171,296 @@ def test_stac_provider_retry_exhaustion_is_bounded_and_sanitized() -> None:
     assert error.value.code == "provider_unavailable"
     assert error.value.retryable
     assert client.calls <= 3
+
+
+def test_shared_deadline_is_consumed_by_discovery_then_preparation(monkeypatch) -> None:
+    clock = [100.0]
+
+    monkeypatch.setattr(landsat.time, "monotonic", lambda: clock[0])
+
+    class SlowSearchClient(_RetrySearchClient):
+        def post(self, url: str, **kwargs: Any) -> httpx.Response:
+            clock[0] += 0.4
+            return super().post(url, **kwargs)
+
+    deadline = clock[0] + 1.0
+    report = discover_landsat(
+        load_trusted_aoi(),
+        default_period_pair(),
+        limits=DiscoveryLimits(request_deadline_seconds=1.0),
+        client=SlowSearchClient([]),
+        deadline_monotonic=deadline,
+    )
+    assert report.candidates["a"]
+    clock[0] = deadline + 0.01
+    with pytest.raises(PreparationFailure, match="timeout"):
+        landsat.prepare_landsat_pair(
+            load_trusted_aoi(),
+            default_period_pair(),
+            select_landsat_scenes(report),
+            limits=DiscoveryLimits(request_deadline_seconds=1.0),
+            client=object(),
+            deadline_monotonic=deadline,
+        )
+
+
+def test_array_gdal_budget_is_explicitly_per_run_not_process_global() -> None:
+    evidence = landsat._hard_limits_evidence(DiscoveryLimits())
+    assert evidence["array_cache_bytes"] == 96 * 1024 * 1024
+    assert evidence["gdal_cache_bytes"] == 32 * 1024 * 1024
+    assert evidence["array_plus_gdal_cache_bytes"] == 128 * 1024 * 1024
+    assert evidence["array_gdal_budget_scope_per_run"] is True
+    assert evidence["process_global_array_gdal_cap"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "stage"),
+    [
+        ("transform", (31, 0, 0, 0, -30, 30), "expected_transform"),
+        ("width", 2, "expected_shape"),
+        ("crs", "EPSG:32650", "expected_crs"),
+    ],
+)
+def test_expected_stac_metadata_mismatch_fails_closed(monkeypatch, field, value, stage) -> None:
+    aoi = load_trusted_aoi()
+    scene = _scene_for_grid("LC08_EXPECTED", width=1, height=1)
+    grid = TargetGrid(
+        crs="EPSG:32649",
+        transform=(30, 0, 0, 0, -30, 30),
+        width=1,
+        height=1,
+        resolution_m=30,
+    )
+    monkeypatch.setattr(landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, 1), bool))
+
+    def fake_read(href, *_args, **_kwargs):
+        metadata = _fake_metadata(width=1, height=1)
+        role = "red" if "SR_B4" in href else "nir08" if "SR_B5" in href else "qa_aerosol"
+        if field == "transform" and role == "red":
+            metadata["transform"] = value
+        elif field == "width" and role == "red":
+            metadata["width"] = value
+        elif field == "crs" and role == "red":
+            metadata["crs"] = value
+        return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
+
+    monkeypatch.setattr(landsat, "_read_asset", fake_read)
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    with pytest.raises(PreparationFailure) as error:
+        landsat._prepare_period(
+            default_period_pair().period_a,
+            [scene],
+            aoi,
+            grid,
+            DiscoveryLimits(),
+            client=object(),
+            deadline_monotonic=landsat.time.monotonic() + 30,
+        )
+    assert error.value.stage == stage
+
+
+def test_aerosol_expected_projection_mismatch_fails_closed(monkeypatch) -> None:
+    aoi = load_trusted_aoi()
+    scene = _scene_for_grid("LC08_AEROSOL_EXPECTED")
+    grid = TargetGrid(
+        crs="EPSG:32649",
+        transform=(30, 0, 0, 0, -30, 30),
+        width=1,
+        height=1,
+        resolution_m=30,
+    )
+    monkeypatch.setattr(landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, 1), bool))
+
+    def fake_read(href, *_args, **_kwargs):
+        metadata = _fake_metadata(width=1, height=1)
+        if "SR_QA_AEROSOL" in href:
+            metadata["transform"] = (30, 0, 5, 0, -30, 30)
+        return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
+
+    monkeypatch.setattr(landsat, "_read_asset", fake_read)
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    with pytest.raises(PreparationFailure, match="grid_alignment_failed") as error:
+        landsat._prepare_period(
+            default_period_pair().period_a,
+            [scene],
+            aoi,
+            grid,
+            DiscoveryLimits(),
+            client=object(),
+            deadline_monotonic=landsat.time.monotonic() + 30,
+        )
+    assert error.value.stage == "expected_transform"
+
+
+def test_raw_cog_unit_scale_requires_independent_mtl_evidence(monkeypatch) -> None:
+    aoi = load_trusted_aoi()
+    scene = _scene_for_grid("LC08_RAW_SCALE")
+    grid = TargetGrid(
+        crs="EPSG:32649",
+        transform=(30, 0, 0, 0, -30, 30),
+        width=1,
+        height=1,
+        resolution_m=30,
+    )
+    monkeypatch.setattr(landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, 1), bool))
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+
+    def fake_read(_href, *_args, **_kwargs):
+        metadata = _fake_metadata(width=1, height=1)
+        metadata["scale"] = 1.0
+        metadata["offset"] = 0.0
+        return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
+
+    monkeypatch.setattr(landsat, "_read_asset", fake_read)
+    with pytest.raises(PreparationFailure) as error:
+        landsat._prepare_period(
+            default_period_pair().period_a,
+            [scene],
+            aoi,
+            grid,
+            DiscoveryLimits(),
+            client=object(),
+            deadline_monotonic=landsat.time.monotonic() + 30,
+        )
+    assert error.value.stage == "mtl_required"
+
+
+def _prepare_with_scene_masks(monkeypatch, masks: list[list[bool]]):
+    width = len(masks[0])
+    aoi = load_trusted_aoi()
+    scenes = [
+        _scene_for_grid(f"LC08_MASK_{index}", width=width, height=1) for index in range(len(masks))
+    ]
+    grid = TargetGrid(
+        crs="EPSG:32649",
+        transform=(30, 0, 0, 0, -30, 30),
+        width=width,
+        height=1,
+        resolution_m=30,
+    )
+    monkeypatch.setattr(
+        landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, width), dtype=bool)
+    )
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+
+    def fake_read(href, *_args, **_kwargs):
+        scene_index = next(index for index in range(len(masks)) if f"MASK_{index}" in href)
+        role = "qa_pixel" if "QA_PIXEL" in href else "qa_radsat" if "QA_RADSAT" in href else "other"
+        values = landsat.np.full((1, width), 100, dtype=landsat.np.uint16)
+        if role == "qa_pixel":
+            values = landsat.np.where(
+                landsat.np.asarray(masks[scene_index])[None, :], 0, 1 << 3
+            ).astype(landsat.np.uint16)
+        metadata = _fake_metadata(width=width, height=1)
+        return values, metadata, 1
+
+    monkeypatch.setattr(landsat, "_read_asset", fake_read)
+    return landsat._prepare_period(
+        default_period_pair().period_a,
+        scenes,
+        aoi,
+        grid,
+        DiscoveryLimits(),
+        client=object(),
+        deadline_monotonic=landsat.time.monotonic() + 30,
+    )[0]
+
+
+def test_priority_fill_uses_complementary_second_scene_and_same_source_pairs(monkeypatch) -> None:
+    dataset = _prepare_with_scene_masks(
+        monkeypatch,
+        [
+            [True, True, True, True, True, False, False, False, False, False],
+            [False, False, False, False, False, True, True, True, True, True],
+        ],
+    )
+    assert dataset.coverage.scene_count == 2
+    assert dataset.coverage.preparation_valid_pixels == 10
+    assert dataset.source_scene_index.tolist() == [[0, 0, 0, 0, 0, 1, 1, 1, 1, 1]]
+    assert np.all(np.isfinite(dataset.red_reflectance) == dataset.preparation_valid_mask)
+    assert np.all(np.isfinite(dataset.nir_reflectance) == dataset.preparation_valid_mask)
+
+
+def test_high_quality_first_scene_stops_after_one(monkeypatch) -> None:
+    dataset = _prepare_with_scene_masks(monkeypatch, [[True] * 10, [True] * 10])
+    assert dataset.coverage.scene_count == 1
+    assert dataset.source_scene_index.tolist() == [[0] * 10]
+
+
+def test_insufficient_preparation_coverage_fails_closed(monkeypatch) -> None:
+    with pytest.raises(PreparationFailure) as error:
+        _prepare_with_scene_masks(monkeypatch, [[False] * 10])
+    assert error.value.code == "insufficient_preparation_coverage"
+
+
+def test_mtl_sas_query_is_rejected_before_signing() -> None:
+    class Client:
+        calls = 0
+
+        def get(self, *_args, **_kwargs):
+            self.calls += 1
+            raise AssertionError("signing must not be attempted")
+
+    client = Client()
+    with pytest.raises(PreparationFailure) as error:
+        landsat._fetch_mtl_values(
+            "https://landsateuwest.blob.core.windows.net/scene_MTL.txt?sig=secret",
+            client=client,
+        )
+    assert error.value.code == "security_rejected"
+    assert client.calls == 0
+    assert "secret" not in str(error.value.as_dict())
+
+
+def test_mtl_untrusted_signed_host_is_rejected_without_leakage() -> None:
+    class Client:
+        def get(self, url: str, **_kwargs):
+            request = httpx.Request("GET", url)
+            if url == landsat.SAS_SIGN_ENDPOINT:
+                return httpx.Response(
+                    200,
+                    json={"href": "https://evil.example/scene_MTL.txt?sig=secret"},
+                    request=request,
+                )
+            raise AssertionError("untrusted signed host must not be read")
+
+    with pytest.raises(PreparationFailure) as error:
+        landsat._fetch_mtl_values(
+            "https://landsateuwest.blob.core.windows.net/scene_MTL.txt",
+            client=Client(),
+        )
+    assert error.value.code == "security_rejected"
+    diagnostics = str(error.value.as_dict())
+    assert "secret" not in diagnostics
+    assert "evil.example" not in diagnostics
+
+
+def test_mtl_redirect_is_rejected_before_content_read() -> None:
+    class Client:
+        def get(self, url: str, **_kwargs):
+            request = httpx.Request("GET", url)
+            if url == landsat.SAS_SIGN_ENDPOINT:
+                return httpx.Response(
+                    200,
+                    json={
+                        "href": "https://landsateuwest.blob.core.windows.net/scene_MTL.txt?sig=secret"
+                    },
+                    request=request,
+                )
+            response = httpx.Response(
+                302,
+                headers={"location": "https://evil.example/redirect"},
+                request=request,
+            )
+            response.history = [httpx.Response(301, request=request)]
+            return response
+
+    with pytest.raises(PreparationFailure) as error:
+        landsat._fetch_mtl_values(
+            "https://landsateuwest.blob.core.windows.net/scene_MTL.txt",
+            client=Client(),
+        )
+    assert error.value.code == "security_rejected"
 
 
 def test_deadline_helper_fails_closed_after_shared_deadline() -> None:
@@ -433,9 +747,7 @@ def test_asset_timeout_runs_supervised_child_cleanup(monkeypatch) -> None:
             if url == landsat.SAS_SIGN_ENDPOINT:
                 return httpx.Response(
                     200,
-                    json={
-                        "href": "https://landsateuwest.blob.core.windows.net/asset.tif?sig=t"
-                    },
+                    json={"href": "https://landsateuwest.blob.core.windows.net/asset.tif?sig=t"},
                     request=request,
                 )
             return httpx.Response(206, content=b"range", request=request)
