@@ -131,11 +131,10 @@ async def confirm_conversation_task(
         task = await create_confirmed_task(session, principal, payload.proposal)
         response.status_code = status.HTTP_201_CREATED
     except ExistingAnalysisError as error:
-        task = error.task
         logger.info(
             "conversation_confirmation_existing task_id=%s status=%s",
-            task.id,
-            getattr(task.status, "value", task.status),
+            error.task_id,
+            error.task_status,
         )
         response.status_code = status.HTTP_200_OK
         return ConversationResponse(
@@ -145,7 +144,7 @@ async def confirm_conversation_task(
                 "如需重新运行，请重新发送分析请求。"
             ),
             proposal=TaskProposal.model_validate(payload.proposal),
-            result={"task_id": task.id, "status": task.status.value},
+            result={"task_id": error.task_id, "status": error.task_status},
         )
     except (ValueError, ValidationError) as error:
         logger.info("conversation_confirmation_invalid error_type=%s", type(error).__name__)

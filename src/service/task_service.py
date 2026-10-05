@@ -18,7 +18,18 @@ class ExistingAnalysisError(ValueError):
 
     def __init__(self, task: Task) -> None:
         super().__init__("proposal has already been confirmed")
-        self.task = task
+        # Snapshot the values needed by the API before the caller's rollback.
+        # SQLAlchemy expires ORM attributes during rollback, and reading the
+        # original Task afterwards from async code can trigger MissingGreenlet.
+        self.task_id = task.id
+        self.task_status = getattr(task.status, "value", task.status)
+
+
+class ProposalIdentityMismatchError(ValueError):
+    """The proposal id was reused with a different canonical intent."""
+
+    def __init__(self) -> None:
+        super().__init__("proposal id does not match the confirmed intent")
 
 
 class TaskService:
@@ -60,6 +71,11 @@ class TaskService:
                     )
                 )
                 if existing is not None:
+                    if (
+                        proposal_id is not None
+                        and getattr(existing, "confirmed_intent", None) != canonical_intent
+                    ):
+                        raise ProposalIdentityMismatchError()
                     if getattr(existing.status, "value", existing.status) == "draft":
                         await self.session.commit()
                         return existing
@@ -133,4 +149,4 @@ class TaskService:
         )
 
 
-__all__ = ["ExistingAnalysisError", "TaskService"]
+__all__ = ["ExistingAnalysisError", "ProposalIdentityMismatchError", "TaskService"]

@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from starlette.responses import Response
 
+from schema.confirmed_intent import ConfirmedIntent
 from schema.conversation_api import (
     ConfirmTaskRequest,
     ConversationRequest,
@@ -23,7 +24,11 @@ from service.conversation_service import (
     proposal_from_message,
     validate_proposal,
 )
-from service.task_service import ExistingAnalysisError, TaskService
+from service.task_service import (
+    ExistingAnalysisError,
+    ProposalIdentityMismatchError,
+    TaskService,
+)
 
 
 def test_proposal_from_chinese_request_extracts_area_and_years() -> None:
@@ -91,7 +96,11 @@ def test_llm_intent_normalizes_provider_slot_aliases() -> None:
 
 def test_result_interpretation_normalizes_provider_aliases_without_fabricating_evidence() -> None:
     result = ResultInterpretation.model_validate(
-        {"summary": "依据已验证指标生成解读。", "status": "passed", "constraints": "仅展示连续指数变化"}
+        {
+            "summary": "依据已验证指标生成解读。",
+            "status": "passed",
+            "constraints": "仅展示连续指数变化",
+        }
     )
     assert result.text.startswith("依据")
     assert result.evidence_status == "verified"
@@ -365,9 +374,7 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
     service = TaskService.__new__(TaskService)
     service.tasks = DraftRepository()
     service.session = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
-    principal = SimpleNamespace(
-        user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4()
-    )
+    principal = SimpleNamespace(user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4())
 
     result = await service.create_task(
         principal,
@@ -381,7 +388,7 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
 
 @pytest.mark.asyncio
 async def test_task_creation_rejects_replayed_started_proposal() -> None:
-    existing = SimpleNamespace(status=SimpleNamespace(value="running"))
+    existing = SimpleNamespace(id=uuid4(), status=SimpleNamespace(value="running"))
     intent = {
         "analysis_type": "vegetation_change",
         "indicator": "NDVI",
@@ -400,9 +407,7 @@ async def test_task_creation_rejects_replayed_started_proposal() -> None:
     service = TaskService.__new__(TaskService)
     service.tasks = ExistingRepository()
     service.session = SimpleNamespace(rollback=AsyncMock())
-    principal = SimpleNamespace(
-        user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4()
-    )
+    principal = SimpleNamespace(user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4())
 
     with pytest.raises(ValueError, match="already been confirmed"):
         await service.create_task(
@@ -410,3 +415,41 @@ async def test_task_creation_rejects_replayed_started_proposal() -> None:
             title="武汉东湖 NDVI",
             confirmed_intent=intent,
         )
+
+
+@pytest.mark.asyncio
+async def test_task_creation_rejects_proposal_id_reused_with_different_intent() -> None:
+    intent = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "武汉东湖",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+    }
+    changed_intent = {**intent, "period_b": {"start": "2025-07-01", "end": "2025-07-31"}}
+    existing = SimpleNamespace(
+        status=SimpleNamespace(value="draft"),
+        confirmed_intent=ConfirmedIntent.model_validate(intent).model_dump(mode="json"),
+    )
+
+    class ExistingRepository:
+        async def lock_confirmation_scope(self, membership_id, user_id, organization_id):
+            return object()
+
+        async def find_for_user_with_proposal_id(self, user_id, organization_id, proposal_id):
+            return existing
+
+    service = TaskService.__new__(TaskService)
+    service.tasks = ExistingRepository()
+    service.session = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    principal = SimpleNamespace(user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4())
+
+    with pytest.raises(ProposalIdentityMismatchError):
+        await service.create_task(
+            principal,
+            title="武汉东湖 NDVI",
+            confirmed_intent=changed_intent,
+            proposal_id=uuid4(),
+        )
+    service.session.commit.assert_not_awaited()
+    service.session.rollback.assert_awaited_once()

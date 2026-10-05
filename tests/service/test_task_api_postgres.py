@@ -35,7 +35,7 @@ from schema.confirmed_intent import ConfirmedIntent
 from service.auth_dependency import get_session_factory
 from service.service import app
 from service.session import AuthService, CurrentPrincipal
-from service.task_service import TaskService
+from service.task_service import ExistingAnalysisError, ProposalIdentityMismatchError, TaskService
 
 pytestmark = pytest.mark.postgres
 PASSWORD = "T036-test-password"
@@ -219,9 +219,7 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
 
     async with factory() as session:
         owner = await session.scalar(select(User).where(User.email == "t036-owner@example.com"))
-        foreign = await session.scalar(
-            select(User).where(User.email == "t036-foreign@example.com")
-        )
+        foreign = await session.scalar(select(User).where(User.email == "t036-foreign@example.com"))
         assert owner is not None and foreign is not None
         owner_membership = await session.scalar(
             select(Membership).where(Membership.user_id == owner.id)
@@ -292,6 +290,19 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
     assert len(request_sessions) == 2 and request_sessions[0] is not request_sessions[1]
     assert first.id == second.id
 
+    changed_intent = ConfirmedIntent.model_validate(
+        {**intent, "period_b": {"start": "2025-07-01", "end": "2025-07-31"}}
+    ).model_dump(mode="json")
+    async with factory() as session:
+        with pytest.raises(ProposalIdentityMismatchError):
+            await TaskService(session).create_task(
+                owner_principal,
+                title="wrong proposal intent",
+                confirmed_intent=changed_intent,
+                proposal_id=proposal_instance,
+            )
+        assert not session.in_transaction()
+
     async with factory() as session:
         count = await session.scalar(
             select(func.count(Task.id)).where(
@@ -337,7 +348,7 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
             task.status = status
             await session.commit()
         async with factory() as session:
-            with pytest.raises(ValueError, match="already been confirmed"):
+            with pytest.raises(ExistingAnalysisError) as error:
                 await TaskService(session).create_task(
                     owner_principal,
                     title="replay",
@@ -345,12 +356,11 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
                     proposal_id=proposal_instance,
                 )
             assert not session.in_transaction()
+            assert error.value.task_id == first.id
+            assert error.value.task_status == status.value
 
     # Fail after a real INSERT/flush, keep that session open, and prove another
     # session can acquire the same membership lock and create the same intent.
-    changed_intent = ConfirmedIntent.model_validate(
-        {**intent, "period_b": {"start": "2025-07-01", "end": "2025-07-31"}}
-    ).model_dump(mode="json")
     async with factory() as failed_session:
         service = TaskService(failed_session)
         original_add = service.tasks.add
