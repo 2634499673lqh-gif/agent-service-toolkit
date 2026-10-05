@@ -6279,3 +6279,31 @@ No threshold was frozen. The prior clean reference remains approximately AOI 31,
 `_prepare_period()` now requires independently fetched and validated MTL calibration for every selected Red/NIR scene. Missing MTL fails with `invalid_radiometry / mtl_required`; malformed/incomplete MTL and STAC/MTL scale-offset mismatches fail closed; matching STAC + MTL continues, including the approved raw COG scale=1/offset=0 path. Added focused missing, malformed/incomplete, mismatch, and matching regressions without changing QA nodata or NDBI scope.
 
 Focused Landsat/provider tests: 55 passed. Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed. From clean committed code commit `ed9547c`, the rebuilt `agent_service` container ran `PYTHONPATH=/app python scripts/probe_landsat_pair.py` with exit code 0: AOI 31,857 pixels; 2023 preparation 26,108 (81.9537307%); 2024 preparation 31,856 (99.9968610%); common 26,107; grid EPSG:32649, 30 m, 296×264; `bytes_observed=655,360` lower-bound metric. No SAS, signed query, or credential leakage was emitted. Preparation-valid coverage remains reproducibly above 70%; Implementation B was not started.
+# V0.3 Implementation B — dynamic Landsat NDVI product (2026-10-05)
+
+Implemented on isolated `codex/taskpilot-v03-b` worktree from approved A HEAD
+`bdcde6681491c4978cc6f5e91c1880350e9d64b6`. Added the A handoff-only NDVI
+calculation boundary, final NDVI/common masks, provisional coverage gates,
+statistics, verifier, numeric GeoTIFF/mask and display PNG artifacts, Jianghan
+Landsat confirmed-intent fields, and artifact API allowlisting. Legacy
+Sentinel-2 fixture paths remain unchanged.
+
+Validation: `tests/geochange/test_landsat.py`, `test_trusted_aoi.py`,
+`test_skill.py`, and new `test_landsat_ndvi.py` pass. Real provider/Docker
+product smoke remains to be run. July threshold recommendation remains
+provisional until the real B execution records final mask-derived coverage.
+
+Learner note: B consumes aligned, calibrated Red/NIR arrays from A; it must not
+reopen STAC assets or redo QA/reprojection. The final common mask is the only
+mask used for paired means and delta statistics.
+
+The bounded real-provider B smoke then succeeded. Final NDVI-valid coverage was
+81.9537% (2023-07; 26,108/31,857) and 99.9969% (2024-07; 31,856/31,857).
+Final common comparison was 81.9506% (26,107/31,857). Verified common-pixel
+means were 0.332632 (2023), 0.338198 (2024), and mean delta +0.005566; the
+verifier passed. The 60% and 50% thresholds are supported by this pair but
+remain provisional until user/reviewer freeze. Host-side GeoTIFF writing needs
+the Docker GDAL/PROJ runtime (`proj.db` is not available in the host virtualenv).
+Docker images built successfully. Compose startup was blocked by the existing
+host PostgreSQL port allocation on `0.0.0.0:5432`; no existing container was
+stopped or altered.

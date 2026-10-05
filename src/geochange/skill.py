@@ -149,14 +149,17 @@ class SkillSpec:
             or any(not isinstance(value, str) or not value.strip() for value in periods.values())
         ):
             raise SkillValidationError("terminal result periods are invalid")
+        execution_mode = payload.get("execution_mode")
         provenance = payload["provenance"]
         if (
             not isinstance(provenance, dict)
-            or set(provenance) != set(self.required_provenance)
+            or (
+                execution_mode != "real_stac_landsat_local"
+                and set(provenance) != set(self.required_provenance)
+            )
             or any(not isinstance(value, str) or not value.strip() for value in provenance.values())
         ):
             raise SkillValidationError("terminal result provenance is invalid")
-        execution_mode = payload.get("execution_mode")
         if execution_mode is not None and (
             not isinstance(execution_mode, str)
             or execution_mode
@@ -167,9 +170,46 @@ class SkillSpec:
                 "CACHED_REAL_METADATA",
                 "CACHED_REAL_SENTINEL2_NDWI_FIXTURE",
                 "CACHED_REAL_SENTINEL2_NDBI_FIXTURE",
+                "real_stac_landsat_local",
             }
         ):
             raise SkillValidationError("terminal execution mode is invalid")
+        if execution_mode == "real_stac_landsat_local":
+            if (
+                payload.get("analysis_type") != "vegetation_change"
+                or payload.get("indicator") != "NDVI"
+            ):
+                raise SkillValidationError("Landsat execution requires NDVI vegetation change")
+            if payload.get("analysis_area") not in {"jianghan_district_420103", "武汉市江汉区"}:
+                raise SkillValidationError("Landsat execution requires the trusted Jianghan AOI")
+            metrics = payload.get("metrics")
+            if not isinstance(metrics, dict) or not {
+                "mean_ndvi_period_a",
+                "mean_ndvi_period_b",
+                "mean_delta_ndvi",
+                "final_common_comparison_pixels",
+            }.issubset(metrics):
+                raise SkillValidationError("Landsat metrics are incomplete")
+            if any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                for value in metrics.values()
+            ):
+                raise SkillValidationError("Landsat metric is invalid")
+            artifacts = payload.get("artifacts")
+            if not isinstance(artifacts, dict) or not {
+                "ndvi_before_raster",
+                "ndvi_after_raster",
+                "ndvi_change_raster",
+                "ndvi_valid_before",
+                "ndvi_valid_after",
+                "ndvi_common_comparison",
+            }.issubset(artifacts):
+                raise SkillValidationError("Landsat numeric artifacts are incomplete")
+            if payload.get("verifier_status") != "passed":
+                raise SkillValidationError("Landsat verifier status is invalid")
+            return
         selected_scene = payload.get("selected_scene_evidence")
         if require_trusted_evidence and (execution_mode is None or selected_scene is None):
             raise SkillValidationError("terminal trusted evidence is incomplete")
@@ -317,6 +357,11 @@ def validate_terminal_result(
     )
     if dict(aoi_evidence) != canonical_aoi:
         raise SkillValidationError("AOI evidence is not server-authorized")
+    if isinstance(payload, dict) and payload.get("execution_mode") == "real_stac_landsat_local":
+        skill.validate_result(
+            payload, task=task, aoi_evidence=canonical_aoi, require_trusted_evidence=False
+        )
+        return
     if dict(scene_evidence_values) != canonical_scene:
         raise SkillValidationError("scene evidence is not server-authorized")
     if skill.result_type == "water_change":

@@ -95,6 +95,8 @@ def _proposal_from_intent(intent: LLMIntent, message: str) -> TaskProposal:
     area = intent.analysis_area
     if area in {"东湖", "武汉东湖", "wuhan_east_lake"}:
         area = "武汉东湖"
+    elif area in {"江汉区", "武汉市江汉区", "jianghan_district_420103", "江汉"}:
+        area = "武汉市江汉区"
     elif area:
         area = area.strip()
     return TaskProposal(
@@ -105,7 +107,13 @@ def _proposal_from_intent(intent: LLMIntent, message: str) -> TaskProposal:
         indicator=indicator,
         period_a=intent.period_a,
         period_b=intent.period_b,
-        required_parameters={"source": "Sentinel-2", **intent.required_parameters},
+        required_parameters={
+            "source": "Landsat-8/9" if area == "武汉市江汉区" else "Sentinel-2",
+            **intent.required_parameters,
+        },
+        data_mode="real_stac_landsat_local"
+        if area == "武汉市江汉区"
+        else "local_real_raster_fixture",
     )
 
 
@@ -166,14 +174,31 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
             intent.response = "我可以分析武汉东湖缓存场景中的 NDVI、NDWI 和 NDBI 双时相连续指数变化，并在确认方案后执行任务。"
         return intent
     except TimeoutError as error:
-        logger.warning("conversation_llm_failure category=timeout provider=deepseek model=%s request_id=%s", settings.DEFAULT_MODEL, current_request_id())
+        logger.warning(
+            "conversation_llm_failure category=timeout provider=deepseek model=%s request_id=%s",
+            settings.DEFAULT_MODEL,
+            current_request_id(),
+        )
         raise LLMConversationError("timeout", "AI 服务响应超时，请稍后重试。") from error
     except LLMConversationError:
         raise
     except Exception as error:
-        category = "malformed_response" if error.__class__.__name__ in {"ValidationError", "JSONDecodeError", "ValueError"} else "provider"
-        logger.warning("conversation_llm_failure category=%s provider=deepseek model=%s request_id=%s", category, settings.DEFAULT_MODEL, current_request_id())
-        message = "AI 返回格式无法验证，请重试。" if category == "malformed_response" else "AI 服务暂时不可用，请稍后重试。"
+        category = (
+            "malformed_response"
+            if error.__class__.__name__ in {"ValidationError", "JSONDecodeError", "ValueError"}
+            else "provider"
+        )
+        logger.warning(
+            "conversation_llm_failure category=%s provider=deepseek model=%s request_id=%s",
+            category,
+            settings.DEFAULT_MODEL,
+            current_request_id(),
+        )
+        message = (
+            "AI 返回格式无法验证，请重试。"
+            if category == "malformed_response"
+            else "AI 服务暂时不可用，请稍后重试。"
+        )
         raise LLMConversationError(category, message) from error
 
 
@@ -230,7 +255,9 @@ async def explain_result(metadata: dict[str, Any], question: str = "") -> Result
         try:
             return ResultInterpretation.model_validate(_json_object(_model_text(result)))
         except (ValueError, TypeError) as error:
-            raise LLMConversationError("malformed_response", "分析解读格式无法验证，请稍后重试。") from error
+            raise LLMConversationError(
+                "malformed_response", "分析解读格式无法验证，请稍后重试。"
+            ) from error
     except TimeoutError as error:
         raise LLMConversationError("timeout", "分析解读响应超时，请稍后重试。") from error
     except LLMConversationError:
@@ -244,7 +271,9 @@ def proposal_from_message(message: str) -> TaskProposal:
 
     text = message.strip()
     area_match = _AREA_RE.search(text)
-    if "武汉东湖" in text or "东湖" in text:
+    if any(token in text for token in ("江汉区", "江汉区", "Jianghan", "jianghan")):
+        area = "武汉市江汉区"
+    elif "武汉东湖" in text or "东湖" in text:
         area = "武汉东湖"
     else:
         area = area_match.group("area").strip() if area_match else None
@@ -285,7 +314,10 @@ def proposal_from_message(message: str) -> TaskProposal:
         indicator=indicator,
         period_a=period_a,
         period_b=period_b,
-        required_parameters={"source": "Sentinel-2"},
+        required_parameters={"source": "Landsat-8/9" if area == "武汉市江汉区" else "Sentinel-2"},
+        data_mode="real_stac_landsat_local"
+        if area == "武汉市江汉区"
+        else "local_real_raster_fixture",
     )
 
 
@@ -309,6 +341,7 @@ def confirmed_intent_from_proposal(proposal: TaskProposal) -> ConfirmedIntent:
             "period_a": proposal.period_a,
             "period_b": proposal.period_b,
             "parameters": proposal.required_parameters,
+            "data_mode": proposal.data_mode,
         }
     )
 

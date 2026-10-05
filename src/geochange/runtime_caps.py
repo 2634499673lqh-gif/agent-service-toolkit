@@ -1,8 +1,10 @@
 """Capability adapters used by the existing runtime graph."""
 
+import asyncio
 import hashlib
 import json
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -12,9 +14,17 @@ from runtime.capability import CapabilityMetadata
 from runtime.executor import ExecutionResult
 from schema.planner import PlanStep
 
-from .aoi import resolve_aoi
+from .aoi import TrustedAOI, resolve_aoi
 from .artifacts import ARTIFACT_ROOT
 from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
+from .landsat import MonthlyPeriod, PeriodPair, prepare_landsat_periods
+from .landsat_ndvi import (
+    EXECUTION_MODE as LANDSAT_EXECUTION_MODE,
+)
+from .landsat_ndvi import (
+    compute_landsat_ndvi_product,
+    verify_landsat_ndvi_product,
+)
 from .llm import GeoChangeLLM
 from .models import GeoChangeResult, GeoChangeTask
 from .ndbi import (
@@ -281,6 +291,92 @@ class SummarizeChangeRuntimeCapability(_Base):
             / str(context.runtime_task_run_id or "current")
         )
         scene_evidence = dict(getattr(context, "geochange_evidence", {}) or {})
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            if task.aoi_key != "jianghan_district_420103" or task.indicator != "NDVI":
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="invalid_landsat_intent",
+                    error_message="Landsat mode requires the trusted Jianghan NDVI intent",
+                )
+            try:
+                from .aoi import resolve_aoi
+
+                aoi = resolve_aoi(task.aoi_key)
+                if not isinstance(aoi, TrustedAOI):
+                    raise ValueError("Landsat mode requires a trusted AOI")
+
+                def month(period: Any, period_id: str) -> MonthlyPeriod:
+                    start = datetime(period.start.year, period.start.month, 1, tzinfo=UTC)
+                    end = datetime(
+                        start.year + (start.month == 12),
+                        1 if start.month == 12 else start.month + 1,
+                        1,
+                        tzinfo=UTC,
+                    )
+                    if period.start != start.date() or period.end != (
+                        end.date() - timedelta(days=1)
+                    ):
+                        raise ValueError("Landsat periods must be complete UTC calendar months")
+                    return MonthlyPeriod(
+                        period_id=cast(Literal["a", "b"], period_id),
+                        start_utc=start,
+                        end_utc=end,
+                    )
+
+                pair = await asyncio.to_thread(
+                    prepare_landsat_periods,
+                    aoi,
+                    PeriodPair(
+                        period_a=month(task.period_a, "a"), period_b=month(task.period_b, "b")
+                    ),
+                )
+                product = compute_landsat_ndvi_product(pair, artifact_dir=artifact_root)
+                verification = verify_landsat_ndvi_product(product, pair)
+                if verification["status"] != "passed":
+                    raise ValueError("landsat verifier failed")
+            except Exception as error:
+                error_text = str(error)
+                error_code = (
+                    "insufficient_ndvi_coverage"
+                    if "insufficient_ndvi_coverage" in error_text
+                    else "insufficient_comparison_coverage"
+                    if "insufficient_comparison_coverage" in error_text
+                    else "landsat_preparation_failed"
+                )
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_text[:200],
+                )
+            metrics = product.metrics
+            payload = {
+                "schema_version": "geochange.v1",
+                "analysis_type": "vegetation_change",
+                "indicator": "NDVI",
+                "mode": LANDSAT_EXECUTION_MODE,
+                "summary": f"江汉区 NDVI 对比：共同有效像元平均值从 {metrics['mean_ndvi_period_a']:.3f} 变为 {metrics['mean_ndvi_period_b']:.3f}，平均变化 {metrics['mean_delta_ndvi']:.3f}。",
+                "metrics": metrics,
+                "analysis_area": task.aoi_key,
+                "analysis_periods": {
+                    "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
+                    "period_b": f"{task.period_b.start.isoformat()}/{task.period_b.end.isoformat()}",
+                },
+                "data_source": "landsat-c2-l2",
+                "provenance_summary": "Verified Jianghan AOI and A-owned Landsat preparation handoff.",
+                "provenance": {
+                    "aoi_key": task.aoi_key,
+                    "aoi_crs": "EPSG:4326",
+                    "aoi_source": "taskpilot.geochange.jianghan_osm_v1",
+                    "raster_source": LANDSAT_EXECUTION_MODE,
+                },
+                "artifacts": product.artifacts,
+                "verifier_status": "passed",
+                "execution_mode": LANDSAT_EXECUTION_MODE,
+                "selected_scene_evidence": {"preparation_contract_version": pair.contract_version},
+            }
+            return self._result(step, payload)
         if task.analysis_type == "water_change":
             try:
                 change = compute_cached_water_change(

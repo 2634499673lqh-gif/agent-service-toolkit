@@ -1724,6 +1724,16 @@ def prepare_landsat_operation(
     return report, selected, prepared
 
 
+def prepare_landsat_periods(
+    aoi: TrustedAOI,
+    periods: PeriodPair,
+    limits: DiscoveryLimits | None = None,
+) -> PreparedPeriodPair:
+    """Server-owned A→B handoff used by the NDVI product boundary."""
+    _report, _selected, prepared = prepare_landsat_operation(aoi, periods, limits)
+    return prepared
+
+
 __all__ = [
     "AssetIdentity",
     "CONTRACT_VERSION",
@@ -1746,6 +1756,7 @@ __all__ = [
     "discover_landsat",
     "prepare_landsat_pair",
     "prepare_landsat_operation",
+    "prepare_landsat_periods",
     "qa_pixel_valid_mask",
     "qa_aerosol_diagnostics",
     "qa_radsat_valid_mask",

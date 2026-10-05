@@ -289,6 +289,12 @@ async def get_task_run_map(
         "ndbi_before",
         "ndbi_after",
         "ndbi_change",
+        "ndvi_before_raster",
+        "ndvi_after_raster",
+        "ndvi_change_raster",
+        "ndvi_valid_before",
+        "ndvi_valid_after",
+        "ndvi_common_comparison",
     }
     if any(
         not isinstance(key, str) or key not in allowed_artifacts or value != key
@@ -300,7 +306,13 @@ async def get_task_run_map(
             artifact = artifact_path(str(task_id), str(run_id), artifact_name)
         except ValueError:
             raise HTTPException(status_code=422, detail="分析结果包含未验证的图层引用") from None
-        if not artifact.is_file() or not 0 < artifact.stat().st_size <= 2_000_000:
+        max_size = (
+            16_000_000
+            if artifact_name.endswith(("_raster", "_before", "_after", "_comparison"))
+            and artifact.suffix == ".tif"
+            else 2_000_000
+        )
+        if not artifact.is_file() or not 0 < artifact.stat().st_size <= max_size:
             raise HTTPException(status_code=409, detail="分析图层尚未准备好")
     return GeoChangeMapResponse(
         indicator=indicator,
@@ -353,17 +365,18 @@ async def interpret_task_run(
     # Fill only missing evidence fields from the tenant-scoped confirmed
     # intent.  The model never receives caller-supplied coordinates or an
     # untrusted result override.
-    task = await TaskRepository(session).get_in_principal_tenant(
-        task_id, principal.organization_id
-    )
+    task = await TaskRepository(session).get_in_principal_tenant(task_id, principal.organization_id)
     evidence = dict(metadata)
     intent = getattr(task, "confirmed_intent", None)
     if isinstance(intent, dict):
         evidence.setdefault("indicator", intent.get("indicator"))
-        evidence.setdefault("analysis_periods", {
-            "period_a": intent.get("period_a"),
-            "period_b": intent.get("period_b"),
-        })
+        evidence.setdefault(
+            "analysis_periods",
+            {
+                "period_a": intent.get("period_a"),
+                "period_b": intent.get("period_b"),
+            },
+        )
         evidence.setdefault("analysis_area", intent.get("analysis_area"))
     try:
         return await explain_result(evidence, payload.question)
@@ -417,8 +430,12 @@ async def get_task_artifact(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
         ) from None
-    if not path.is_file() or not 0 < path.stat().st_size <= 2_000_000:
+    if not path.is_file() or not 0 < path.stat().st_size <= (
+        16_000_000 if path.suffix == ".tif" else 2_000_000
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
+    if path.suffix == ".tif":
+        return Response(content=path.read_bytes(), media_type="image/tiff")
     try:
         with Image.open(path) as image:
             if image.format != "PNG":

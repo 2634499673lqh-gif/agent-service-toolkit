@@ -30,17 +30,34 @@ class UrbanIntentParameters(BaseModel):
     cloud_threshold: float = Field(default=30.0, ge=0, le=100, allow_inf_nan=False)
 
 
+class LandsatIntentParameters(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["Landsat-8/9"] = "Landsat-8/9"
+    collection: Literal["landsat-c2-l2"] = "landsat-c2-l2"
+    data_mode: Literal["real_stac_landsat_local"] = "real_stac_landsat_local"
+    cloud_threshold: float = Field(default=100.0, ge=0, le=100, allow_inf_nan=False)
+
+
 class ConfirmedIntent(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     analysis_type: Literal["vegetation_change", "water_change", "urban_change"]
     indicator: Literal["NDVI", "NDWI", "NDBI"]
-    analysis_area: Literal["武汉东湖", "wuhan_east_lake"]
+    analysis_area: Literal[
+        "武汉东湖", "wuhan_east_lake", "武汉市江汉区", "jianghan_district_420103"
+    ]
     period_a: Period
     period_b: Period
-    parameters: IntentParameters | WaterIntentParameters | UrbanIntentParameters = Field(
-        default_factory=IntentParameters
-    )
+    parameters: (
+        IntentParameters | WaterIntentParameters | UrbanIntentParameters | LandsatIntentParameters
+    ) = Field(default_factory=IntentParameters)
+    data_mode: Literal[
+        "real_online",
+        "cached_real_metadata",
+        "local_real_raster_fixture",
+        "real_stac_landsat_local",
+    ] = "local_real_raster_fixture"
 
     @model_validator(mode="before")
     @classmethod
@@ -49,12 +66,29 @@ class ConfirmedIntent(BaseModel):
             return data
         values = dict(data)
         raw = values.get("parameters")
-        if isinstance(raw, (IntentParameters, WaterIntentParameters, UrbanIntentParameters)):
+        if isinstance(
+            raw,
+            (
+                IntentParameters,
+                WaterIntentParameters,
+                UrbanIntentParameters,
+                LandsatIntentParameters,
+            ),
+        ):
             return values
-        if values.get("analysis_type") == "water_change":
-            values["parameters"] = WaterIntentParameters.model_validate(raw or {})
+        if values.get("analysis_area") in {"武汉市江汉区", "jianghan_district_420103"}:
+            values["parameters"] = LandsatIntentParameters.model_validate(raw or {})
+            values["data_mode"] = "real_stac_landsat_local"
+        elif values.get("analysis_type") == "water_change":
+            water_values = dict(raw or {})
+            if "source" in water_values and "cloud_threshold" in water_values:
+                water_values.pop("decline_threshold", None)
+            values["parameters"] = WaterIntentParameters.model_validate(water_values)
         elif values.get("analysis_type") == "urban_change":
-            values["parameters"] = UrbanIntentParameters.model_validate(raw or {})
+            urban_values = dict(raw or {})
+            if "source" in urban_values and "cloud_threshold" in urban_values:
+                urban_values.pop("decline_threshold", None)
+            values["parameters"] = UrbanIntentParameters.model_validate(urban_values)
         else:
             values["parameters"] = IntentParameters.model_validate(raw or {})
         return values
@@ -66,7 +100,13 @@ class ConfirmedIntent(BaseModel):
         if len(json.dumps(self.model_dump(mode="json")).encode("utf-8")) > 4096:
             raise ValueError("confirmed intent is too large")
         if (self.analysis_type, self.indicator) == ("vegetation_change", "NDVI"):
-            if not isinstance(self.parameters, IntentParameters):
+            if self.analysis_area in {"武汉市江汉区", "jianghan_district_420103"}:
+                if (
+                    not isinstance(self.parameters, LandsatIntentParameters)
+                    or self.data_mode != "real_stac_landsat_local"
+                ):
+                    raise ValueError("Jianghan NDVI intent requires Landsat local execution")
+            elif not isinstance(self.parameters, IntentParameters):
                 raise ValueError("NDVI intent parameters are invalid")
         elif (self.analysis_type, self.indicator) == ("water_change", "NDWI"):
             if not isinstance(self.parameters, WaterIntentParameters):
@@ -82,11 +122,16 @@ class ConfirmedIntent(BaseModel):
         values: dict[str, object] = {
             "analysis_type": self.analysis_type,
             "indicator": self.indicator,
-            "aoi_key": "wuhan_east_lake",
+            "aoi_key": "jianghan_district_420103"
+            if self.analysis_area in {"武汉市江汉区", "jianghan_district_420103"}
+            else "wuhan_east_lake",
             "period_a": self.period_a,
             "period_b": self.period_b,
             "cloud_threshold": self.parameters.cloud_threshold,
-            "cloud_threshold_source": "user_text",
+            "cloud_threshold_source": "server_default"
+            if isinstance(self.parameters, LandsatIntentParameters)
+            else "user_text",
+            "data_mode": self.data_mode,
         }
         if isinstance(self.parameters, IntentParameters):
             values.update(
