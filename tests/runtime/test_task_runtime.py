@@ -103,6 +103,43 @@ def _confirmed_water_pair(status: TaskRunStatus) -> tuple[Task, TaskRun]:
     return task, run
 
 
+@pytest.mark.asyncio
+async def test_confirmed_jianghan_run_reaches_preparation_without_legacy_fixture() -> None:
+    task, run = _business_pair(TaskRunStatus.PENDING)
+    task.confirmed_intent = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "jianghan_district_420103",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+        "parameters": {"source": "Landsat-8/9"},
+        "data_mode": "real_stac_landsat_local",
+    }
+    lifecycle = _lifecycle_for(run, task)
+    with (
+        patch("service.task_runtime.TaskRunRepository", return_value=FakeRuns(task, run)),
+        patch("service.task_runtime.TaskLifecycleService", return_value=lifecycle),
+        patch("service.task_runtime.scene_evidence", side_effect=AssertionError("legacy fixture")),
+        patch(
+            "geochange.runtime_caps.scene_evidence", side_effect=AssertionError("legacy fixture")
+        ),
+        patch(
+            "geochange.runtime_caps.compute_cached_change",
+            side_effect=AssertionError("legacy computation"),
+        ),
+        patch(
+            "geochange.runtime_caps.prepare_landsat_periods",
+            side_effect=ValueError("provider unavailable"),
+        ) as prepare,
+    ):
+        result = await TaskRuntimeService(MemorySaver()).execute_run(
+            _session(), organization_id=ORG, task_id=TASK_ID, task_run_id=RUN_ID
+        )
+    prepare.assert_called_once()
+    assert result.terminal_outcome == "FAILED"
+    assert lifecycle.result_metadata["verifier_status"] != "passed"
+
+
 def _null_geochange_pair(
     status: TaskRunStatus, *, title: str, description: str
 ) -> tuple[Task, TaskRun]:

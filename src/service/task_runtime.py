@@ -330,7 +330,9 @@ class TaskRuntimeService:
                     "source": aoi.source,
                 }
                 canonical_scene_evidence = (
-                    ndwi_scene_evidence(confirmed_task)
+                    {"execution_mode": "real_stac_landsat_local", "collection": "landsat-c2-l2"}
+                    if confirmed_task.data_mode == "real_stac_landsat_local"
+                    else ndwi_scene_evidence(confirmed_task)
                     if selected_skill.result_type == "water_change"
                     else ndbi_scene_evidence(confirmed_task)
                     if selected_skill.result_type == "urban_change"
@@ -1483,6 +1485,10 @@ def _validate_checkpoint_geochange_evidence(
     if require_complete:
         if scene != canonical_scene_evidence:
             raise ValueError("checkpoint scene evidence is incomplete")
+        if getattr(task, "data_mode", None) == "real_stac_landsat_local":
+            # Scene selection and numerical evidence are verified inside the
+            # server-owned preparation/product boundary, not a legacy fixture.
+            return
         if getattr(task, "analysis_type", None) == "water_change":
             validate_ndwi_binding(task, scene)
         elif getattr(task, "analysis_type", None) == "urban_change":

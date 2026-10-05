@@ -126,6 +126,11 @@ class SearchSentinel2RuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            # A performs real scene selection in the preparation boundary.
+            return self._result(
+                step, {"execution_mode": LANDSAT_EXECUTION_MODE, "collection": "landsat-c2-l2"}
+            )
         if settings.GEOCHANGE_TEST_REPLAN and context.runtime_replan_count == 0:
             return ExecutionResult(
                 step_position=step.position,
@@ -196,6 +201,10 @@ class ComputeVegetationRuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            # Keep the A arrays and B verification together in summarize_change;
+            # never checkpoint raw arrays or fall back to cached Sentinel-2.
+            return self._result(step, {"preparation_boundary": "prepare_landsat_periods"})
         evidence = dict(getattr(context, "geochange_evidence", {}) or {})
         try:
             change = compute_cached_change(task, evidence)
