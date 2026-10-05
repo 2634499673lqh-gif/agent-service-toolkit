@@ -109,6 +109,15 @@ def _fake_metadata(*, width: int, height: int, transform=(30, 0, 0, 0, -30, 30))
     }
 
 
+def _matching_mtl_values() -> dict[str, float]:
+    return {
+        "REFLECTANCE_MULT_BAND_4": 2.75e-5,
+        "REFLECTANCE_ADD_BAND_4": -0.2,
+        "REFLECTANCE_MULT_BAND_5": 2.75e-5,
+        "REFLECTANCE_ADD_BAND_5": -0.2,
+    }
+
+
 def test_storage_boundary_rejects_arbitrary_blob_accounts() -> None:
     assert landsat._provider_host_allowed(
         "https://landsateuwest.blob.core.windows.net/path/SR_B4.TIF"
@@ -273,7 +282,9 @@ def test_expected_stac_metadata_mismatch_fails_closed(monkeypatch, field, value,
         return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
 
     monkeypatch.setattr(landsat, "_read_asset", fake_read)
-    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: _matching_mtl_values()
+    )
     with pytest.raises(PreparationFailure) as error:
         landsat._prepare_period(
             default_period_pair().period_a,
@@ -305,6 +316,57 @@ def test_expected_stac_nodata_must_bind_to_opened_cog(actual_nodata, accepted) -
     else:
         with pytest.raises(PreparationFailure, match="invalid_raster_metadata"):
             landsat._validate_expected_asset_metadata(asset, metadata)
+
+
+def test_missing_mtl_fails_closed(monkeypatch) -> None:
+    aoi = load_trusted_aoi()
+    scene = _scene_for_grid("LC08_MTL_MISSING")
+    grid = TargetGrid(
+        crs="EPSG:32649",
+        transform=(30, 0, 0, 0, -30, 30),
+        width=1,
+        height=1,
+        resolution_m=30,
+    )
+    monkeypatch.setattr(landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, 1), bool))
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        landsat,
+        "_read_asset",
+        lambda *_args, **_kwargs: (
+            landsat.np.array([[100]], dtype=landsat.np.uint16),
+            _fake_metadata(width=1, height=1),
+            1,
+        ),
+    )
+    with pytest.raises(PreparationFailure) as error:
+        landsat._prepare_period(
+            default_period_pair().period_a,
+            [scene],
+            aoi,
+            grid,
+            DiscoveryLimits(),
+            client=object(),
+            deadline_monotonic=landsat.time.monotonic() + 30,
+        )
+    assert error.value.stage == "mtl_required"
+
+
+@pytest.mark.parametrize(
+    "mtl_values",
+    [
+        {"REFLECTANCE_MULT_BAND_4": 2.75e-5},
+        {
+            "REFLECTANCE_MULT_BAND_4": 2.75e-5,
+            "REFLECTANCE_ADD_BAND_4": -0.2,
+            "REFLECTANCE_MULT_BAND_5": "malformed",
+            "REFLECTANCE_ADD_BAND_5": -0.2,
+        },
+    ],
+)
+def test_malformed_or_incomplete_mtl_fails_closed(mtl_values) -> None:
+    with pytest.raises(PreparationFailure, match="invalid_radiometry"):
+        landsat.validate_mtl_metadata({"LEVEL2_SURFACE_REFLECTANCE_PARAMETERS": mtl_values})
 
 
 @pytest.mark.parametrize("physical_band", ["QA_PIXEL", "SR_QA_AEROSOL"])
@@ -351,7 +413,9 @@ def test_aerosol_expected_projection_mismatch_fails_closed(monkeypatch) -> None:
         return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
 
     monkeypatch.setattr(landsat, "_read_asset", fake_read)
-    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: _matching_mtl_values()
+    )
     with pytest.raises(PreparationFailure, match="grid_alignment_failed") as error:
         landsat._prepare_period(
             default_period_pair().period_a,
@@ -494,7 +558,9 @@ def _prepare_with_scene_masks(monkeypatch, masks: list[list[bool]]):
     monkeypatch.setattr(
         landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, width), dtype=bool)
     )
-    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: _matching_mtl_values()
+    )
 
     def fake_read(href, *_args, **_kwargs):
         scene_index = next(index for index in range(len(masks)) if f"MASK_{index}" in href)
@@ -700,7 +766,9 @@ def test_prepare_period_passes_runtime_window_limit_to_every_asset(monkeypatch) 
         )
 
     monkeypatch.setattr(landsat, "_read_asset", fake_read)
-    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: _matching_mtl_values()
+    )
     limits = DiscoveryLimits(max_window_pixels=7, array_cache_bytes=128 * 1024 * 1024)
     landsat._prepare_period(
         default_period_pair().period_a,

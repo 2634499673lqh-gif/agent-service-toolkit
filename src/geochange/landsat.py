@@ -1260,8 +1260,10 @@ def _validate_expected_asset_metadata(asset: AssetIdentity, metadata: Mapping[st
         # Collection 2 SR uses DN=0 as its fill value.  Keep this binding
         # strict: missing or contradictory COG metadata must not silently
         # change the trusted STAC/MTL nodata contract.
-        if asset.nodata is None or actual_nodata is None or not math.isclose(
-            float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
+        if (
+            asset.nodata is None
+            or actual_nodata is None
+            or not math.isclose(float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9)
         ):
             raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
     elif asset.physical_band in _PACKED_QA_BANDS:
@@ -1385,26 +1387,19 @@ def _prepare_period(
             )
         except PreparationFailure:
             raise
-        if mtl_values is not None:
-            if (
-                abs(mtl_values["REFLECTANCE_MULT_BAND_4"] - float(scene.assets["red"].scale or 0))
-                > 1e-12
-                or abs(
-                    mtl_values["REFLECTANCE_ADD_BAND_4"] - float(scene.assets["red"].offset or 0)
-                )
-                > 1e-9
-                or abs(
-                    mtl_values["REFLECTANCE_MULT_BAND_5"] - float(scene.assets["nir08"].scale or 0)
-                )
-                > 1e-12
-                or abs(
-                    mtl_values["REFLECTANCE_ADD_BAND_5"] - float(scene.assets["nir08"].offset or 0)
-                )
-                > 1e-9
-            ):
-                raise PreparationFailure("invalid_radiometry", stage="mtl_validation")
-        else:
-            warnings.append(f"period_{period.period_id}:mtl_asset_unavailable")
+        if mtl_values is None:
+            raise PreparationFailure("invalid_radiometry", stage="mtl_required")
+        if (
+            abs(mtl_values["REFLECTANCE_MULT_BAND_4"] - float(scene.assets["red"].scale or 0))
+            > 1e-12
+            or abs(mtl_values["REFLECTANCE_ADD_BAND_4"] - float(scene.assets["red"].offset or 0))
+            > 1e-9
+            or abs(mtl_values["REFLECTANCE_MULT_BAND_5"] - float(scene.assets["nir08"].scale or 0))
+            > 1e-12
+            or abs(mtl_values["REFLECTANCE_ADD_BAND_5"] - float(scene.assets["nir08"].offset or 0))
+            > 1e-9
+        ):
+            raise PreparationFailure("invalid_radiometry", stage="mtl_validation")
         red_asset = scene.assets["red"]
         nir_asset = scene.assets["nir08"]
         for role, array, metadata in (
