@@ -6169,3 +6169,21 @@ Learner notes: history loading is a server-authorized read path, while confirmat
 真实日志定位到 `geochange_output_oversized` 是 provider 解读文本与受信 scene evidence 合并后超过旧 2 KiB envelope；现在仅截断展示摘要，保留 metrics/artifact/scene evidence。DeepSeek provider 还会对能力问答返回 `capability_query`、空 period 字段；边界层已归一化并区分 malformed/timeout/provider 日志。真实复测“你好”“你是什么模型”“你能做什么”和 NDVI 请求成功；已有 NDWI 成功 Run 的真实解释也通过。
 
 验证：focused conversation/runtime-cap tests 通过；Ruff、Pyrefly、git diff check、前端 build/typecheck 通过；Docker compose rebuild/force-recreate 后四服务健康，artifact 持久化前后验证完成。浏览器自动化工具不可用，登录后的视觉与点击流程仍需人工确认。
+
+### 2026-10-04 — V0.3 Landsat data-access preflight (read-only)
+
+完成独立的 Microsoft Planetary Computer Landsat C2 L2 真实访问预检；未修改 TaskPilot 业务代码、数据库、迁移、fixture、manifest 或 Git 历史。测试窗口为武汉市江汉区附近 `bbox=[114.23,30.56,114.30,30.62]`，采样点 `(114.27,30.59)`，仅读取 128×128 像元窗口，不代表正式行政 AOI。
+
+Environment/evidence: Windows Python 3.12.4；宿主 Docker 29.8.1 / Compose 5.5.1，现有 `agent_service`、web、Streamlit、PostgreSQL 容器均 healthy；分支 `codex/taskpilot-v02-b`，HEAD `22b189e`。宿主原有依赖没有 Rasterio、Planetary Computer SDK 或 pystac-client；使用临时目录安装 Rasterio 1.5.2 完成 COG 窗口验证，未改动项目依赖。容器内 Python 3.13.14 同样没有 Rasterio，但 requests 可用；容器 DNS/TLS/STAC/SAS/Blob Range 均通过。无需账号或 API Key。
+
+Remote results: STAC endpoint HTTP 200，SAS 根路径按预期不是资源目录（GET 404），`/api/sas/v1/sign` 使用公开 GET 签名；宿主 STAC Search 2023-07 返回 6 个 items、2024-07 返回 4 个 items，容器复核同样为 6/4。选取同一 path/row 的 `LC08_L2SP_123039_20230727_02_T1`（2023-07-27，cloud 15.97%）和 `LC08_L2SP_123039_20240729_02_T1`（2024-07-29，cloud 21.41%）；两者 footprint bbox 均覆盖测试点，真实资产含 red、nir08、qa_pixel、MTL JSON，资产描述确认 Collection 2 Level-2 Surface Reflectance。
+
+Raster evidence: 两期 red 与 nir08 均通过匿名 SAS + Rasterio/GDAL COG HTTP Range 读取 128×128；dtype uint16、CRS EPSG:32649、分辨率 30 m、nodata 0。2023 red DN 3295–34197（有效 16384），nir08 7550–35605（有效 16384）；2024 red 6024–31601、nir08 7323–33512（各有效 16384）。2024 qa_pixel 也读取成功（uint16、128×128、EPSG:32649、30 m；DN 21762–24144）；2023 QA 的匿名签名与 Blob Range 成功，宿主端完整窗口读取受本轮临时 Rasterio 运行时限制未重复执行。2024 MTL JSON 实际核对 `REFLECTANCE_MULT_BAND_4/5=2.75e-05`、`REFLECTANCE_ADD_BAND_4/5=-0.2`；STAC raster:bands 同时确认 scale、offset、nodata=0。按实际 scale/offset 转换后，2024 小窗口 NDVI 在正反射率且分母>0.05的 15,571 个像元上范围 -0.2014–0.9977，中位数 0.2704；未使用原始 DN 直接计算。
+
+Validation: Host DNS resolved `planetarycomputer.microsoft.com`; TLS 1.3 handshake succeeded. Host and container STAC requests had HTTP 200, SAS signing HTTP 200, signed Blob range HTTP 206 with bounded 64 KiB response. One transient SAS HTTP 504 occurred during retries; finite retry recovered. No 401/403/429 observed. Signed URLs were never printed or persisted. Existing repository working tree had pre-existing untracked V0.2 prompt/handoff documents and pytest-temp permission warnings; they were not touched.
+
+Result: V0.3 Landsat preflight PASS for retrieval and bounded real reads. The evidence supports a minimal future Landsat data interface, but does not claim Jianghan administrative AOI coverage or produce a TaskRun/analysis artifact. The agent_service image needs a deliberate Rasterio/GDAL capability decision before productionizing window reads; this preflight did not change that image or project dependencies.
+
+Learner notes: read the task prompt, `compose.yaml`, and the STAC item asset metadata. The key concept is separating STAC discovery, anonymous SAS authorization, bounded COG byte access, and radiometric conversion. Exercise: inspect one asset's `raster:bands` and explain why DN 0 is masked before applying scale/offset. Do not worry yet about implementing a provider adapter, AOI boundary service, or NDVI Skill changes.
+
+Suggested next task: independently review this evidence, then design (without implementing in this preflight) the smallest server-owned Landsat asset-read interface with explicit AOI/window bounds and no signed-URL persistence.
