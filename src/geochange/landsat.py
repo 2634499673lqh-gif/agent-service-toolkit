@@ -1255,7 +1255,7 @@ def _validate_expected_asset_metadata(asset: AssetIdentity, metadata: Mapping[st
         raise PreparationFailure("invalid_raster_metadata", stage="expected_dtype")
     if asset.nodata is not None:
         actual_nodata = metadata.get("nodata")
-        if actual_nodata is not None and not math.isclose(
+        if actual_nodata is None or not math.isclose(
             float(asset.nodata), float(actual_nodata), rel_tol=0, abs_tol=1e-9
         ):
             raise PreparationFailure("invalid_raster_metadata", stage="expected_nodata")
@@ -1439,12 +1439,22 @@ def _prepare_period(
             if red_meta["width"] <= 0 or red_meta["height"] <= 0:
                 raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
         for asset, metadata in ((red_asset, red_meta), (nir_asset, nir_meta)):
-            if asset.nodata is not None and metadata.get("nodata") is not None:
-                if float(asset.nodata) != float(metadata["nodata"]):
-                    raise PreparationFailure("invalid_raster_metadata", stage="nodata")
             # Some Landsat COGs expose raw DN with embedded scale=1/offset=0;
             # physical calibration remains explicitly supplied by trusted
             # STAC/MTL evidence in that case.
+            raw_identity = (
+                metadata.get("scale") is not None
+                and metadata.get("offset") is not None
+                and math.isclose(float(metadata["scale"]), 1.0, rel_tol=0, abs_tol=1e-12)
+                and math.isclose(float(metadata["offset"]), 0.0, rel_tol=0, abs_tol=1e-12)
+            )
+            if raw_identity and (
+                asset.scale is None
+                or asset.offset is None
+                or math.isclose(float(asset.scale), 1.0, rel_tol=0, abs_tol=1e-12)
+                or math.isclose(float(asset.offset), 0.0, rel_tol=0, abs_tol=1e-12)
+            ):
+                raise PreparationFailure("invalid_radiometry", stage="mtl_required")
             if (
                 asset.scale is not None
                 and metadata.get("scale") is not None
@@ -1455,10 +1465,8 @@ def _prepare_period(
                 ):
                     raise PreparationFailure("invalid_radiometry", stage="scale")
             if (
-                asset.scale is not None
-                and metadata.get("scale") is not None
+                metadata.get("scale") is not None
                 and math.isclose(float(metadata["scale"]), 1.0, rel_tol=0, abs_tol=1e-12)
-                and not math.isclose(float(asset.scale), 1.0, rel_tol=0, abs_tol=1e-12)
                 and mtl_values is None
             ):
                 raise PreparationFailure("invalid_radiometry", stage="mtl_required")
@@ -1472,10 +1480,8 @@ def _prepare_period(
                 ):
                     raise PreparationFailure("invalid_radiometry", stage="offset")
             if (
-                asset.offset is not None
-                and metadata.get("offset") is not None
+                metadata.get("offset") is not None
                 and math.isclose(float(metadata["offset"]), 0.0, rel_tol=0, abs_tol=1e-12)
-                and not math.isclose(float(asset.offset), 0.0, rel_tol=0, abs_tol=1e-12)
                 and mtl_values is None
             ):
                 raise PreparationFailure("invalid_radiometry", stage="mtl_required")
@@ -1675,6 +1681,32 @@ def prepare_landsat_pair(
     )
 
 
+def prepare_landsat_operation(
+    aoi: TrustedAOI,
+    periods: PeriodPair,
+    limits: DiscoveryLimits | None = None,
+    *,
+    client: httpx.Client | None = None,
+) -> tuple[DiscoveryReport, SelectedScenePair, PreparedPeriodPair]:
+    """Run discovery and preparation under one authoritative operation deadline."""
+
+    limits = limits or DiscoveryLimits()
+    deadline_monotonic = _operation_deadline(limits, None)
+    report = discover_landsat(
+        aoi, periods, limits, client=client, deadline_monotonic=deadline_monotonic
+    )
+    selected = select_landsat_scenes(report)
+    prepared = prepare_landsat_pair(
+        aoi,
+        periods,
+        selected,
+        limits,
+        client=client,
+        deadline_monotonic=deadline_monotonic,
+    )
+    return report, selected, prepared
+
+
 __all__ = [
     "AssetIdentity",
     "CONTRACT_VERSION",
@@ -1696,6 +1728,7 @@ __all__ = [
     "default_period_pair",
     "discover_landsat",
     "prepare_landsat_pair",
+    "prepare_landsat_operation",
     "qa_pixel_valid_mask",
     "qa_aerosol_diagnostics",
     "qa_radsat_valid_mask",

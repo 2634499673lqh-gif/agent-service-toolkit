@@ -204,6 +204,34 @@ def test_shared_deadline_is_consumed_by_discovery_then_preparation(monkeypatch) 
         )
 
 
+def test_operation_wrapper_reuses_deadline_after_discovery(monkeypatch) -> None:
+    clock = [100.0]
+    deadlines: list[float] = []
+    monkeypatch.setattr(landsat.time, "monotonic", lambda: clock[0])
+
+    def fake_discover(*_args, deadline_monotonic, **_kwargs):
+        deadlines.append(deadline_monotonic)
+        clock[0] += 0.5
+        return object()
+
+    def fake_select(_report):
+        return object()
+
+    def fake_prepare(*_args, deadline_monotonic, **_kwargs):
+        deadlines.append(deadline_monotonic)
+        return object()
+
+    monkeypatch.setattr(landsat, "discover_landsat", fake_discover)
+    monkeypatch.setattr(landsat, "select_landsat_scenes", fake_select)
+    monkeypatch.setattr(landsat, "prepare_landsat_pair", fake_prepare)
+    limits = DiscoveryLimits(request_deadline_seconds=1.0)
+    landsat.prepare_landsat_operation(
+        load_trusted_aoi(), default_period_pair(), limits, client=object()
+    )
+    assert deadlines[0] == deadlines[1]
+    assert deadlines[0] - clock[0] == pytest.approx(0.5)
+
+
 def test_array_gdal_budget_is_explicitly_per_run_not_process_global() -> None:
     evidence = landsat._hard_limits_evidence(DiscoveryLimits())
     assert evidence["array_cache_bytes"] == 96 * 1024 * 1024
@@ -259,6 +287,26 @@ def test_expected_stac_metadata_mismatch_fails_closed(monkeypatch, field, value,
     assert error.value.stage == stage
 
 
+@pytest.mark.parametrize(
+    ("actual_nodata", "accepted"),
+    [(None, False), (0, True), (1, False)],
+)
+def test_expected_stac_nodata_must_bind_to_opened_cog(actual_nodata, accepted) -> None:
+    asset = landsat.AssetIdentity(
+        key="red",
+        physical_band="SR_B4",
+        identity_hash="0" * 64,
+        href="https://example.test/red.tif",
+        nodata=0,
+    )
+    metadata = {"nodata": actual_nodata}
+    if accepted:
+        landsat._validate_expected_asset_metadata(asset, metadata)
+    else:
+        with pytest.raises(PreparationFailure, match="invalid_raster_metadata"):
+            landsat._validate_expected_asset_metadata(asset, metadata)
+
+
 def test_aerosol_expected_projection_mismatch_fails_closed(monkeypatch) -> None:
     aoi = load_trusted_aoi()
     scene = _scene_for_grid("LC08_AEROSOL_EXPECTED")
@@ -309,7 +357,8 @@ def test_raw_cog_unit_scale_requires_independent_mtl_evidence(monkeypatch) -> No
         metadata = _fake_metadata(width=1, height=1)
         metadata["scale"] = 1.0
         metadata["offset"] = 0.0
-        return landsat.np.array([[100]], dtype=landsat.np.uint16), metadata, 1
+        value = 0 if "QA_" in _href else 100
+        return landsat.np.array([[value]], dtype=landsat.np.uint16), metadata, 1
 
     monkeypatch.setattr(landsat, "_read_asset", fake_read)
     with pytest.raises(PreparationFailure) as error:
@@ -323,6 +372,85 @@ def test_raw_cog_unit_scale_requires_independent_mtl_evidence(monkeypatch) -> No
             deadline_monotonic=landsat.time.monotonic() + 30,
         )
     assert error.value.stage == "mtl_required"
+
+
+@pytest.mark.parametrize(
+    ("stac_scale", "stac_offset", "mtl_values", "accepted", "stage"),
+    [
+        (
+            2.75e-5,
+            -0.2,
+            {
+                "REFLECTANCE_MULT_BAND_4": 2.75e-5,
+                "REFLECTANCE_ADD_BAND_4": -0.2,
+                "REFLECTANCE_MULT_BAND_5": 2.75e-5,
+                "REFLECTANCE_ADD_BAND_5": -0.2,
+            },
+            True,
+            None,
+        ),
+        (2.75e-5, -0.2, None, False, "mtl_required"),
+        (1.0, 0.0, None, False, "mtl_required"),
+        (
+            2.75e-5,
+            -0.2,
+            {
+                "REFLECTANCE_MULT_BAND_4": 1.0,
+                "REFLECTANCE_ADD_BAND_4": 0.0,
+                "REFLECTANCE_MULT_BAND_5": 1.0,
+                "REFLECTANCE_ADD_BAND_5": 0.0,
+            },
+            False,
+            "mtl_validation",
+        ),
+    ],
+)
+def test_raw_cog_requires_physical_stac_and_matching_mtl(
+    monkeypatch, stac_scale, stac_offset, mtl_values, accepted, stage
+) -> None:
+    aoi = load_trusted_aoi()
+    scene = _scene_for_grid("LC08_RAW_CALIBRATION")
+    assets = dict(scene.assets)
+    for role in ("red", "nir08"):
+        assets[role] = assets[role].model_copy(update={"scale": stac_scale, "offset": stac_offset})
+    scene = scene.model_copy(update={"assets": assets})
+    grid = TargetGrid(
+        crs="EPSG:32649", transform=(30, 0, 0, 0, -30, 30), width=1, height=1, resolution_m=30
+    )
+    monkeypatch.setattr(landsat, "_rasterize_aoi", lambda *_args: landsat.np.ones((1, 1), bool))
+    monkeypatch.setattr(landsat, "_fetch_mtl_values", lambda *_args, **_kwargs: mtl_values)
+
+    def fake_read(_href, *_args, **_kwargs):
+        metadata = _fake_metadata(width=1, height=1)
+        metadata["scale"] = 1.0
+        metadata["offset"] = 0.0
+        value = 0 if "QA_" in _href else 100
+        return landsat.np.array([[value]], dtype=landsat.np.uint16), metadata, 1
+
+    monkeypatch.setattr(landsat, "_read_asset", fake_read)
+    if accepted:
+        dataset, _bytes, _warnings = landsat._prepare_period(
+            default_period_pair().period_a,
+            [scene],
+            aoi,
+            grid,
+            DiscoveryLimits(),
+            client=object(),
+            deadline_monotonic=landsat.time.monotonic() + 30,
+        )
+        assert dataset.coverage.preparation_valid_pixels == 1
+    else:
+        with pytest.raises(PreparationFailure) as error:
+            landsat._prepare_period(
+                default_period_pair().period_a,
+                [scene],
+                aoi,
+                grid,
+                DiscoveryLimits(),
+                client=object(),
+                deadline_monotonic=landsat.time.monotonic() + 30,
+            )
+        assert error.value.stage == stage
 
 
 def _prepare_with_scene_masks(monkeypatch, masks: list[list[bool]]):
