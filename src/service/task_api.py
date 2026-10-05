@@ -316,6 +316,20 @@ async def get_task_run_map(
         )
         if not artifact.is_file() or not 0 < artifact.stat().st_size <= max_size:
             raise HTTPException(status_code=409, detail="分析图层尚未准备好")
+        if dynamic:
+            checksums = (
+                metadata.get("provenance", {}).get("artifact_checksums", {})
+                if isinstance(metadata.get("provenance"), dict)
+                else {}
+            )
+            checksum = checksums.get(artifact_name) if isinstance(checksums, dict) else None
+            if (
+                not isinstance(checksum, str)
+                or len(checksum) != 64
+                or any(character not in "0123456789abcdef" for character in checksum)
+                or artifact_sha256(artifact) != checksum
+            ):
+                raise HTTPException(status_code=409, detail="分析图层校验失败")
     return GeoChangeMapResponse(
         indicator=indicator,
         period={str(k): str(v) for k, v in periods.items()},
@@ -443,8 +457,19 @@ async def get_task_artifact(
         if isinstance(metadata.get("provenance"), dict)
         else {}
     )
+    dynamic = metadata.get("execution_mode") == "real_stac_landsat_local"
     expected_checksum = checksums.get(artifact_name) if isinstance(checksums, dict) else None
-    if expected_checksum is not None and artifact_sha256(path) != expected_checksum:
+    if dynamic:
+        if (
+            not isinstance(expected_checksum, str)
+            or len(expected_checksum) != 64
+            or any(character not in "0123456789abcdef" for character in expected_checksum)
+            or artifact_sha256(path) != expected_checksum
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL
+            )
+    elif expected_checksum is not None and artifact_sha256(path) != expected_checksum:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=RESOURCE_NOT_FOUND_DETAIL)
     if path.suffix == ".tif":
         return Response(content=path.read_bytes(), media_type="image/tiff")

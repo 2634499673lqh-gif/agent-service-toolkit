@@ -393,13 +393,6 @@ def validate_terminal_result(
         "crs": aoi.crs,
         "source": aoi.source,
     }
-    canonical_scene = (
-        ndwi_scene_evidence(task)
-        if skill.result_type == "water_change"
-        else ndbi_scene_evidence(task)
-        if skill.result_type == "urban_change"
-        else scene_evidence(task)
-    )
     if dict(aoi_evidence) != canonical_aoi:
         raise SkillValidationError("AOI evidence is not server-authorized")
     if isinstance(payload, dict) and payload.get("execution_mode") == "real_stac_landsat_local":
@@ -414,6 +407,13 @@ def validate_terminal_result(
             payload, task=task, aoi_evidence=canonical_aoi, require_trusted_evidence=False
         )
         return
+    canonical_scene = (
+        ndwi_scene_evidence(task)
+        if skill.result_type == "water_change"
+        else ndbi_scene_evidence(task)
+        if skill.result_type == "urban_change"
+        else scene_evidence(task)
+    )
     if dict(scene_evidence_values) != canonical_scene:
         raise SkillValidationError("scene evidence is not server-authorized")
     if skill.result_type == "water_change":

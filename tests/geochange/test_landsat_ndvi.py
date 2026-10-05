@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pytest
 
+from geochange.aoi import resolve_aoi
 from geochange.landsat import (
     Coverage,
     MonthlyPeriod,
@@ -12,8 +13,9 @@ from geochange.landsat import (
     TargetGrid,
 )
 from geochange.landsat_ndvi import compute_landsat_ndvi_product, verify_landsat_ndvi_product
+from geochange.models import GeoChangeTask
 from geochange.provenance import trusted_landsat_map_metadata
-from geochange.skill import VEGETATION_CHANGE_NDVI, SkillValidationError
+from geochange.skill import VEGETATION_CHANGE_NDVI, SkillValidationError, validate_terminal_result
 from schema.confirmed_intent import ConfirmedIntent
 
 
@@ -87,6 +89,49 @@ def test_landsat_ndvi_product_with_server_gate_fixture():
     assert verify_landsat_ndvi_product(product, pair)["status"] == "passed"
 
 
+def _gated_pair() -> PreparedPeriodPair:
+    pair = _pair()
+    object.__setattr__(pair.period_a, "red_reflectance", np.full((2, 2), -0.1, dtype=np.float32))
+    object.__setattr__(pair.period_a, "nir_reflectance", np.full((2, 2), -0.15, dtype=np.float32))
+    object.__setattr__(pair.period_b, "red_reflectance", np.full((2, 2), 0.1, dtype=np.float32))
+    object.__setattr__(pair.period_b, "nir_reflectance", np.full((2, 2), 0.5, dtype=np.float32))
+    object.__setattr__(pair.period_a, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair.period_b, "preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    object.__setattr__(pair, "common_preparation_valid_mask", np.ones((2, 2), dtype=bool))
+    return pair
+
+
+def test_landsat_ndvi_verifier_recomputes_forged_metrics():
+    pair = _gated_pair()
+    product = compute_landsat_ndvi_product(pair)
+    product.metrics["mean_delta_ndvi"] = 0.9
+    assert verify_landsat_ndvi_product(product, pair)["status"] == "failed"
+
+
+def test_landsat_ndvi_verifier_requires_and_checks_artifact_checksums(tmp_path):
+    pair = _gated_pair()
+    try:
+        product = compute_landsat_ndvi_product(pair, artifact_dir=tmp_path)
+    except Exception as error:
+        if "proj.db" in str(error):
+            pytest.skip("Rasterio PROJ database unavailable in this local environment")
+        raise
+    assert verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["status"] == "passed"
+    product.provenance["artifact_checksums"].pop("ndvi_before_raster")
+    assert (
+        verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["code"]
+        == "artifact_checksum_missing"
+    )
+
+    product = compute_landsat_ndvi_product(pair, artifact_dir=tmp_path)
+    path = tmp_path / product.artifacts["ndvi_before_raster"]
+    path.write_bytes(path.read_bytes() + b"tamper")
+    assert (
+        verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["code"]
+        == "artifact_checksum_mismatch"
+    )
+
+
 def test_landsat_ndvi_rejects_coverage_gate():
     with pytest.raises(ValueError, match="insufficient_ndvi_coverage"):
         compute_landsat_ndvi_product(_pair())
@@ -152,6 +197,31 @@ def test_dynamic_terminal_rejects_forged_metrics():
     payload["metrics"]["mean_delta_ndvi"] = 0.9
     with pytest.raises(SkillValidationError, match="metrics"):
         VEGETATION_CHANGE_NDVI.validate_result(payload)
+
+
+def test_dynamic_terminal_routing_bypasses_legacy_scene_fixture(monkeypatch):
+    task = GeoChangeTask(
+        aoi_key="jianghan_district_420103",
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+        data_mode="real_stac_landsat_local",
+    )
+    aoi = resolve_aoi(task.aoi_key)
+    monkeypatch.setattr(
+        "geochange.skill.scene_evidence",
+        lambda _task: (_ for _ in ()).throw(AssertionError("legacy scene evidence called")),
+    )
+    with pytest.raises(SkillValidationError):
+        validate_terminal_result(
+            VEGETATION_CHANGE_NDVI,
+            {
+                "execution_mode": "real_stac_landsat_local",
+                "provenance": {"aoi_hash": aoi.source_hash},
+            },
+            task=task,
+            aoi_evidence={"catalog_key": aoi.catalog_key, "crs": aoi.crs, "source": aoi.source},
+            scene_evidence_values={},
+        )
 
 
 def test_jianghan_confirmation_rejects_non_month_and_out_of_range():

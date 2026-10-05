@@ -278,41 +278,144 @@ def _verify_numeric_artifact(path: Path, grid: Any, dtype: str, nodata: float) -
 
 
 def verify_landsat_ndvi_product(
-    product: LandsatNDVIProduct, pair: PreparedPeriodPair
+    product: LandsatNDVIProduct,
+    pair: PreparedPeriodPair,
+    *,
+    artifact_root: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Independent, bounded verifier for the numeric science contract."""
+    """Independently recompute the science projection and artifact evidence."""
+
     if product.provenance.get("preparation_contract_version") != pair.contract_version:
         return {"status": "failed", "code": "preparation_contract_mismatch"}
-    if product.ndvi_before.shape != (pair.pair_grid.height, pair.pair_grid.width):
+    expected_shape = (pair.pair_grid.height, pair.pair_grid.width)
+    if product.ndvi_before.shape != expected_shape or product.ndvi_after.shape != expected_shape:
         return {"status": "failed", "code": "target_grid_mismatch"}
-    if not np.array_equal(
-        product.final_common_comparison_mask,
-        pair.common_preparation_valid_mask
-        & product.final_ndvi_valid_mask_a
-        & product.final_ndvi_valid_mask_b,
-    ):
+    expected_a, expected_valid_a = _period_ndvi(
+        pair.period_a.red_reflectance,
+        pair.period_a.nir_reflectance,
+        pair.period_a.preparation_valid_mask,
+        pair.period_a.aoi_mask,
+    )
+    expected_b, expected_valid_b = _period_ndvi(
+        pair.period_b.red_reflectance,
+        pair.period_b.nir_reflectance,
+        pair.period_b.preparation_valid_mask,
+        pair.period_b.aoi_mask,
+    )
+    expected_common = pair.common_preparation_valid_mask & expected_valid_a & expected_valid_b
+    expected_delta = np.full(expected_shape, np.nan, dtype=np.float32)
+    expected_delta[expected_common] = expected_b[expected_common] - expected_a[expected_common]
+    if not np.array_equal(product.final_ndvi_valid_mask_a, expected_valid_a):
+        return {"status": "failed", "code": "period_a_mask_invalid"}
+    if not np.array_equal(product.final_ndvi_valid_mask_b, expected_valid_b):
+        return {"status": "failed", "code": "period_b_mask_invalid"}
+    if not np.array_equal(product.final_common_comparison_mask, expected_common):
         return {"status": "failed", "code": "common_mask_invalid"}
-    for array, mask in (
-        (product.ndvi_before, product.final_ndvi_valid_mask_a),
-        (product.ndvi_after, product.final_ndvi_valid_mask_b),
-    ):
+    if not np.allclose(product.ndvi_before, expected_a, equal_nan=True, rtol=0, atol=1e-6):
+        return {"status": "failed", "code": "period_a_ndvi_invalid"}
+    if not np.allclose(product.ndvi_after, expected_b, equal_nan=True, rtol=0, atol=1e-6):
+        return {"status": "failed", "code": "period_b_ndvi_invalid"}
+    if not np.allclose(product.delta, expected_delta, equal_nan=True, rtol=0, atol=1e-6):
+        return {"status": "failed", "code": "delta_array_invalid"}
+    if not np.any(expected_common):
+        return {"status": "failed", "code": "empty_common_mask"}
+    for array, mask in ((expected_a, expected_valid_a), (expected_b, expected_valid_b)):
         if np.any(~np.isfinite(array[mask])) or np.any(
             (array[mask] < -1.00001) | (array[mask] > 1.00001)
         ):
             return {"status": "failed", "code": "ndvi_range_invalid"}
-    common = product.final_common_comparison_mask
-    expected = float(np.mean(product.ndvi_after[common] - product.ndvi_before[common]))
-    if not math.isclose(
-        expected,
-        float(product.metrics.get("mean_delta_ndvi", math.nan)),
-        rel_tol=1e-6,
-        abs_tol=1e-6,
-    ):
-        return {"status": "failed", "code": "delta_stat_mismatch"}
-    for key in ("mean_ndvi_period_a", "mean_ndvi_period_b", "mean_delta_ndvi"):
-        if not math.isfinite(float(product.metrics.get(key, math.nan))):
-            return {"status": "failed", "code": "metric_non_finite"}
-    return {"status": "passed", "common_pixels": int(np.count_nonzero(common))}
+
+    denominator = int(np.count_nonzero(pair.period_a.aoi_mask & pair.period_b.aoi_mask))
+    expected_metrics: dict[str, float | int] = {
+        "aoi_rasterized_pixels": denominator,
+        "preparation_valid_pixels_period_a": int(
+            np.count_nonzero(pair.period_a.preparation_valid_mask & pair.period_a.aoi_mask)
+        ),
+        "preparation_valid_pixels_period_b": int(
+            np.count_nonzero(pair.period_b.preparation_valid_mask & pair.period_b.aoi_mask)
+        ),
+        "final_ndvi_valid_pixels_period_a": int(np.count_nonzero(expected_valid_a)),
+        "final_ndvi_valid_pixels_period_b": int(np.count_nonzero(expected_valid_b)),
+        "final_common_comparison_pixels": int(np.count_nonzero(expected_common)),
+        "preparation_coverage_period_a_pct": _coverage(
+            pair.period_a.preparation_valid_mask & pair.period_a.aoi_mask, denominator
+        ),
+        "preparation_coverage_period_b_pct": _coverage(
+            pair.period_b.preparation_valid_mask & pair.period_b.aoi_mask, denominator
+        ),
+        "final_ndvi_coverage_period_a_pct": _coverage(expected_valid_a, denominator),
+        "final_ndvi_coverage_period_b_pct": _coverage(expected_valid_b, denominator),
+        "final_common_comparison_coverage_pct": _coverage(expected_common, denominator),
+        "mean_ndvi_period_a": float(np.mean(expected_a[expected_common])),
+        "mean_ndvi_period_b": float(np.mean(expected_b[expected_common])),
+        "mean_delta_ndvi": float(np.mean(expected_delta[expected_common])),
+        "min_delta_ndvi": float(np.min(expected_delta[expected_common])),
+        "max_delta_ndvi": float(np.max(expected_delta[expected_common])),
+    }
+    for key, expected in expected_metrics.items():
+        actual = product.metrics.get(key)
+        if isinstance(expected, int):
+            if (
+                not isinstance(actual, (int, float))
+                or isinstance(actual, bool)
+                or not float(actual).is_integer()
+                or int(actual) != expected
+            ):
+                return {"status": "failed", "code": "metrics_mismatch"}
+        elif (
+            not isinstance(actual, (int, float))
+            or isinstance(actual, bool)
+            or not math.isclose(float(actual), expected, rel_tol=1e-6, abs_tol=1e-6)
+        ):
+            return {"status": "failed", "code": "metrics_mismatch"}
+    if "aoi_area_m2" in product.metrics and "aoi_area_m2" in product.provenance:
+        if not math.isclose(
+            float(product.metrics["aoi_area_m2"]),
+            float(product.provenance["aoi_area_m2"]),
+            rel_tol=1e-6,
+            abs_tol=1e-3,
+        ):
+            return {"status": "failed", "code": "aoi_area_mismatch"}
+
+    if product.artifacts:
+        expected_artifacts = set(NDVI_ARTIFACTS + MASK_ARTIFACTS + PNG_ARTIFACTS)
+        if set(product.artifacts) != expected_artifacts:
+            return {"status": "failed", "code": "artifacts_incomplete"}
+        checksums = product.provenance.get("artifact_checksums")
+        if not isinstance(checksums, dict) or set(checksums) != expected_artifacts:
+            return {"status": "failed", "code": "artifact_checksum_missing"}
+        if artifact_root is None:
+            return {"status": "failed", "code": "artifact_root_missing"}
+        root = Path(artifact_root).resolve()
+        for name, filename in product.artifacts.items():
+            if not isinstance(filename, str) or Path(filename).name != filename:
+                return {"status": "failed", "code": "artifact_reference_invalid"}
+            path = (root / filename).resolve()
+            if root not in path.parents or not path.is_file():
+                return {"status": "failed", "code": "artifact_missing"}
+            digest = checksums.get(name)
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or artifact_sha256(path) != digest
+            ):
+                return {"status": "failed", "code": "artifact_checksum_mismatch"}
+            try:
+                if name in NDVI_ARTIFACTS:
+                    _verify_numeric_artifact(path, pair.pair_grid, "float32", np.nan)
+                elif name in MASK_ARTIFACTS:
+                    _verify_numeric_artifact(path, pair.pair_grid, "uint8", 0.0)
+                else:
+                    from PIL import Image
+
+                    with Image.open(path) as image:
+                        if image.format != "PNG":
+                            return {"status": "failed", "code": "artifact_invalid"}
+                        image.verify()
+            except (OSError, ValueError):
+                return {"status": "failed", "code": "artifact_invalid"}
+    return {"status": "passed", "common_pixels": int(np.count_nonzero(expected_common))}
 
 
 def verify_landsat_ndvi_metadata(
@@ -321,22 +424,40 @@ def verify_landsat_ndvi_metadata(
     *,
     expected_aoi: dict[str, Any],
     expected_periods: dict[str, Any],
+    artifact_root: str | Path | None = None,
 ) -> dict[str, Any]:
     """Verify the server-owned evidence projection used by terminal results."""
-    result = verify_landsat_ndvi_product(product, pair)
+    result = verify_landsat_ndvi_product(product, pair, artifact_root=artifact_root)
     if result["status"] != "passed":
         return result
     if product.provenance.get("aoi_hash") != expected_aoi.get("source_hash"):
         return {"status": "failed", "code": "aoi_evidence_mismatch"}
+    for provenance_key, expected_key in (
+        ("aoi_id", "aoi_id"),
+        ("aoi_source_version", "source_version"),
+        ("aoi_source_url", "source_url"),
+        ("aoi_area_m2", "area_m2"),
+    ):
+        if (
+            expected_key in expected_aoi
+            and product.provenance.get(provenance_key) != expected_aoi[expected_key]
+        ):
+            return {"status": "failed", "code": "aoi_evidence_mismatch"}
     if product.provenance.get("period_a") != expected_periods.get("period_a"):
         return {"status": "failed", "code": "period_a_evidence_mismatch"}
     if product.provenance.get("period_b") != expected_periods.get("period_b"):
         return {"status": "failed", "code": "period_b_evidence_mismatch"}
-    checksums = product.provenance.get("artifact_checksums", {})
-    if not isinstance(checksums, dict) or any(
-        not isinstance(value, str) or len(value) != 64 for value in checksums.values()
-    ):
-        return {"status": "failed", "code": "artifact_checksum_missing"}
+    if product.provenance.get("target_grid") != pair.pair_grid.model_dump(mode="json"):
+        return {"status": "failed", "code": "target_grid_mismatch"}
+    if product.provenance.get("target_crs") != pair.pair_grid.crs or product.provenance.get(
+        "target_dimensions"
+    ) != [pair.pair_grid.height, pair.pair_grid.width]:
+        return {"status": "failed", "code": "target_grid_mismatch"}
+    if product.provenance.get("scene_provenance") != {
+        "period_a": pair.period_a.provenance,
+        "period_b": pair.period_b.provenance,
+    }:
+        return {"status": "failed", "code": "scene_provenance_mismatch"}
     return {"status": "passed", "common_pixels": result["common_pixels"]}
 
 

@@ -6320,3 +6320,15 @@ non-calendar-month and out-of-range Jianghan periods before task creation.
 Focused tests and Ruff/Pyrefly pass. A clean rebuilt Docker compose smoke ran
 the real Jianghan A→B→verifier path and produced all nine artifacts; verifier
 passed with final coverage 81.9537% / 99.9969% and common 81.9506%.
+
+# V0.3 B trusted result-chain fix (2026-10-05)
+
+Dynamic terminal routing now bypasses legacy fixture evidence. The NDVI
+verifier independently recomputes masks, metrics, periods, grid, scene
+provenance, and artifact bytes from the server-owned preparation pair. Dynamic
+artifact checksums are mandatory for map and retrieval APIs.
+
+Focused Landsat tests: 9 passed, 1 skipped because the host virtualenv lacks
+Rasterio's PROJ database. Runtime/service regression: 86 passed, 3 skipped;
+the one remaining failure is the known out-of-scope confirmed NDBI baseline
+fixture. Clean committed Docker persistence/API/history smoke remains required.

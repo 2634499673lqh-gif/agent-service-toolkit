@@ -23,6 +23,7 @@ from .landsat_ndvi import (
 )
 from .landsat_ndvi import (
     compute_landsat_ndvi_product,
+    verify_landsat_ndvi_metadata,
     verify_landsat_ndvi_product,
 )
 from .llm import GeoChangeLLM
@@ -332,7 +333,9 @@ class SummarizeChangeRuntimeCapability(_Base):
                     ),
                 )
                 product = compute_landsat_ndvi_product(pair, artifact_dir=artifact_root)
-                verification = verify_landsat_ndvi_product(product, pair)
+                verification = verify_landsat_ndvi_product(
+                    product, pair, artifact_root=artifact_root
+                )
                 if verification["status"] != "passed":
                     raise ValueError("landsat verifier failed")
             except Exception as error:
@@ -374,6 +377,26 @@ class SummarizeChangeRuntimeCapability(_Base):
                     product.metrics, sort_keys=True, separators=(",", ":"), allow_nan=False
                 ).encode()
             ).hexdigest()
+            metadata_verification = verify_landsat_ndvi_metadata(
+                product,
+                pair,
+                expected_aoi={
+                    "aoi_id": aoi.aoi_id,
+                    "source_hash": aoi.source_hash,
+                    "source_version": aoi.source_version,
+                    "source_url": aoi.source_url,
+                    "area_m2": aoi.area_m2,
+                },
+                expected_periods={
+                    "period_a": pair.period_a.requested_period.model_dump(mode="json"),
+                    "period_b": pair.period_b.requested_period.model_dump(mode="json"),
+                },
+                artifact_root=artifact_root,
+            )
+            if metadata_verification["status"] != "passed":
+                raise ValueError(
+                    f"landsat verifier failed: {metadata_verification.get('code', 'metadata')}"
+                )
             payload = {
                 "schema_version": "geochange.v1",
                 "analysis_type": "vegetation_change",
