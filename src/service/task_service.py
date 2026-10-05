@@ -27,7 +27,6 @@ class TaskService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.tasks = TaskRepository(session)
-        self.reused_existing = False
 
     async def create_task(
         self,
@@ -62,7 +61,6 @@ class TaskService:
                 )
                 if existing is not None:
                     if getattr(existing.status, "value", existing.status) == "draft":
-                        self.reused_existing = True
                         await self.session.commit()
                         return existing
                     raise ExistingAnalysisError(existing)
