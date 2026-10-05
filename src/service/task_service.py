@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from persistence.models import Task
 from persistence.repositories import TaskRepository
+from schema.confirmed_intent import ConfirmedIntent
 from service.authorization import require_task_management
 from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService, TaskNotFoundError
@@ -30,11 +31,20 @@ class TaskService:
         """Create a draft Task with ownership derived from the principal."""
 
         try:
+            canonical_intent: dict[str, Any] | None = None
             if confirmed_intent is not None:
+                canonical_intent = ConfirmedIntent.model_validate(confirmed_intent).model_dump(
+                    mode="json"
+                )
+                await self.tasks.lock_confirmation_scope(
+                    principal.membership_id,
+                    principal.user_id,
+                    principal.organization_id,
+                )
                 existing = await self.tasks.find_for_user_with_intent(
                     principal.user_id,
                     principal.organization_id,
-                    confirmed_intent,
+                    canonical_intent,
                 )
                 if existing is not None:
                     if getattr(existing.status, "value", existing.status) == "draft":
@@ -45,7 +55,7 @@ class TaskService:
                 created_by_user_id=principal.user_id,
                 title=title,
                 description=description,
-                confirmed_intent=confirmed_intent,
+                confirmed_intent=canonical_intent,
             )
             await self.tasks.add(task)
             await self.session.commit()

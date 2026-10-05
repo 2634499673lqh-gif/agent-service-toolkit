@@ -326,8 +326,18 @@ async def test_confirmation_persists_structured_proposal_without_starting_a_run(
 @pytest.mark.asyncio
 async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> None:
     existing = SimpleNamespace(status=SimpleNamespace(value="draft"))
+    intent = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "武汉东湖",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+    }
 
     class DraftRepository:
+        async def lock_confirmation_scope(self, membership_id, user_id, organization_id):
+            return object()
+
         async def find_for_user_with_intent(self, user_id, organization_id, intent):
             assert intent["indicator"] == "NDVI"
             return existing
@@ -335,12 +345,14 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
     service = TaskService.__new__(TaskService)
     service.tasks = DraftRepository()
     service.session = SimpleNamespace(rollback=AsyncMock())
-    principal = SimpleNamespace(user_id=uuid4(), organization_id=uuid4())
+    principal = SimpleNamespace(
+        user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4()
+    )
 
     result = await service.create_task(
         principal,
         title="武汉东湖 NDVI",
-        confirmed_intent={"indicator": "NDVI"},
+        confirmed_intent=intent,
     )
 
     assert result is existing
@@ -349,19 +361,31 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
 @pytest.mark.asyncio
 async def test_task_creation_rejects_replayed_started_proposal() -> None:
     existing = SimpleNamespace(status=SimpleNamespace(value="running"))
+    intent = {
+        "analysis_type": "vegetation_change",
+        "indicator": "NDVI",
+        "analysis_area": "武汉东湖",
+        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+    }
 
     class ExistingRepository:
+        async def lock_confirmation_scope(self, membership_id, user_id, organization_id):
+            return object()
+
         async def find_for_user_with_intent(self, user_id, organization_id, intent):
             return existing
 
     service = TaskService.__new__(TaskService)
     service.tasks = ExistingRepository()
     service.session = SimpleNamespace(rollback=AsyncMock())
-    principal = SimpleNamespace(user_id=uuid4(), organization_id=uuid4())
+    principal = SimpleNamespace(
+        user_id=uuid4(), membership_id=uuid4(), organization_id=uuid4()
+    )
 
     with pytest.raises(ValueError, match="already been confirmed"):
         await service.create_task(
             principal,
             title="武汉东湖 NDVI",
-            confirmed_intent={"indicator": "NDVI"},
+            confirmed_intent=intent,
         )
