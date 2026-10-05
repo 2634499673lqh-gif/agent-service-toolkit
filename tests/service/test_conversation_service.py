@@ -325,16 +325,16 @@ async def test_confirmation_persists_structured_proposal_without_starting_a_run(
 
 @pytest.mark.asyncio
 async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> None:
-    existing = object()
+    existing = SimpleNamespace(status=SimpleNamespace(value="draft"))
 
     class DraftRepository:
-        async def find_draft_for_user_with_intent(self, user_id, organization_id, intent):
+        async def find_for_user_with_intent(self, user_id, organization_id, intent):
             assert intent["indicator"] == "NDVI"
             return existing
 
     service = TaskService.__new__(TaskService)
     service.tasks = DraftRepository()
-    service.session = object()
+    service.session = SimpleNamespace(rollback=AsyncMock())
     principal = SimpleNamespace(user_id=uuid4(), organization_id=uuid4())
 
     result = await service.create_task(
@@ -344,3 +344,24 @@ async def test_task_creation_reuses_matching_draft_for_replayed_proposal() -> No
     )
 
     assert result is existing
+
+
+@pytest.mark.asyncio
+async def test_task_creation_rejects_replayed_started_proposal() -> None:
+    existing = SimpleNamespace(status=SimpleNamespace(value="running"))
+
+    class ExistingRepository:
+        async def find_for_user_with_intent(self, user_id, organization_id, intent):
+            return existing
+
+    service = TaskService.__new__(TaskService)
+    service.tasks = ExistingRepository()
+    service.session = SimpleNamespace(rollback=AsyncMock())
+    principal = SimpleNamespace(user_id=uuid4(), organization_id=uuid4())
+
+    with pytest.raises(ValueError, match="already been confirmed"):
+        await service.create_task(
+            principal,
+            title="武汉东湖 NDVI",
+            confirmed_intent={"indicator": "NDVI"},
+        )

@@ -110,20 +110,19 @@ class TaskRepository:
         result = await self.session.scalars(statement)
         return list(result)
 
-    async def find_draft_for_user_with_intent(
+    async def find_for_user_with_intent(
         self,
         user_id: UUID,
         organization_id: UUID,
         confirmed_intent: dict[str, object],
     ) -> Task | None:
-        """Return an existing draft for the same server-validated proposal."""
+        """Return an existing task for the same server-validated proposal."""
 
         statement = (
             select(Task)
             .where(
                 Task.created_by_user_id == user_id,
                 Task.organization_id == organization_id,
-                Task.status == "draft",
                 Task.confirmed_intent == confirmed_intent,
             )
             .order_by(Task.created_at, Task.id)
