@@ -244,14 +244,16 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
     foreign_principal = principal_for(foreign, foreign_membership)
 
     request_sessions = []
+    proposal_instance = uuid4()
 
-    async def create(principal: CurrentPrincipal, suffix: str):
+    async def create(principal: CurrentPrincipal, suffix: str, proposal_id=None):
         async with factory() as session:
             request_sessions.append(session)
             task = await TaskService(session).create_task(
                 principal,
                 title=f"atomic-{suffix}",
                 confirmed_intent=intent,
+                proposal_id=proposal_id,
             )
             assert not session.in_transaction()
             return task
@@ -265,8 +267,8 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
             owner_principal.organization_id,
         )
         requests = [
-            asyncio.create_task(create(owner_principal, "one")),
-            asyncio.create_task(create(owner_principal, "two")),
+            asyncio.create_task(create(owner_principal, "one", proposal_instance)),
+            asyncio.create_task(create(owner_principal, "two", proposal_instance)),
         ]
         try:
             async with asyncio.timeout(10):
@@ -299,6 +301,14 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
         )
     assert count == 1
 
+    # A new conversational proposal gets its own identity even when its
+    # validated analysis content matches an older proposal.
+    new_proposals = await asyncio.gather(
+        create(owner_principal, "new-one", uuid4()),
+        create(owner_principal, "new-two", uuid4()),
+    )
+    assert new_proposals[0].id != new_proposals[1].id
+
     foreign_task = await create(foreign_principal, "foreign")
     assert foreign_task.id != first.id
 
@@ -329,7 +339,10 @@ async def test_task_service_confirmation_is_atomic_and_tenant_scoped(api_context
         async with factory() as session:
             with pytest.raises(ValueError, match="already been confirmed"):
                 await TaskService(session).create_task(
-                    owner_principal, title="replay", confirmed_intent=intent
+                    owner_principal,
+                    title="replay",
+                    confirmed_intent=intent,
+                    proposal_id=proposal_instance,
                 )
             assert not session.in_transaction()
 

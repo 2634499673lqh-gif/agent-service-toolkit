@@ -130,6 +130,23 @@ class TaskRepository:
         )
         return await self.session.scalar(statement)
 
+    async def find_for_user_with_proposal_id(
+        self, user_id: UUID, organization_id: UUID, proposal_id: UUID
+    ) -> Task | None:
+        """Return the task created from this exact proposal instance."""
+
+        statement = (
+            select(Task)
+            .where(
+                Task.created_by_user_id == user_id,
+                Task.organization_id == organization_id,
+                Task.proposal_id == proposal_id,
+            )
+            .order_by(Task.created_at, Task.id)
+            .limit(1)
+        )
+        return await self.session.scalar(statement)
+
     async def lock_confirmation_scope(
         self,
         membership_id: UUID,

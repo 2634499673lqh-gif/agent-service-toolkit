@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -13,6 +13,8 @@ class TaskProposal(BaseModel):
     """Server-readable proposal; it is not an execution command."""
 
     model_config = ConfigDict(extra="forbid")
+
+    proposal_id: UUID = Field(default_factory=uuid4)
 
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1, max_length=2000)

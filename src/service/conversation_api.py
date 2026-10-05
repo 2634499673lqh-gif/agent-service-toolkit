@@ -1,5 +1,7 @@
 """Protected conversational facade for TaskPilot Product users."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import ValidationError
 
@@ -23,6 +25,9 @@ from service.conversation_service import (
     proposal_from_message,
 )
 from service.task_api import TaskSessionDependency
+from service.task_service import ExistingAnalysisError
+
+logger = logging.getLogger(__name__)
 
 conversation_router = APIRouter(prefix="/api/v1/conversation", tags=["conversation"])
 
@@ -125,7 +130,25 @@ async def confirm_conversation_task(
             )
         task = await create_confirmed_task(session, principal, payload.proposal)
         response.status_code = status.HTTP_201_CREATED
-    except (ValueError, ValidationError):
+    except ExistingAnalysisError as error:
+        task = error.task
+        logger.info(
+            "conversation_confirmation_existing task_id=%s status=%s",
+            task.id,
+            getattr(task.status, "value", task.status),
+        )
+        response.status_code = status.HTTP_200_OK
+        return ConversationResponse(
+            kind="existing_analysis",
+            message=(
+                "这份分析方案已经提交过了。请从“我的分析”打开已有结果，"
+                "如需重新运行，请重新发送分析请求。"
+            ),
+            proposal=TaskProposal.model_validate(payload.proposal),
+            result={"task_id": task.id, "status": task.status.value},
+        )
+    except (ValueError, ValidationError) as error:
+        logger.info("conversation_confirmation_invalid error_type=%s", type(error).__name__)
         raise HTTPException(
             status_code=422,
             detail="分析方案无法通过安全校验，请检查区域、指标和比较时段。",

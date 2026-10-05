@@ -861,6 +861,7 @@ class Task(Base):
     confirmed_intent: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB(none_as_null=True), nullable=True
     )
+    proposal_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
 
     @validates("confirmed_intent")
     def validate_confirmed_intent(self, _key: str, value: object) -> dict[str, Any] | None:

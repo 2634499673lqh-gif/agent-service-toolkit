@@ -23,7 +23,7 @@ from service.conversation_service import (
     proposal_from_message,
     validate_proposal,
 )
-from service.task_service import TaskService
+from service.task_service import ExistingAnalysisError, TaskService
 
 
 def test_proposal_from_chinese_request_extracts_area_and_years() -> None:
@@ -291,6 +291,26 @@ async def test_complete_confirmation_sets_created_status(monkeypatch: pytest.Mon
     )
     assert response.status_code == 201
     assert result.kind == "task_created"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_reports_existing_analysis_instead_of_invalid_proposal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proposal = proposal_from_message(
+        "分析武汉东湖，时段A 2023-07-01至2023-07-31，时段B 2024-07-01至2024-07-31"
+    )
+    task = SimpleNamespace(id=uuid4(), status=SimpleNamespace(value="succeeded"))
+    monkeypatch.setattr(
+        conversation_api,
+        "create_confirmed_task",
+        AsyncMock(side_effect=ExistingAnalysisError(task)),
+    )
+    response = await conversation_api.confirm_conversation_task(
+        ConfirmTaskRequest(proposal=proposal), object(), object(), Response()
+    )
+    assert response.kind == "existing_analysis"
+    assert response.result == {"task_id": task.id, "status": "succeeded"}
 
 
 @pytest.mark.asyncio

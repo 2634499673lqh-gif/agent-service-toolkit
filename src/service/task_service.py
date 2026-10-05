@@ -13,12 +13,21 @@ from service.session import CurrentPrincipal
 from service.task_lifecycle import TaskLifecycleService, TaskNotFoundError
 
 
+class ExistingAnalysisError(ValueError):
+    """The proposal instance already produced a non-draft task."""
+
+    def __init__(self, task: Task) -> None:
+        super().__init__("proposal has already been confirmed")
+        self.task = task
+
+
 class TaskService:
     """Own Task API use cases while keeping tenant scope in repository SQL."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.tasks = TaskRepository(session)
+        self.reused_existing = False
 
     async def create_task(
         self,
@@ -27,6 +36,7 @@ class TaskService:
         title: str,
         description: str | None = None,
         confirmed_intent: dict[str, Any] | None = None,
+        proposal_id: UUID | None = None,
     ) -> Task:
         """Create a draft Task with ownership derived from the principal."""
 
@@ -41,22 +51,28 @@ class TaskService:
                     principal.user_id,
                     principal.organization_id,
                 )
-                existing = await self.tasks.find_for_user_with_intent(
-                    principal.user_id,
-                    principal.organization_id,
-                    canonical_intent,
+                existing = (
+                    await self.tasks.find_for_user_with_proposal_id(
+                        principal.user_id, principal.organization_id, proposal_id
+                    )
+                    if proposal_id is not None
+                    else await self.tasks.find_for_user_with_intent(
+                        principal.user_id, principal.organization_id, canonical_intent
+                    )
                 )
                 if existing is not None:
                     if getattr(existing.status, "value", existing.status) == "draft":
+                        self.reused_existing = True
                         await self.session.commit()
                         return existing
-                    raise ValueError("proposal has already been confirmed")
+                    raise ExistingAnalysisError(existing)
             task = Task(
                 organization_id=principal.organization_id,
                 created_by_user_id=principal.user_id,
                 title=title,
                 description=description,
                 confirmed_intent=canonical_intent,
+                proposal_id=proposal_id,
             )
             await self.tasks.add(task)
             await self.session.commit()
@@ -119,4 +135,4 @@ class TaskService:
         )
 
 
-__all__ = ["TaskService"]
+__all__ = ["ExistingAnalysisError", "TaskService"]

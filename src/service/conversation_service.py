@@ -25,7 +25,7 @@ from schema.conversation_api import (
 )
 from service.logging import current_request_id
 from service.session import CurrentPrincipal
-from service.task_service import TaskService
+from service.task_service import ExistingAnalysisError, TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -412,12 +412,17 @@ async def create_confirmed_task(
     session: AsyncSession, principal: CurrentPrincipal, proposal: TaskProposal
 ) -> Task:
     validated = validate_proposal(proposal)
-    return await TaskService(session).create_task(
+    service = TaskService(session)
+    task = await service.create_task(
         principal,
         title=validated.title,
         description=validated.description,
         confirmed_intent=confirmed_intent_from_proposal(validated).model_dump(mode="json"),
+        proposal_id=validated.proposal_id,
     )
+    if getattr(service, "reused_existing", False):
+        raise ExistingAnalysisError(task)
+    return task
 
 
 __all__ = [
