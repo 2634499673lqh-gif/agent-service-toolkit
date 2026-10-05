@@ -6187,3 +6187,17 @@ Result: V0.3 Landsat preflight PASS for retrieval and bounded real reads. The ev
 Learner notes: read the task prompt, `compose.yaml`, and the STAC item asset metadata. The key concept is separating STAC discovery, anonymous SAS authorization, bounded COG byte access, and radiometric conversion. Exercise: inspect one asset's `raster:bands` and explain why DN 0 is masked before applying scale/offset. Do not worry yet about implementing a provider adapter, AOI boundary service, or NDVI Skill changes.
 
 Suggested next task: independently review this evidence, then design (without implementing in this preflight) the smallest server-owned Landsat asset-read interface with explicit AOI/window bounds and no signed-URL persistence.
+
+# 2026-10-05 — TaskPilot V0.3 Implementation A
+
+建立了受信的江汉区 AOI 与 Landsat C2 L2 准备边界。AOI 使用 OpenStreetMap relation 3077256 version 21 的不可变快照，CRS 为 EPSG:4326，面积 28,521,331.34 m²，SHA-256 为 `11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25`，保留 ODbL attribution 和 provenance。新增 Planetary Computer STAC discovery、受限 SAS/host 校验、资产物理波段映射、MTL 校准核对、Rasterio/GDAL 子进程 COG 读取、QA mask、辐射定标、确定性 priority-fill、pair-wide 30 m target grid、准备掩膜和 `PreparedPeriodPair` contract。未修改 Sentinel-2 legacy fixture 或 Agent/UI 层。
+
+真实 AOI probe 选出 `LC08_L2SP_123039_20230727_02_T1`（2023-07）与 `LC09_L2SP_123039_20240721_02_T1`（2024-07）；实际资产映射为 red→SR_B4、nir08→SR_B5、qa_pixel→QA_PIXEL、qa_radsat→QA_RADSAT，并成功核对 MTL reflectance scale `2.75e-05` 与 offset `-0.2`。两期共享 pair grid 为 EPSG:32649、30 m、296×264；AOI pixels 为 31,857，准备覆盖率分别为 81.9537% 与 99.9969%，common prepared pixels 为 26,107。探测结果在宿主与 Docker `agent_service` 中一致。
+
+资源边界保持冻结：target pixels、AOI/scene 数、wall-clock deadline、child-process timeout 与有限重试是 hard limits；`bytes_observed=524288` 是受限 Range probe 的运行指标，附带 lower-bound warning，不宣称完整网络字节统计。拒绝非 Planetary Computer/blob host、拒绝带 SAS credential query 的输入；signed URL 只在受控读取过程中短暂存在，不进入返回值、日志或 provenance。Docker image 已包含 Rasterio/GDAL capability 与 AOI snapshot，`rasterio 1.5.1` / `GDAL 3.12.4` 容器探针通过。
+
+Validation: `uv run pytest -q tests/geochange`（140 passed，5 warnings）；`uv run pytest -q tests/runtime/test_geochange_offline_authority.py tests/service/test_runtime_dispatch.py`（5 passed，5 warnings）；Ruff check/format、Pyrefly、`uv lock --check`、`git diff --check`、Compose config 均通过。Docker Compose 四项服务 healthy，容器内 real bounded AOI probe 与 legacy fixture smoke 通过。无数据库迁移，无 full dynamic NDVI product flow，无 Implementation B，无最终产品 readiness claim。
+
+Learner notes: 重点是把外部 STAC metadata、短期签名 URL、COG window read、QA 与 reflectance preparation 分成可审计边界，并让两个时段共享同一 target grid。建议阅读 `src/geochange/aoi.py`、`src/geochange/landsat.py`、`tests/geochange/test_landsat.py`、`data/geochange-aoi/jianghan_district_420103.geojson` 和 `docker/Dockerfile.service`。练习：追踪一个 `SR_B4` DN 从资产映射到定标后的 mask，并解释为什么 common mask 只能在 pair-wide grid 上生成。暂时不必处理最终 NDVI 产品、动态 AOI、UI 或 Implementation B。
+
+Suggested next task: independent Strong Review of Implementation A, followed by the separately scoped Implementation B only after review approval.
