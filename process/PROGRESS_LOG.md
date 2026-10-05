@@ -6201,3 +6201,17 @@ Validation: `uv run pytest -q tests/geochange`（140 passed，5 warnings）；`u
 Learner notes: 重点是把外部 STAC metadata、短期签名 URL、COG window read、QA 与 reflectance preparation 分成可审计边界，并让两个时段共享同一 target grid。建议阅读 `src/geochange/aoi.py`、`src/geochange/landsat.py`、`tests/geochange/test_landsat.py`、`data/geochange-aoi/jianghan_district_420103.geojson` 和 `docker/Dockerfile.service`。练习：追踪一个 `SR_B4` DN 从资产映射到定标后的 mask，并解释为什么 common mask 只能在 pair-wide grid 上生成。暂时不必处理最终 NDVI 产品、动态 AOI、UI 或 Implementation B。
 
 Suggested next task: independent Strong Review of Implementation A, followed by the separately scoped Implementation B only after review approval.
+
+# 2026-10-05 — V0.3 Implementation A focused Strong Review blocker correction
+
+修复了本轮 Strong Review 指出的 A blockers：Trusted Jianghan AOI 现在使用代码外部固定 SHA-256 与 relation/version/source/license 元数据绑定，完整校验 Polygon/MultiPolygon 所有 part、holes、闭环、有限坐标、拓扑和 pilot location，并独立计算投影/有界地理面积；每次加载返回 canonical geometry 的深拷贝。Landsat scene selection 不再以 footprint-complete 直接选单景，而是按确定性候选顺序读取真实 AOI QA 质量，必要时 bounded priority-fill 同月候选，最多三景并在 70% provisional gate 达成后停止；Red/NIR 同源填充。Provider 边界固定至真实 `landsateuwest.blob.core.windows.net` 账户，HTTP 禁止 redirects，签名后再次校验 host。
+
+资源边界现在在 prepare 入口重新校验 <=3 scenes，worker 接收 `max_window_pixels`，预分配前估算 retained arrays/working buffers，array+GDAL cache 总预算不超过 128 MiB，进程级 provider semaphore 为 2，共享 deadline 覆盖 STAC/sign/probe/MTL/child work，child cleanup 为 terminate→join→kill→join→IPC close；A 不写 staged artifacts，hard_limits_applied 以 0/False 记录该事实。实际 raster dtype/CRS/transform/dimensions/nodata/scale/offset 与 STAC/MTL 对照；可用 SR_QA_AEROSOL 通过同一路径读取并输出有界 diagnostics。
+
+新增 `scripts/probe_landsat_pair.py`（生产 A 路径、仅稳定 identity/coverage/grid/limits/metrics、无 SAS 输出）及 provider/limit/AOI 负例回归测试；Dockerfile 将 probe 脚本复制进 agent_service。Focused AOI/Landsat/provider tests：34 passed；完整 `tests/geochange`：160 passed。Docker real probe 本轮未能运行：Docker Desktop WSL data disk 报 `ERROR_NO_SYSTEM_RESOURCES`，因此未声称真实 Docker probe 或冻结 preparation >=70%。
+
+Learner notes: 这次修复的核心是把“候选 footprint”与“真实像元质量证据”分开，并让每个资源字段对应可执行边界。建议阅读 `src/geochange/aoi.py`、`src/geochange/landsat.py`、`scripts/probe_landsat_pair.py`、`tests/geochange/test_trusted_aoi.py`、`tests/geochange/test_landsat_provider_limits.py`。练习：构造一个全覆盖但 QA 全云的第一景和互补第二景，观察 `source_scene_index` 与 `scene_count`。暂时不必处理 B 的 NDVI、artifact 生成或 UI。
+
+Real-provider bounded probe (host execution of the same production path, 2026-10-05 16:15 Asia/Shanghai) completed successfully after allowing GDAL's raw-DN scale=1/offset=0 metadata with trusted STAC/MTL physical calibration. Jianghan AOI pixels: 31,857; pair grid EPSG:32649, 264×296, 30 m. 2023-07 scene `LC08_L2SP_123039_20230727_02_T1` produced 26,108 preparation pixels (81.9537%, one scene); 2024-07 scene `LC09_L2SP_123039_20240721_02_T1` produced 31,856 pixels (99.9969%, one scene); common preparation pixels: 26,107. Actual Red/NIR/QA/aerosol reads, MTL calibration, metadata checks and sanitized asset identity hashes passed. `bytes_observed=655,360` is a lower-bound range-probe metric; elapsed time was 95,954 ms. Hard-limit evidence reported array 96 MiB + GDAL 32 MiB, max 2 remote operations, 262,144 window pixels, 500,000 target pixels, 180 s deadline, retry limit 3, and zero A-owned staged/artifact writes. No SAS/query credentials were emitted.
+
+Docker execution remains pending because Docker Desktop cannot mount its WSL data disk (`ERROR_NO_SYSTEM_RESOURCES`); the successful host probe is evidence for provider/raster behavior but is not substituted for the required in-container probe.

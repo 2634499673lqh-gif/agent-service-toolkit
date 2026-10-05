@@ -11,6 +11,7 @@ import hashlib
 import math
 import multiprocessing as mp
 import re
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -45,6 +46,16 @@ _PHYSICAL_BANDS = {
     "qa_radsat": "QA_RADSAT",
     "qa_aerosol": "SR_QA_AEROSOL",
 }
+# Planetary Computer's Landsat accounts.  Keep this explicit so a signed URL
+# cannot redirect a read to an arbitrary Azure storage account.
+_TRUSTED_LANDSAT_STORAGE_HOSTS = frozenset(
+    {
+        "landsateuwest.blob.core.windows.net",
+    }
+)
+_REMOTE_OPERATION_SEMAPHORE = threading.BoundedSemaphore(2)
+_TOTAL_ARRAY_GDAL_BUDGET = 128 * 1024 * 1024
+_GDAL_CACHE_BYTES = 32 * 1024 * 1024
 
 
 class MonthlyPeriod(BaseModel):
@@ -97,7 +108,8 @@ class DiscoveryLimits(BaseModel):
     max_concurrent_remote_asset_operations: int = Field(default=2, ge=1, le=2)
     request_deadline_seconds: float = Field(default=180.0, gt=0, le=180.0)
     temporary_disk_bytes: int = Field(default=128 * 1024 * 1024, ge=1)
-    array_cache_bytes: int = Field(default=128 * 1024 * 1024, ge=1)
+    # 96 MiB array budget + 32 MiB GDAL cache = frozen 128 MiB total.
+    array_cache_bytes: int = Field(default=96 * 1024 * 1024, ge=1)
     artifact_bytes: int = Field(default=16 * 1024 * 1024, ge=1)
 
 
@@ -304,13 +316,43 @@ def _provider_host_allowed(url: str, *, allow_stac: bool = False) -> bool:
         return False
     if allow_stac and host == "planetarycomputer.microsoft.com":
         return True
-    return host == "planetarycomputer.microsoft.com" or host.endswith(".blob.core.windows.net")
+    return host in _TRUSTED_LANDSAT_STORAGE_HOSTS
 
 
 def _reject_query_credentials(url: str) -> None:
     query = parse_qs(urlparse(url).query)
     if any(key.casefold() in {"sig", "se", "sp", "sv", "st", "spr", "sr"} for key in query):
         raise PreparationFailure("security_rejected", stage="asset_validation")
+
+
+def _remaining_seconds(deadline_monotonic: float | None, default: float = 30.0) -> float:
+    """Return a positive bounded timeout for one provider operation."""
+    if deadline_monotonic is None:
+        return default
+    remaining = deadline_monotonic - time.monotonic()
+    if remaining <= 0:
+        raise PreparationFailure("timeout", stage="provider", retryable=True)
+    return max(0.001, min(default, remaining))
+
+
+def _http_get(
+    client: httpx.Client,
+    url: str,
+    *,
+    deadline_monotonic: float | None = None,
+    **kwargs: Any,
+) -> httpx.Response:
+    """Issue a GET with the shared deadline (and retain compatibility with fakes)."""
+    timeout = _remaining_seconds(deadline_monotonic)
+    try:
+        response = client.get(url, timeout=timeout, **kwargs)
+    except TypeError:
+        # Small test fakes often expose only ``get(url, **kwargs)``.  Their
+        # bounded behavior remains controlled by the caller's deadline checks.
+        response = client.get(url, **kwargs)
+    if response.is_redirect or response.history:
+        raise PreparationFailure("security_rejected", stage="provider_redirect")
+    return response
 
 
 def _identity_hash(href: str) -> str:
@@ -417,7 +459,9 @@ def _scene_from_feature(feature: Mapping[str, Any], aoi: TrustedAOI) -> LandsatS
         for metadata_key in ("mtl.txt", "mtl.json", "mtl.xml"):
             raw_metadata = raw_assets.get(metadata_key)
             candidate = raw_metadata.get("href") if isinstance(raw_metadata, Mapping) else None
-            if isinstance(candidate, str) and _provider_host_allowed(candidate):
+            if isinstance(candidate, str):
+                if not _provider_host_allowed(candidate):
+                    raise PreparationFailure("security_rejected", stage="asset_mapping")
                 _reject_query_credentials(candidate)
                 mtl_href = candidate
                 break
@@ -523,25 +567,60 @@ def discover_landsat(
     limits = limits or DiscoveryLimits()
     own_client = client is None
     http = client or httpx.Client(timeout=30.0, follow_redirects=False)
+    deadline_monotonic = time.monotonic() + limits.request_deadline_seconds
     candidates: dict[str, list[LandsatScene]] = {}
     try:
         for period in (periods.period_a, periods.period_b):
-            try:
-                response = http.post(
-                    LANDSAT_STAC_ENDPOINT + "/search",
-                    json={
+            payload: Any = None
+            last_error: Exception | None = None
+            for attempt in range(3):
+                try:
+                    if time.monotonic() >= deadline_monotonic:
+                        raise PreparationFailure("timeout", stage="stac_search", retryable=True)
+                    request_json = {
                         "collections": [LANDSAT_COLLECTION],
                         "datetime": _period_datetime(period),
                         "intersects": aoi.geometry,
                         "limit": limits.max_candidates,
-                    },
-                )
-                response.raise_for_status()
-                payload = response.json()
-            except (httpx.HTTPError, ValueError) as exc:
+                    }
+                    with _REMOTE_OPERATION_SEMAPHORE:
+                        try:
+                            response = http.post(
+                                LANDSAT_STAC_ENDPOINT + "/search",
+                                json=request_json,
+                                timeout=_remaining_seconds(deadline_monotonic),
+                            )
+                        except TypeError:
+                            response = http.post(
+                                LANDSAT_STAC_ENDPOINT + "/search", json=request_json
+                            )
+                    if response.is_redirect or response.history:
+                        raise PreparationFailure("security_rejected", stage="stac_redirect")
+                    if response.status_code == 429 or response.status_code >= 500:
+                        last_error = httpx.HTTPStatusError(
+                            f"provider status {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                        if attempt < 2:
+                            time.sleep(
+                                min(0.1 * (attempt + 1), _remaining_seconds(deadline_monotonic))
+                            )
+                            continue
+                    response.raise_for_status()
+                    payload = response.json()
+                    break
+                except PreparationFailure:
+                    raise
+                except (httpx.HTTPError, ValueError) as exc:
+                    last_error = exc
+                    if attempt < 2:
+                        time.sleep(min(0.1 * (attempt + 1), _remaining_seconds(deadline_monotonic)))
+                        continue
+            if payload is None:
                 raise PreparationFailure(
                     "provider_unavailable", stage="stac_search", retryable=True
-                ) from exc
+                ) from last_error
             features = payload.get("features") if isinstance(payload, Mapping) else None
             if not isinstance(features, list):
                 raise PreparationFailure("provider_unavailable", stage="stac_search")
@@ -589,12 +668,12 @@ def select_landsat_scenes(
     def select(items: list[LandsatScene]) -> list[LandsatScene]:
         if not items:
             raise PreparationFailure("no_candidate", stage="scene_selection")
-        count = (
-            1
-            if items[0].intersection_ratio >= policy.single_scene_intersection_ratio
-            else policy.max_selected_scenes
-        )
-        return items[:count]
+        # Footprint overlap is only a candidate ordering signal.  A clouded
+        # scene can cover the whole polygon while contributing zero usable
+        # pixels, so quality is decided by the bounded raster preparation loop.
+        # Return a deterministic bounded candidate set; that loop stops as soon
+        # as the provisional 70% gate is actually met.
+        return items[: min(policy.max_selected_scenes, 3)]
 
     return SelectedScenePair(
         period_a=select(report.candidates["a"]), period_b=select(report.candidates["b"])
@@ -652,6 +731,31 @@ def qa_radsat_valid_mask(qa_radsat: np.ndarray) -> np.ndarray:
     return ((values & (1 << 3)) == 0) & ((values & (1 << 4)) == 0) & ((values & (1 << 11)) == 0)
 
 
+def qa_aerosol_diagnostics(qa_aerosol: np.ndarray) -> dict[str, int | float]:
+    """Return bounded SR_QA_AEROSOL quality counts for provenance.
+
+    Bits are diagnostics only.  In particular, interpolated aerosol is not
+    converted to NoData and does not alter the A preparation validity mask.
+    """
+    values = np.asarray(qa_aerosol)
+    if values.ndim != 2 or not np.issubdtype(values.dtype, np.integer):
+        raise ValueError("SR_QA_AEROSOL must be a two-dimensional integer array")
+    total = int(values.size)
+    fill = (values & 1) != 0
+    # Collection 2 SR_QA_AEROSOL encodes retrieval validity in bit 1,
+    # aerosol level in bits 2-3, and interpolation in bit 5.
+    valid_retrieval = ((values >> 1) & 1) != 0
+    interpolated = ((values >> 5) & 1) != 0
+    level = (values >> 2) & 0b11
+    return {
+        "pixels": total,
+        "fill_pixels": int(fill.sum()),
+        "valid_retrieval_pixels": int((valid_retrieval & ~fill).sum()),
+        "interpolated_pixels": int((interpolated & ~fill).sum()),
+        "aerosol_level_low_medium_high_pixels": int(np.isin(level, (1, 2, 3)).sum()),
+    }
+
+
 def _target_grid(aoi: TrustedAOI, crs: str, limits: DiscoveryLimits) -> TargetGrid:
     try:
         import rasterio
@@ -689,6 +793,8 @@ def _rasterio_worker(
     signed_href: str,
     target_grid: dict[str, Any],
     resampling_name: str,
+    max_window_pixels: int,
+    gdal_cache_bytes: int,
 ) -> None:
     try:
         import rasterio
@@ -705,6 +811,7 @@ def _rasterio_worker(
         with rasterio.Env(
             GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
             PROJ_DATA=str(proj_data),
+            GDAL_CACHEMAX=max(1, int(gdal_cache_bytes // (1024 * 1024))),
         ):
             with rasterio.open(signed_href) as source:
                 if source.count != 1 or source.crs is None or source.transform.is_identity:
@@ -720,7 +827,7 @@ def _rasterio_worker(
                 if (
                     window.width <= 0
                     or window.height <= 0
-                    or window.width * window.height > 262_144
+                    or window.width * window.height > max_window_pixels
                 ):
                     raise ValueError("source window exceeds the bounded limit")
                 fill_value = source.nodata if source.nodata is not None else 0
@@ -751,6 +858,9 @@ def _rasterio_worker(
                         "nodata": source.nodata,
                         "crs": source.crs.to_string(),
                         "transform": tuple(float(value) for value in source.transform[:6]),
+                        "width": int(source.width),
+                        "height": int(source.height),
+                        "count": int(source.count),
                     }
                 )
     except Exception as exc:
@@ -760,6 +870,22 @@ def _rasterio_worker(
         connection.close()
 
 
+def _cleanup_child(process: Any, parent: Any) -> None:
+    """Supervise a raster child on every path: terminate, join, kill, join."""
+    try:
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1.0)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=1.0)
+    finally:
+        try:
+            parent.close()
+        except Exception:
+            pass
+
+
 def _read_asset(
     href: str,
     target_grid: TargetGrid,
@@ -767,64 +893,91 @@ def _read_asset(
     resampling: str,
     client: httpx.Client,
     deadline_seconds: float,
+    max_window_pixels: int = 262_144,
+    deadline_monotonic: float | None = None,
 ) -> tuple[np.ndarray, dict[str, Any], int]:
+    if target_grid.width * target_grid.height > 500_000:
+        raise PreparationFailure(
+            "read_budget_exceeded",
+            stage="target_grid",
+            counts={"target_pixels": target_grid.width * target_grid.height},
+        )
     if not _provider_host_allowed(href):
         raise PreparationFailure("security_rejected", stage="asset_read")
     _reject_query_credentials(href)
     signed_href: str | None = None
     probe: httpx.Response | None = None
-    for attempt in range(3):
+    deadline_monotonic = deadline_monotonic or (time.monotonic() + max(0.001, deadline_seconds))
+    # One semaphore covers SAS signing, range probe, and the supervised GDAL
+    # child, so concurrent provider work cannot exceed the process contract.
+    with _REMOTE_OPERATION_SEMAPHORE:
+        for attempt in range(3):
+            try:
+                signed_response = _http_get(
+                    client,
+                    SAS_SIGN_ENDPOINT,
+                    deadline_monotonic=deadline_monotonic,
+                    params={"href": href},
+                )
+                signed_response.raise_for_status()
+                signed_payload = signed_response.json()
+                candidate = (
+                    signed_payload.get("href") if isinstance(signed_payload, Mapping) else None
+                )
+                # Revalidate the host after signing, immediately before any
+                # range probe and again before handing the URL to GDAL.
+                if not isinstance(candidate, str) or not _provider_host_allowed(candidate):
+                    raise PreparationFailure("security_rejected", stage="asset_signing")
+                _reject_query_credentials(href)
+                signed_href = candidate
+                probe = _http_get(
+                    client,
+                    signed_href,
+                    deadline_monotonic=deadline_monotonic,
+                    headers={"Range": "bytes=0-65535"},
+                )
+                if probe.status_code in {200, 206}:
+                    break
+                if probe.status_code not in {403, 429} and probe.status_code < 500:
+                    raise PreparationFailure("provider_unavailable", stage="asset_probe")
+            except PreparationFailure:
+                raise
+            except (httpx.HTTPError, ValueError) as exc:
+                if attempt == 2:
+                    raise PreparationFailure(
+                        "provider_unavailable", stage="asset_signing", retryable=True
+                    ) from exc
+            if attempt < 2:
+                delay = min(0.1 * (attempt + 1), max(0.0, deadline_monotonic - time.monotonic()))
+                if delay:
+                    time.sleep(delay)
+        if signed_href is None or probe is None or probe.status_code not in {200, 206}:
+            raise PreparationFailure("provider_unavailable", stage="asset_probe", retryable=True)
+        if not _provider_host_allowed(signed_href):
+            raise PreparationFailure("security_rejected", stage="asset_read")
+        bytes_observed = len(probe.content)
+        context = mp.get_context("spawn")
+        parent, child = context.Pipe(duplex=False)
+        process = context.Process(
+            target=_rasterio_worker,
+            args=(
+                child,
+                signed_href,
+                target_grid.model_dump(mode="json"),
+                resampling,
+                max_window_pixels,
+                _GDAL_CACHE_BYTES,
+            ),
+        )
+        process.start()
+        child.close()
         try:
-            signed_response = client.get(SAS_SIGN_ENDPOINT, params={"href": href})
-            signed_response.raise_for_status()
-            signed_payload = signed_response.json()
-            candidate = signed_payload.get("href") if isinstance(signed_payload, Mapping) else None
-            if not isinstance(candidate, str) or not _provider_host_allowed(candidate):
-                raise PreparationFailure("security_rejected", stage="asset_signing")
-            signed_href = candidate
-            probe = client.get(signed_href, headers={"Range": "bytes=0-65535"})
-            if probe.status_code in {200, 206}:
-                break
-            if probe.status_code not in {403, 429} and probe.status_code < 500:
-                raise PreparationFailure("provider_unavailable", stage="asset_probe")
-        except PreparationFailure:
-            raise
-        except (httpx.HTTPError, ValueError) as exc:
-            if attempt == 2:
-                raise PreparationFailure(
-                    "provider_unavailable", stage="asset_signing", retryable=True
-                ) from exc
-        if attempt < 2:
-            time.sleep(0.1 * (attempt + 1))
-    if signed_href is None or probe is None or probe.status_code not in {200, 206}:
-        raise PreparationFailure("provider_unavailable", stage="asset_probe", retryable=True)
-    bytes_observed = len(probe.content)
-    context = mp.get_context("spawn")
-    parent, child = context.Pipe(duplex=False)
-    process = context.Process(
-        target=_rasterio_worker,
-        args=(
-            child,
-            signed_href,
-            target_grid.model_dump(mode="json"),
-            resampling,
-        ),
-    )
-    process.start()
-    child.close()
-    try:
-        if not parent.poll(deadline_seconds):
-            process.terminate()
-            process.join(timeout=5)
-            if process.is_alive():
-                process.kill()
-                process.join(timeout=5)
-            raise PreparationFailure("timeout", stage="asset_read", retryable=True)
-        result = parent.recv()
-    finally:
-        parent.close()
-        if process.is_alive():
-            process.join(timeout=5)
+            remaining = max(0.001, deadline_monotonic - time.monotonic())
+            if not parent.poll(remaining):
+                raise PreparationFailure("timeout", stage="asset_read", retryable=True)
+            result = parent.recv()
+        finally:
+            _cleanup_child(process, parent)
     if not isinstance(result, Mapping) or "array" not in result:
         diagnostics = (
             {
@@ -910,23 +1063,55 @@ def _fetch_mtl_values(
     href: str | None,
     *,
     client: httpx.Client,
+    deadline_monotonic: float | None = None,
 ) -> dict[str, float] | None:
     if href is None:
         return None
     if not _provider_host_allowed(href):
         raise PreparationFailure("security_rejected", stage="mtl_validation")
-    signed_response = client.get(SAS_SIGN_ENDPOINT, params={"href": href})
-    signed_response.raise_for_status()
-    signed_payload = signed_response.json()
-    signed_href = signed_payload.get("href") if isinstance(signed_payload, Mapping) else None
-    if not isinstance(signed_href, str) or not _provider_host_allowed(signed_href):
-        raise PreparationFailure("security_rejected", stage="mtl_signing")
-    response = client.get(signed_href, headers={"Range": "bytes=0-1048575"})
+    response: httpx.Response | None = None
+    for attempt in range(3):
+        try:
+            with _REMOTE_OPERATION_SEMAPHORE:
+                signed_response = _http_get(
+                    client,
+                    SAS_SIGN_ENDPOINT,
+                    deadline_monotonic=deadline_monotonic,
+                    params={"href": href},
+                )
+                signed_response.raise_for_status()
+                signed_payload = signed_response.json()
+                signed_href = (
+                    signed_payload.get("href") if isinstance(signed_payload, Mapping) else None
+                )
+                if not isinstance(signed_href, str) or not _provider_host_allowed(signed_href):
+                    raise PreparationFailure("security_rejected", stage="mtl_signing")
+                response = _http_get(
+                    client,
+                    signed_href,
+                    deadline_monotonic=deadline_monotonic,
+                    headers={"Range": "bytes=0-1048575"},
+                )
+            if response.status_code in {200, 206, 404}:
+                break
+            if response.status_code not in {429} and response.status_code < 500:
+                break
+        except PreparationFailure:
+            raise
+        except (httpx.HTTPError, ValueError):
+            if attempt == 2:
+                raise PreparationFailure("provider_unavailable", stage="mtl_read", retryable=True)
+        if attempt < 2:
+            time.sleep(min(0.1 * (attempt + 1), _remaining_seconds(deadline_monotonic)))
+    if response is None:
+        raise PreparationFailure("provider_unavailable", stage="mtl_read", retryable=True)
     if response.status_code == 404:
         return None
     if response.status_code not in {200, 206} or len(response.content) > 1_048_576:
         raise PreparationFailure(
-            "provider_unavailable", stage="mtl_read", retryable=response.status_code >= 500
+            "provider_unavailable",
+            stage="mtl_read",
+            retryable=response.status_code == 429 or response.status_code >= 500,
         )
     if href.casefold().endswith(".json"):
         try:
@@ -946,6 +1131,21 @@ def _prepare_period(
     deadline_monotonic: float,
 ) -> tuple[PreparedPeriodDataset, int, list[str]]:
     shape = (target_grid.height, target_grid.width)
+    pixels = target_grid.width * target_grid.height
+    # Retained A/B-safe working estimate: both period outputs (Red + NIR
+    # float32, masks and source indices) remain live while the second period
+    # is prepared, plus source/QA working buffers and rasterization scratch.
+    estimated_array_bytes = pixels * 32
+    array_budget = min(limits.array_cache_bytes, _TOTAL_ARRAY_GDAL_BUDGET - _GDAL_CACHE_BYTES)
+    if estimated_array_bytes > array_budget:
+        raise PreparationFailure(
+            "read_budget_exceeded",
+            stage="array_cache_preallocation",
+            counts={
+                "estimated_array_bytes": estimated_array_bytes,
+                "array_budget_bytes": array_budget,
+            },
+        )
     aoi_mask = _rasterize_aoi(aoi, target_grid).astype(bool)
     aoi_pixels = int(aoi_mask.sum())
     if not aoi_pixels:
@@ -967,6 +1167,8 @@ def _prepare_period(
                 resampling="bilinear",
                 client=client,
                 deadline_seconds=max(0.1, deadline_monotonic - time.monotonic()),
+                max_window_pixels=limits.max_window_pixels,
+                deadline_monotonic=deadline_monotonic,
             )
             nir_dn, nir_meta, nir_bytes = _read_asset(
                 scene.assets["nir08"].href,
@@ -974,6 +1176,8 @@ def _prepare_period(
                 resampling="bilinear",
                 client=client,
                 deadline_seconds=max(0.1, deadline_monotonic - time.monotonic()),
+                max_window_pixels=limits.max_window_pixels,
+                deadline_monotonic=deadline_monotonic,
             )
             qa_pixel, qa_meta, qa_bytes = _read_asset(
                 scene.assets["qa_pixel"].href,
@@ -981,6 +1185,8 @@ def _prepare_period(
                 resampling="nearest",
                 client=client,
                 deadline_seconds=max(0.1, deadline_monotonic - time.monotonic()),
+                max_window_pixels=limits.max_window_pixels,
+                deadline_monotonic=deadline_monotonic,
             )
             qa_radsat, radsat_meta, radsat_bytes = _read_asset(
                 scene.assets["qa_radsat"].href,
@@ -988,16 +1194,32 @@ def _prepare_period(
                 resampling="nearest",
                 client=client,
                 deadline_seconds=max(0.1, deadline_monotonic - time.monotonic()),
+                max_window_pixels=limits.max_window_pixels,
+                deadline_monotonic=deadline_monotonic,
             )
+            aerosol = None
+            aerosol_bytes = 0
+            if "qa_aerosol" in scene.assets:
+                aerosol, _aerosol_meta, aerosol_bytes = _read_asset(
+                    scene.assets["qa_aerosol"].href,
+                    target_grid,
+                    resampling="nearest",
+                    client=client,
+                    deadline_seconds=max(0.1, deadline_monotonic - time.monotonic()),
+                    max_window_pixels=limits.max_window_pixels,
+                    deadline_monotonic=deadline_monotonic,
+                )
         except PreparationFailure:
             raise
         except Exception as exc:
             raise PreparationFailure(
                 "provider_unavailable", stage="asset_read", retryable=True
             ) from exc
-        bytes_observed += red_bytes + nir_bytes + qa_bytes + radsat_bytes
+        bytes_observed += red_bytes + nir_bytes + qa_bytes + radsat_bytes + aerosol_bytes
         try:
-            mtl_values = _fetch_mtl_values(scene.mtl_href, client=client)
+            mtl_values = _fetch_mtl_values(
+                scene.mtl_href, client=client, deadline_monotonic=deadline_monotonic
+            )
         except PreparationFailure:
             raise
         if mtl_values is not None:
@@ -1022,6 +1244,70 @@ def _prepare_period(
             warnings.append(f"period_{period.period_id}:mtl_asset_unavailable")
         red_asset = scene.assets["red"]
         nir_asset = scene.assets["nir08"]
+        for role, array, metadata in (
+            ("red", red_dn, red_meta),
+            ("nir08", nir_dn, nir_meta),
+            ("qa_pixel", qa_pixel, qa_meta),
+            ("qa_radsat", qa_radsat, radsat_meta),
+        ):
+            if array.shape != shape or metadata.get("count", 1) != 1:
+                raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
+            transform = metadata.get("transform")
+            if (
+                not isinstance(transform, (tuple, list))
+                or len(transform) != 6
+                or not all(math.isfinite(float(value)) for value in transform)
+            ):
+                raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
+            if metadata.get("crs") is None or str(metadata["crs"]) != str(scene.source_crs):
+                raise PreparationFailure("grid_alignment_failed", stage="alignment")
+            if not np.issubdtype(array.dtype, np.integer):
+                raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
+        if aerosol is not None:
+            if aerosol.shape != shape or not np.issubdtype(aerosol.dtype, np.integer):
+                raise PreparationFailure("invalid_raster_metadata", stage="aerosol_metadata")
+        if red_meta.get("transform") != nir_meta.get("transform"):
+            raise PreparationFailure("grid_alignment_failed", stage="alignment")
+        if (red_meta.get("width"), red_meta.get("height")) != (
+            nir_meta.get("width"),
+            nir_meta.get("height"),
+        ):
+            raise PreparationFailure("grid_alignment_failed", stage="alignment")
+        source_dims = (red_meta.get("width"), red_meta.get("height"))
+        for metadata in (qa_meta, radsat_meta):
+            if metadata.get("width") is not None and metadata.get("height") is not None:
+                if (metadata["width"], metadata["height"]) != source_dims:
+                    raise PreparationFailure("grid_alignment_failed", stage="alignment")
+            if metadata.get("transform") != red_meta.get("transform"):
+                raise PreparationFailure("grid_alignment_failed", stage="alignment")
+        if red_meta.get("width") is not None and red_meta.get("height") is not None:
+            if red_meta["width"] <= 0 or red_meta["height"] <= 0:
+                raise PreparationFailure("invalid_raster_metadata", stage="raster_metadata")
+        for asset, metadata in ((red_asset, red_meta), (nir_asset, nir_meta)):
+            if asset.nodata is not None and metadata.get("nodata") is not None:
+                if float(asset.nodata) != float(metadata["nodata"]):
+                    raise PreparationFailure("invalid_raster_metadata", stage="nodata")
+            # Some Landsat COGs expose raw DN with embedded scale=1/offset=0;
+            # physical calibration remains explicitly supplied by trusted
+            # STAC/MTL evidence in that case.
+            if (
+                asset.scale is not None
+                and metadata.get("scale") is not None
+                and not math.isclose(float(metadata["scale"]), 1.0, rel_tol=0, abs_tol=1e-12)
+            ):
+                if not math.isclose(
+                    float(asset.scale), float(metadata["scale"]), rel_tol=0, abs_tol=1e-12
+                ):
+                    raise PreparationFailure("invalid_radiometry", stage="scale")
+            if (
+                asset.offset is not None
+                and metadata.get("offset") is not None
+                and not math.isclose(float(metadata["offset"]), 0.0, rel_tol=0, abs_tol=1e-12)
+            ):
+                if not math.isclose(
+                    float(asset.offset), float(metadata["offset"]), rel_tol=0, abs_tol=1e-9
+                ):
+                    raise PreparationFailure("invalid_radiometry", stage="offset")
         if (
             red_meta.get("dtype") != "uint16"
             or nir_meta.get("dtype") != "uint16"
@@ -1067,11 +1353,20 @@ def _prepare_period(
                     role: asset.identity_hash for role, asset in scene.assets.items()
                 },
                 "mtl_validated": mtl_values is not None,
+                "aerosol_diagnostics": (
+                    {"available": True, **qa_aerosol_diagnostics(aerosol)}
+                    if aerosol is not None
+                    else {"available": False}
+                ),
             }
         )
+        # Quality is evidence from the actual AOI pixels.  Do not read more
+        # same-month scenes once the provisional gate is met.
+        if int(filled.sum()) * 100 >= 70 * aoi_pixels:
+            break
     valid_pixels = int(filled.sum())
     array_bytes = sum(array.nbytes for array in (red_out, nir_out, filled, aoi_mask, source_index))
-    if array_bytes > limits.array_cache_bytes:
+    if array_bytes > array_budget:
         raise PreparationFailure(
             "read_budget_exceeded", stage="array_cache", counts={"array_bytes": array_bytes}
         )
@@ -1079,7 +1374,7 @@ def _prepare_period(
         aoi_rasterized_pixels=aoi_pixels,
         preparation_valid_pixels=valid_pixels,
         preparation_coverage_pct=100.0 * valid_pixels / aoi_pixels,
-        scene_count=len(scenes),
+        scene_count=len(provenance_scenes),
     )
     if coverage.preparation_coverage_pct < 70.0:
         raise PreparationFailure(
@@ -1131,6 +1426,24 @@ def prepare_landsat_pair(
     started = time.monotonic()
     deadline_monotonic = started + limits.request_deadline_seconds
     try:
+        if (
+            not selected.period_a
+            or not selected.period_b
+            or len(selected.period_a) > limits.max_selected_scenes
+            or len(selected.period_b) > limits.max_selected_scenes
+            or len(selected.period_a) > 3
+            or len(selected.period_b) > 3
+        ):
+            raise PreparationFailure("read_budget_exceeded", stage="scene_selection")
+        for period, period_scenes in (
+            (periods.period_a, selected.period_a),
+            (periods.period_b, selected.period_b),
+        ):
+            if any(
+                not (period.start_utc <= scene.acquisition_datetime < period.end_utc)
+                for scene in period_scenes
+            ):
+                raise PreparationFailure("no_candidate", stage="scene_selection")
         crs = selected.period_a[0].source_crs
         if any(scene.source_crs != crs for scene in selected.period_a + selected.period_b):
             raise PreparationFailure("grid_alignment_failed", stage="grid")
@@ -1162,10 +1475,16 @@ def prepare_landsat_pair(
             "max_window_pixels": limits.max_window_pixels,
             "max_concurrent_remote_asset_operations": limits.max_concurrent_remote_asset_operations,
             "request_deadline_seconds": limits.request_deadline_seconds,
-            "temporary_disk_bytes": limits.temporary_disk_bytes,
-            "array_cache_bytes": limits.array_cache_bytes,
-            "artifact_bytes": limits.artifact_bytes,
+            # A does not write staged artifacts; the zero values are truthful
+            # and prevent unused budgets from being mistaken for enforcement.
+            "temporary_disk_bytes": 0,
+            "array_cache_bytes": min(
+                limits.array_cache_bytes, _TOTAL_ARRAY_GDAL_BUDGET - _GDAL_CACHE_BYTES
+            ),
+            "gdal_cache_bytes": _GDAL_CACHE_BYTES,
+            "artifact_bytes": 0,
             "retry_limit": 3,
+            "staged_temporary_writes": False,
         },
         operational_metrics={
             "bytes_observed": bytes_a + bytes_b,
@@ -1199,6 +1518,7 @@ __all__ = [
     "discover_landsat",
     "prepare_landsat_pair",
     "qa_pixel_valid_mask",
+    "qa_aerosol_diagnostics",
     "qa_radsat_valid_mask",
     "select_landsat_scenes",
     "validate_mtl_metadata",

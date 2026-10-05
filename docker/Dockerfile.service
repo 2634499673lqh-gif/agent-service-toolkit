@@ -25,6 +25,7 @@ COPY src/runtime/ ./runtime/
 COPY src/schema/ ./schema/
 COPY src/service/ ./service/
 COPY src/run_service.py .
+COPY scripts/ ./scripts/
 COPY alembic.ini .
 COPY migrations/ ./migrations/
 

@@ -39,11 +39,13 @@ def _asset_features() -> dict:
             "proj:epsg": 32649,
         },
         "assets": {
-            "red": {"href": "https://landsat.blob.core.windows.net/a_SR_B4.TIF"},
-            "nir08": {"href": "https://landsat.blob.core.windows.net/a_SR_B5.TIF"},
-            "qa_pixel": {"href": "https://landsat.blob.core.windows.net/a_QA_PIXEL.TIF"},
-            "qa_radsat": {"href": "https://landsat.blob.core.windows.net/a_QA_RADSAT.TIF"},
-            "qa_aerosol": {"href": "https://landsat.blob.core.windows.net/a_SR_QA_AEROSOL.TIF"},
+            "red": {"href": "https://landsateuwest.blob.core.windows.net/a_SR_B4.TIF"},
+            "nir08": {"href": "https://landsateuwest.blob.core.windows.net/a_SR_B5.TIF"},
+            "qa_pixel": {"href": "https://landsateuwest.blob.core.windows.net/a_QA_PIXEL.TIF"},
+            "qa_radsat": {"href": "https://landsateuwest.blob.core.windows.net/a_QA_RADSAT.TIF"},
+            "qa_aerosol": {
+                "href": "https://landsateuwest.blob.core.windows.net/a_SR_QA_AEROSOL.TIF"
+            },
         },
     }
 
