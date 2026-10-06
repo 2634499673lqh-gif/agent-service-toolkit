@@ -6429,3 +6429,5 @@ Inspected retained Jianghan Task `ab061f60-7521-4541-9328-5e6b46e9d657` / Run `7
 The visual blocker was a trusted map-geometry bug: dynamic `native_bounds` incorrectly reused the WGS84 AOI bbox while declaring EPSG:32649. `trusted_landsat_map_metadata()` now derives native bounds from the verified affine transform and raster dimensions. Focused NDVI tests, Ruff, Pyrefly, format, and diff checks pass; the rebuilt live map API now returns native UTM bounds and the existing frontend layer mapping remains unchanged.
 
 Learner notes: keep WGS84 display bounds separate from native raster bounds; coordinate transforms must be applied exactly once. Read `src/geochange/provenance.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `tests/geochange/test_landsat_ndvi.py`. Exercise: transform the returned native corners to EPSG:4326 and compare them with the map's trusted extent. No new provider or basemap was added.
+
+Follow-up: the frontend now distinguishes an OSM basemap failure from a result-layer failure; the former explicitly states that verified result layers remain available. Web typecheck and production build pass.

@@ -70,7 +70,8 @@ function MapView({ result, taskRun, token, onLayerStatus }: { result: MapResult 
     m.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), 'top-right');
     m.on('error', (event) => {
       const sourceId = (event as { sourceId?: string }).sourceId;
-      if (sourceId === 'osm' || (sourceId === 'result-raster' && !resultRendered.current)) setMapError('地图数据暂时不可用，请检查网络后重试。');
+      if (sourceId === 'osm') setMapError('底图暂时不可用，已验证结果图层仍可查看。请检查网络后重试。');
+      else if (sourceId === 'result-raster' && !resultRendered.current) setMapError('结果图层暂时不可用，请稍后重试。');
       else if (event.error && !mapReady) setMapError('地图初始化失败，请刷新后重试。');
     });
     m.on('sourcedata', (event) => { if (event.sourceId === 'osm' && event.isSourceLoaded) setMapError(''); });
