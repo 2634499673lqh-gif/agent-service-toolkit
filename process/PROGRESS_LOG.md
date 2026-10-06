@@ -6408,3 +6408,7 @@ The final committed Docker smoke from code HEAD `65b2600699d0fd7cc46c00de0942d6a
 Validation: adversarial lifecycle tests `8 passed`; affected focused suites `121 passed, 1 skipped, 1 known unrelated NDBI baseline failure`; Ruff and format passed; Pyrefly on changed files reported `0 errors`; `uv lock --check` and `git diff --check` passed. Provisional 60% and 50% gates remain unfrozen and ready for separate freeze review.
 
 Learner notes: the key boundary is that a checkpoint is recovery state, while the sidecar and server-derived product evidence are authority. Read `src/runtime/graph.py`, `src/service/task_runtime.py`, `src/geochange/artifacts.py`, and `tests/runtime/test_dynamic_lifecycle_adversarial.py`. Exercise: remove the replan binder-clear update and watch the real graph regression retain stale trust. Do not worry about browser E2E yet.
+
+## Final evidence reconciliation (2026-10-06)
+
+Verified against the retained Docker Compose environment that `/api/v1/conversation/history` returns the final Jianghan Task `cde33ee5-a09f-4475-a55e-34dcf32c2fdd` with the succeeded Run `994e6a8b-14d1-4f07-bd87-39429516b8f3`; the history route performs a persisted read and no recomputation. Audited the final run metadata, scene/date identities, grid/AOI binding, all persisted artifact checksums and references, numeric artifact API confirmation, map metadata, and cross-tenant denials. Corrected only the stale prior-run UUIDs in the machine-readable evidence `history` object. Historical progress entries remain unchanged.
