@@ -6421,3 +6421,11 @@ identity/bounds and verified PNG artifacts without a fabricated AOI polygon.
 Added exact Chinese Jianghan parsing, unsupported Jianghan NDWI rejection, and
 capability-family regressions. Web typecheck/build and focused conversation
 tests pass; final browser visual acceptance remains manual.
+
+# V0.3 visual raster diagnosis and native-grid fix (2026-10-06)
+
+Inspected retained Jianghan Task `ab061f60-7521-4541-9328-5e6b46e9d657` / Run `71fa2eca-4435-424e-9d7e-e491b8941006` without creating a new analysis. The persisted `ndvi_before.png`, `ndvi_after.png`, and `ndvi_change.png` are 264×296, spatially varying, and pairwise distinct; their numeric GeoTIFF sources also have non-zero variance and the PNG encoding matches the documented `[-1, 1]` transform exactly. The artifact API returns distinct colorized RGBA PNGs with transparent NoData.
+
+The visual blocker was a trusted map-geometry bug: dynamic `native_bounds` incorrectly reused the WGS84 AOI bbox while declaring EPSG:32649. `trusted_landsat_map_metadata()` now derives native bounds from the verified affine transform and raster dimensions. Focused NDVI tests, Ruff, Pyrefly, format, and diff checks pass; the rebuilt live map API now returns native UTM bounds and the existing frontend layer mapping remains unchanged.
+
+Learner notes: keep WGS84 display bounds separate from native raster bounds; coordinate transforms must be applied exactly once. Read `src/geochange/provenance.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `tests/geochange/test_landsat_ndvi.py`. Exercise: transform the returned native corners to EPSG:4326 and compare them with the map's trusted extent. No new provider or basemap was added.

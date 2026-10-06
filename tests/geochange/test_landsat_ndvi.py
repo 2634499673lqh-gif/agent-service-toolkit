@@ -377,4 +377,6 @@ def test_dynamic_map_metadata_is_not_east_lake_fixture():
     result = trusted_landsat_map_metadata(metadata)
     assert result["crs"] == "EPSG:32649"
     assert result["dimensions"] == [296, 264]
+    assert result["periods"]["period_a"]["native_bounds"] == [1.0, -8878.0, 7921.0, 2.0]
+    assert result["periods"]["period_b"]["native_bounds"] == [1.0, -8878.0, 7921.0, 2.0]
     assert result["periods"]["period_a"]["scene_identity"] == "a"

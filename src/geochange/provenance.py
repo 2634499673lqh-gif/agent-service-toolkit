@@ -95,6 +95,34 @@ def trusted_landsat_map_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("dynamic grid metadata is incomplete")
     if not isinstance(bounds, list) or len(bounds) != 4:
         raise ValueError("dynamic AOI bounds are incomplete")
+    transform = grid.get("transform")
+    if (
+        not isinstance(transform, list)
+        or len(transform) != 6
+        or not all(isinstance(value, (int, float)) for value in transform)
+        or not all(isinstance(value, int) and value > 0 for value in dimensions)
+    ):
+        raise ValueError("dynamic native grid metadata is incomplete")
+    height, width = dimensions
+    corners = [
+        (0, 0),
+        (width, 0),
+        (width, height),
+        (0, height),
+    ]
+    native_corners = [
+        (
+            float(transform[0] * column + transform[1] * row + transform[2]),
+            float(transform[3] * column + transform[4] * row + transform[5]),
+        )
+        for column, row in corners
+    ]
+    native_bounds = [
+        min(point[0] for point in native_corners),
+        min(point[1] for point in native_corners),
+        max(point[0] for point in native_corners),
+        max(point[1] for point in native_corners),
+    ]
     scenes = provenance.get("scene_provenance")
     if not isinstance(scenes, dict) or not all(key in scenes for key in ("period_a", "period_b")):
         raise ValueError("dynamic scene metadata is incomplete")
@@ -112,12 +140,12 @@ def trusted_landsat_map_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         "periods": {
             "period_a": {
                 "scene_identity": identities["period_a"],
-                "native_bounds": bounds,
+                "native_bounds": native_bounds,
                 "raster_dimensions": dimensions,
             },
             "period_b": {
                 "scene_identity": identities["period_b"],
-                "native_bounds": bounds,
+                "native_bounds": native_bounds,
                 "raster_dimensions": dimensions,
             },
         },
