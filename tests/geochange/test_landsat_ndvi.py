@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 
@@ -246,6 +247,29 @@ def test_dynamic_projection_rejects_forged_scene_grid_and_period_evidence():
     assert verify_landsat_terminal_projection(payload, product, pair)["status"] == "passed"
     payload["selected_scene_evidence"]["target_grid"] = "{}"
     assert verify_landsat_terminal_projection(payload, product, pair)["status"] == "failed"
+    payload["selected_scene_evidence"]["target_grid"] = json.dumps(
+        pair.pair_grid.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+
+    for field in (
+        "analysis_periods",
+        "metrics",
+        "provenance",
+        "artifacts",
+        "selected_scene_evidence",
+    ):
+        forged = copy.deepcopy(payload)
+        if field == "analysis_periods":
+            forged[field]["period_a"] = "2022-07-01/2022-07-31"
+        elif field == "metrics":
+            forged[field]["mean_delta_ndvi"] = 0.9
+        elif field == "provenance":
+            forged[field]["scene_provenance"] = {"period_a": {"scene_ids": ["forged"]}}
+        elif field == "artifacts":
+            forged[field]["ndvi_before"] = "ndvi_after"
+        else:
+            forged[field]["period_a"] = '{"scene_ids":["forged"]}'
+        assert verify_landsat_terminal_projection(forged, product, pair)["status"] == "failed"
 
 
 def test_dynamic_terminal_routing_bypasses_legacy_scene_fixture(monkeypatch):
