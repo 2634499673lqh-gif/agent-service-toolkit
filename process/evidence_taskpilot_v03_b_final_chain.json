@@ -1,27 +1,40 @@
 {
   "evidence_schema": "taskpilot.v03.b.final-chain.v1",
-  "code_head": "4460ecba4c9ded20414bfbe68a81eb306bca08b0",
+  "code_head": "a0dd0dc985ccb3ea3d44b93d48bf3551ab90ea30",
   "docker": {
     "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
     "service": "taskpilot-v03-final-agent_service-1",
     "task_run_status": "succeeded"
   },
   "run": {
-    "task_id": "ef30f7e8-89bc-40fb-ab21-79b8f12eb72e",
-    "run_id": "66f54a2b-d06b-498f-b4a3-4d3f05b49106",
+    "task_id": "df60ec1a-de65-4d6e-ab85-d65b818c8dbc",
+    "run_id": "4ee6c83b-5ba4-4bb0-8f01-1c5a681a311c",
     "verifier_status": "passed",
     "execution_mode": "real_stac_landsat_local",
     "aoi_id": "jianghan_district_420103",
     "aoi_hash": "11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25",
     "period_a": "2023-07-01/2023-07-31",
     "period_b": "2024-07-01/2024-07-31",
-    "scene_a": {"id": "LC08_L2SP_123039_20230727_02_T1", "date": "2023-07-27"},
-    "scene_b": {"id": "LC09_L2SP_123039_20240721_02_T1", "date": "2024-07-21"},
+    "scene_a": {
+      "id": "LC08_L2SP_123039_20230727_02_T1",
+      "date": "2023-07-27"
+    },
+    "scene_b": {
+      "id": "LC09_L2SP_123039_20240721_02_T1",
+      "date": "2024-07-21"
+    },
     "grid": {
       "crs": "EPSG:32649",
       "width": 264,
       "height": 296,
-      "transform": [30.0, 0.0, 808583.9518907343, 0.0, -30.0, 3394803.3384458795],
+      "transform": [
+        30.0,
+        0.0,
+        808583.9518907343,
+        0.0,
+        -30.0,
+        3394803.3384458795
+      ],
       "resolution_m": 30.0
     }
   },
@@ -67,13 +80,16 @@
   "map": {
     "aoi_label": "武汉市江汉区",
     "crs": "EPSG:32649",
-    "dimensions": [296, 264],
+    "dimensions": [
+      296,
+      264
+    ],
     "scene_a": "LC08_L2SP_123039_20230727_02_T1",
     "scene_b": "LC09_L2SP_123039_20240721_02_T1"
   },
   "history": {
-    "task_id": "ef30f7e8-89bc-40fb-ab21-79b8f12eb72e",
-    "run_id": "66f54a2b-d06b-498f-b4a3-4d3f05b49106",
+    "task_id": "df60ec1a-de65-4d6e-ab85-d65b818c8dbc",
+    "run_id": "4ee6c83b-5ba4-4bb0-8f01-1c5a681a311c",
     "recomputed": false
   },
   "cross_tenant": {
@@ -94,4 +110,3 @@
     "git_diff_check": "passed"
   }
 }
-
