@@ -6363,3 +6363,13 @@ Science values: 2023 final NDVI-valid 81.9537307% (26,108/31,857), 2024
 99.9968610% (31,856/31,857), common 81.9505917% (26,107/31,857), mean delta
 0.00556586. The provisional 60% and 50% gates remain unfrozen and are ready for
 freeze review.
+
+## Final trusted product closure evidence (2026-10-06)
+
+Machine-readable evidence is committed in
+`process/evidence_taskpilot_v03_b_final_chain.json`. It records the exact code
+HEAD `4460ecb`, Docker build command, successful authenticated Jianghan TaskRun,
+verifier and runtime mode, AOI/period/scene/grid binding, all nine canonical
+artifact IDs and SHA-256 values, an API byte/checksum confirmation, map metadata,
+same-run history reopening, and authenticated second-tenant denials. It contains
+no tokens, credentials, signed URLs, or raw provider URLs.

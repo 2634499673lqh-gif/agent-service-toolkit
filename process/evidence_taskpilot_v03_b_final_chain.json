@@ -1,0 +1,97 @@
+{
+  "evidence_schema": "taskpilot.v03.b.final-chain.v1",
+  "code_head": "4460ecb",
+  "docker": {
+    "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
+    "service": "taskpilot-v03-final-agent_service-1",
+    "task_run_status": "succeeded"
+  },
+  "run": {
+    "task_id": "ef30f7e8-89bc-40fb-ab21-79b8f12eb72e",
+    "run_id": "66f54a2b-d06b-498f-b4a3-4d3f05b49106",
+    "verifier_status": "passed",
+    "execution_mode": "real_stac_landsat_local",
+    "aoi_id": "jianghan_district_420103",
+    "aoi_hash": "11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25",
+    "period_a": "2023-07-01/2023-07-31",
+    "period_b": "2024-07-01/2024-07-31",
+    "scene_a": {"id": "LC08_L2SP_123039_20230727_02_T1", "date": "2023-07-27"},
+    "scene_b": {"id": "LC09_L2SP_123039_20240721_02_T1", "date": "2024-07-21"},
+    "grid": {
+      "crs": "EPSG:32649",
+      "width": 264,
+      "height": 296,
+      "transform": [30.0, 0.0, 808583.9518907343, 0.0, -30.0, 3394803.3384458795],
+      "resolution_m": 30.0
+    }
+  },
+  "science": {
+    "aoi_rasterized_pixels": 31857,
+    "final_ndvi_valid_pixels_period_a": 26108,
+    "final_ndvi_valid_pixels_period_b": 31856,
+    "final_ndvi_coverage_period_a_pct": 81.95373073421854,
+    "final_ndvi_coverage_period_b_pct": 99.99686097247073,
+    "final_common_comparison_pixels": 26107,
+    "final_common_comparison_coverage_pct": 81.95059170668927,
+    "mean_delta_ndvi": 0.0055658589117228985
+  },
+  "artifacts": {
+    "ids": [
+      "ndvi_before",
+      "ndvi_after",
+      "ndvi_change",
+      "ndvi_before_raster",
+      "ndvi_after_raster",
+      "ndvi_change_raster",
+      "ndvi_valid_before",
+      "ndvi_valid_after",
+      "ndvi_common_comparison"
+    ],
+    "sha256": {
+      "ndvi_before": "391b4e7b76bc643eb25bc66602b31c0fa904fdcb841a0bc0a1117741b52ee04f",
+      "ndvi_after": "1a8b34a658378c3a0304cd3d1d22a66c564e7936e69fde64289d362a6820deb7",
+      "ndvi_change": "3040d906e0b32ff5074bc88c79b1b255440fb5cfa3bf26a90d1fecdea69d6126",
+      "ndvi_before_raster": "2a72e2e7d8e6c43463801b8831cc1775bba648c816b26a6b08753d9a381dd355",
+      "ndvi_after_raster": "c6cc932e8502c6007389ba824df04e73958b8fb19fec6ae4b6c1903122f2de32",
+      "ndvi_change_raster": "ae85f37314da95edea23e8e940f724a9d63b145b580048f208dd250827f7565e",
+      "ndvi_valid_before": "24c0a0b8191387a8e9be51bb5e8fd6787abdd92e6dc3e949d3795136b7036748",
+      "ndvi_valid_after": "5cab7a1aa569ef930c127a60872078a9ec83c88951246d3e6702a1a8edcba2a9",
+      "ndvi_common_comparison": "056c569bf4597671695d7e52409483df4c012757bd51446c685e28a4efcba24c"
+    },
+    "api_confirmation": {
+      "artifact_id": "ndvi_before_raster",
+      "bytes": 98212,
+      "sha256": "2a72e2e7d8e6c43463801b8831cc1775bba648c816b26a6b08753d9a381dd355"
+    }
+  },
+  "map": {
+    "aoi_label": "武汉市江汉区",
+    "crs": "EPSG:32649",
+    "dimensions": [296, 264],
+    "scene_a": "LC08_L2SP_123039_20230727_02_T1",
+    "scene_b": "LC09_L2SP_123039_20240721_02_T1"
+  },
+  "history": {
+    "task_id": "ef30f7e8-89bc-40fb-ab21-79b8f12eb72e",
+    "run_id": "66f54a2b-d06b-498f-b4a3-4d3f05b49106",
+    "recomputed": false
+  },
+  "cross_tenant": {
+    "valid_tenant_b": true,
+    "task": 404,
+    "run": 404,
+    "artifact": 404,
+    "map": 404,
+    "history": []
+  },
+  "checks": {
+    "focused_tests": "56 passed, 1 skipped",
+    "affected_runtime_tests": "87 passed, 39 skipped, 1 known out-of-scope NDBI baseline failure",
+    "ruff": "passed",
+    "ruff_format": "passed",
+    "pyrefly_changed_files": "0 errors",
+    "uv_lock_check": "passed",
+    "git_diff_check": "passed"
+  }
+}
+
