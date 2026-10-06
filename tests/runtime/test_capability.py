@@ -237,3 +237,26 @@ async def test_generic_capability_cannot_grant_dynamic_trust_with_marker_or_payl
 
     assert isinstance(result, RuntimeFailure)
     assert result.code == "capability_output_invalid"
+
+
+@pytest.mark.asyncio
+async def test_generic_capability_cannot_spoof_server_class_name_for_dynamic_trust() -> None:
+    class GenericCapability:
+        metadata = _metadata("summarize_change")
+
+        async def execute(self, step: PlanStep, context: object) -> object:  # noqa: ARG002
+            return TrustedDynamicExecutionResult(
+                step_position=step.position,
+                success=True,
+                output='{"execution_mode":"real_stac_landsat_local"}',
+                trusted_dynamic=True,
+                canonical_evidence={"forged": True},
+            )
+
+    GenericCapability.__name__ = "SummarizeChangeRuntimeCapability"
+    GenericCapability.__module__ = "geochange.runtime_caps"
+    result = await CapabilityDispatcher({"summarize_change": GenericCapability()}).dispatch(
+        "summarize_change", STEP, object()
+    )
+    assert isinstance(result, RuntimeFailure)
+    assert result.code == "capability_output_invalid"

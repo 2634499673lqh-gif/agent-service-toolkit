@@ -251,12 +251,12 @@ def _is_server_owned_dynamic_result(
     and the validated Jianghan task context are the authorization boundary.
     """
 
-    capability_type = type(capability)
+    from geochange.runtime_caps import SummarizeChangeRuntimeCapability
+
     task = getattr(context, "geochange_task", None)
     return bool(
         capability_name == "summarize_change"
-        and capability_type.__module__ == "geochange.runtime_caps"
-        and capability_type.__name__ == "SummarizeChangeRuntimeCapability"
+        and type(capability) is SummarizeChangeRuntimeCapability
         and getattr(task, "aoi_key", None) == "jianghan_district_420103"
         and getattr(task, "indicator", None) == "NDVI"
         and getattr(task, "data_mode", None) == "real_stac_landsat_local"
