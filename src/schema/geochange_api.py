@@ -12,6 +12,10 @@ class GeoChangeCapability(BaseModel):
     periods: list[str]
     data_source: str
     scientific_limit: str
+    aoi_id: str = "wuhan_east_lake"
+    aoi_label: str = "武汉东湖"
+    data_mode: str = "local_real_raster_fixture"
+    quick_action: str = ""
 
 
 class GeoChangeCapabilitiesResponse(BaseModel):

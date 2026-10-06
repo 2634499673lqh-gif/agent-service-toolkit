@@ -6412,3 +6412,12 @@ Learner notes: the key boundary is that a checkpoint is recovery state, while th
 ## Final evidence reconciliation (2026-10-06)
 
 Verified against the retained Docker Compose environment that `/api/v1/conversation/history` returns the final Jianghan Task `cde33ee5-a09f-4475-a55e-34dcf32c2fdd` with the succeeded Run `994e6a8b-14d1-4f07-bd87-39429516b8f3`; the history route performs a persisted read and no recomputation. Audited the final run metadata, scene/date identities, grid/AOI binding, all persisted artifact checksums and references, numeric artifact API confirmation, map metadata, and cross-tenant denials. Corrected only the stale prior-run UUIDs in the machine-readable evidence `history` object. Historical progress entries remain unchanged.
+# V0.3 browser product wiring closure (2026-10-06)
+
+Updated the live conversation contract, capability discovery, and React product
+surface to represent both approved product families: Jianghan Landsat NDVI and
+legacy East Lake Sentinel-2 cached indices. The frontend now uses trusted map
+identity/bounds and verified PNG artifacts without a fabricated AOI polygon.
+Added exact Chinese Jianghan parsing, unsupported Jianghan NDWI rejection, and
+capability-family regressions. Web typecheck/build and focused conversation
+tests pass; final browser visual acceptance remains manual.

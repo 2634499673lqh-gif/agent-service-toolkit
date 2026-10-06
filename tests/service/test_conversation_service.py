@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -17,6 +18,7 @@ from schema.conversation_api import (
 from service import conversation_api, conversation_service
 from service.conversation_service import (
     LLMConversationError,
+    _proposal_from_intent,
     confirmed_intent_from_proposal,
     create_confirmed_task,
     missing_proposal_fields,
@@ -24,11 +26,60 @@ from service.conversation_service import (
     proposal_from_message,
     validate_proposal,
 )
+from service.geochange_api import capabilities
 from service.task_service import (
     ExistingAnalysisError,
     ProposalIdentityMismatchError,
     TaskService,
 )
+
+
+def test_jianghan_exact_chinese_request_produces_landsat_ndvi_proposal() -> None:
+    proposal = proposal_from_message(
+        "帮我比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDVI 变化。"
+    )
+    assert proposal.analysis_area == "武汉市江汉区"
+    assert proposal.indicator == "NDVI"
+    assert proposal.analysis_type == "vegetation_change"
+    assert proposal.data_mode == "real_stac_landsat_local"
+    assert proposal.required_parameters["source"] == "Landsat-8/9"
+    assert proposal.period_a.model_dump(mode="json") == {"start": "2023-07-01", "end": "2023-07-31"}
+    assert proposal.period_b.model_dump(mode="json") == {"start": "2024-07-01", "end": "2024-07-31"}
+
+
+def test_jianghan_live_intent_normalization_preserves_approved_product() -> None:
+    intent = LLMIntent(
+        intent="new_analysis",
+        response="proposal",
+        title="江汉 NDVI",
+        description="比较江汉区",
+        analysis_area="武汉市江汉区",
+        indicator="NDVI",
+        analysis_type="vegetation_change",
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+        required_parameters={"source": "Landsat-8/9"},
+    )
+    proposal = _proposal_from_intent(intent, "exact Jianghan request")
+    assert proposal.data_mode == "real_stac_landsat_local"
+    assert proposal.required_parameters["source"] == "Landsat-8/9"
+
+
+def test_jianghan_ndwi_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Jianghan supports NDVI only"):
+        proposal_from_message("比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDWI 变化")
+
+
+@pytest.mark.asyncio
+async def test_capabilities_expose_both_product_families() -> None:
+    response = await capabilities(object())
+    jianghan = [item for item in response.capabilities if item.aoi_id == "jianghan_district_420103"]
+    east_lake = [item for item in response.capabilities if item.aoi_id == "wuhan_east_lake"]
+    assert len(jianghan) == 1
+    assert jianghan[0].indicator == "NDVI"
+    assert jianghan[0].data_mode == "real_stac_landsat_local"
+    assert jianghan[0].data_source.startswith("Landsat 8/9")
+    assert {item.indicator for item in east_lake} == {"NDVI", "NDWI", "NDBI"}
 
 
 def test_proposal_from_chinese_request_extracts_area_and_years() -> None:
@@ -75,6 +126,42 @@ async def test_live_interpretation_without_platform_key_is_explicitly_unavailabl
     monkeypatch.setattr(conversation_service.settings, "DEFAULT_MODEL", "deepseek-v4-flash")
     with pytest.raises(LLMConversationError, match="AI 服务暂不可用"):
         await conversation_service.interpret_message("请分析武汉东湖的 NDVI 变化")
+
+
+@pytest.mark.asyncio
+async def test_live_llm_exact_jianghan_request_normalizes_to_landsat_ndvi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeModel:
+        async def ainvoke(self, _messages: object) -> object:
+            return SimpleNamespace(
+                content=json.dumps(
+                    {
+                        "intent": "new_analysis",
+                        "response": "proposal",
+                        "title": "江汉 NDVI",
+                        "description": "比较江汉区 NDVI",
+                        "analysis_area": "武汉市江汉区",
+                        "indicator": "NDVI",
+                        "analysis_type": "vegetation_change",
+                        "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+                        "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+                        "required_parameters": {"source": "Landsat-8/9"},
+                    }
+                )
+            )
+
+    monkeypatch.setattr(conversation_service.settings, "USE_FAKE_MODEL", False)
+    monkeypatch.setattr(conversation_service.settings, "GEOCHANGE_LIVE_LLM", True)
+    monkeypatch.setattr(conversation_service.settings, "DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(conversation_service.settings, "DEFAULT_MODEL", "test-model")
+    monkeypatch.setattr(conversation_service, "get_model", lambda _name: FakeModel())
+    intent = await conversation_service.interpret_message(
+        "帮我比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDVI 变化。"
+    )
+    proposal = _proposal_from_intent(intent, "exact request")
+    assert proposal.analysis_area == "武汉市江汉区"
+    assert proposal.data_mode == "real_stac_landsat_local"
 
 
 def test_llm_intent_normalizes_provider_slot_aliases() -> None:
