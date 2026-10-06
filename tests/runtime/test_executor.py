@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from runtime import ExecutionResult, Executor, PlannerTaskInput
 from runtime.executor import TrustedDynamicExecutionResult
+from runtime.graph import _observation_result
 from runtime.state import AgentState
 from schema import PlanStep
 
@@ -126,6 +127,22 @@ def test_dynamic_checkpoint_requires_the_server_binder() -> None:
             task_input=PlannerTaskInput(title="dynamic", description=None),
             execution_result=result,
         )
+
+
+def test_dynamic_observation_does_not_duplicate_terminal_binder() -> None:
+    result = TrustedDynamicExecutionResult(
+        step_position=4,
+        success=True,
+        output="x" * 8000,
+        trusted_dynamic=True,
+        canonical_evidence={"provenance": "x" * 8000},
+    )
+    observation = _observation_result(result)
+    assert observation == {
+        "step_position": 4,
+        "success": True,
+        "output": "[server-owned dynamic terminal result]",
+    }
 
 
 def test_rejects_overlong_error_code() -> None:

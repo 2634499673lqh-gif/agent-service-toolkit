@@ -597,7 +597,7 @@ def build_runtime_graph(
                 agent_status="failed",
                 context=context,
                 tool_status="failed",
-                result=result.model_dump(mode="json"),
+                result=_observation_result(result),
                 error=failure,
                 tool_name=selected_capability,
                 usage=result.usage,
@@ -639,7 +639,7 @@ def build_runtime_graph(
                     agent_status="failed",
                     context=context,
                     tool_status="failed",
-                    result=result.model_dump(mode="json"),
+                    result=_observation_result(result),
                     error=failure,
                     tool_name=selected_capability,
                 )
@@ -656,7 +656,7 @@ def build_runtime_graph(
                 agent_status="failed",
                 context=context,
                 tool_status="failed",
-                result=result.model_dump(mode="json"),
+                result=_observation_result(result),
                 error=failure,
                 tool_name=capability_name,
                 usage=result.usage,
@@ -671,7 +671,7 @@ def build_runtime_graph(
             agent_status="succeeded",
             context=context,
             tool_status="succeeded",
-            result=result.model_dump(mode="json"),
+            result=_observation_result(result),
             tool_name=selected_capability,
             usage=result.usage,
             provider_metadata=result.provider_metadata,
@@ -991,6 +991,18 @@ def _offline_geochange_task(
             decline_threshold_source="user_text",
         )
     return GeoChangeTask.model_validate({**_default_geochange_task().model_dump(), **updates})
+
+
+def _observation_result(result: ExecutionResult) -> dict[str, object]:
+    """Keep dynamic terminal observations compact and free of duplicate binders."""
+
+    if isinstance(result, TrustedDynamicExecutionResult):
+        return {
+            "step_position": result.step_position,
+            "success": result.success,
+            "output": "[server-owned dynamic terminal result]",
+        }
+    return result.model_dump(mode="json")
 
 
 def _bounded_json_object(
