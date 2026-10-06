@@ -6342,3 +6342,24 @@ verification: AOI 31,857 pixels; final coverage 81.9537% / 99.9969%; common
 - Exact `d95887e3db1899b67295cfeb1fcd8233309277bc` Docker controls: standalone probe passed; a direct unguarded control reproduced sanitized `provider_unavailable`/`asset_read` from multiprocessing spawn bootstrapping; guarded synchronous and guarded `asyncio.to_thread` controls passed. A real persisted PostgreSQL TaskRun reached A preparation and wrote all nine NDVI artifacts, then failed before verifier because the trusted dynamic payload exceeded the legacy 2,000-character execution envelope (`geochange_output_oversized`).
 - Minimal fix: permit only the server-owned Landsat dynamic execution payload to use the bounded 8,192-character runtime envelope; legacy cached outputs remain capped at 2,000. No verifier, artifact, map, history, timeout, concurrency, process-isolation, or credential behavior was changed.
 - Focused validation: 48 passed, 1 skipped; Ruff, format, Pyrefly, `uv lock --check`, and `git diff --check` passed. Known NDBI digest debt remains unrelated.
+
+## Persisted Jianghan product chain (2026-10-06)
+
+From committed HEAD `1d920c083fe76b8dd20a1d02433fc2b38179737f`, an authenticated
+confirmed Jianghan task completed real Landsat A preparation, B NDVI, independent
+verifier, and persistence with TaskRun status `succeeded`. Result metadata records
+`verifier_status=passed`, `execution_mode=real_stac_landsat_local`, the trusted AOI
+hash, monthly periods, scene IDs, EPSG:32649 target grid, 296×264 dimensions, all
+nine approved artifact IDs, and mandatory SHA-256 checksums.
+
+Artifact API retrieval of `ndvi_before_raster` returned 98,212 bytes whose SHA-256
+matched the persisted checksum. Jianghan map metadata returned EPSG:32649, the
+296×264 grid, both real scene identities, and 26,107 common pixels. Conversation
+history reopened the original task/run without recomputation. An unauthenticated
+foreign-token request received 401 for both artifact and map routes; tenant-scoped
+authorization tests cover foreign-resource denial.
+
+Science values: 2023 final NDVI-valid 81.9537307% (26,108/31,857), 2024
+99.9968610% (31,856/31,857), common 81.9505917% (26,107/31,857), mean delta
+0.00556586. The provisional 60% and 50% gates remain unfrozen and are ready for
+freeze review.
