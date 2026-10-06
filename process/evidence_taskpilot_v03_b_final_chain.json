@@ -1,14 +1,14 @@
 {
   "evidence_schema": "taskpilot.v03.b.final-chain.v1",
-  "code_head": "1776233b445e69d7ec5e04be1cc5748fcb3b05d7",
+  "code_head": "935319d76f98c3fbbbdf47b82f4c9a25ad814908",
   "docker": {
     "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
     "service": "taskpilot-v03-final-agent_service-1",
     "task_run_status": "succeeded"
   },
   "run": {
-    "task_id": "044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912",
-    "run_id": "9e75320f-39f9-497b-9ba0-f46e3a8e6f77",
+    "task_id": "fab788ec-1ff7-4922-b35f-bb94ef7facd6",
+    "run_id": "e8f89109-2ddd-457f-902f-2cccd0f90c11",
     "verifier_status": "passed",
     "execution_mode": "real_stac_landsat_local",
     "aoi_id": "jianghan_district_420103",
@@ -88,8 +88,8 @@
     "scene_b": "LC09_L2SP_123039_20240721_02_T1"
   },
   "history": {
-    "task_id": "044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912",
-    "run_id": "9e75320f-39f9-497b-9ba0-f46e3a8e6f77",
+    "task_id": "fab788ec-1ff7-4922-b35f-bb94ef7facd6",
+    "run_id": "e8f89109-2ddd-457f-902f-2cccd0f90c11",
     "recomputed": false
   },
   "cross_tenant": {
@@ -101,7 +101,7 @@
     "history": []
   },
   "checks": {
-    "focused_tests": "52 passed, 1 skipped",
+    "focused_tests": "42 passed",
     "affected_runtime_tests": "87 passed, 39 skipped, 1 known out-of-scope NDBI baseline failure",
     "ruff": "passed",
     "ruff_format": "passed",
@@ -113,6 +113,7 @@
     "mask_tiff_mime": "passed",
     "dynamic_observation_bound": "passed; persisted observation omits duplicated binder/payload",
     "no_credentials_in_logs": "passed; no SAS/query credentials or tokens observed",
-    "docker_product_chain": "passed from committed HEAD 1776233b445e69d7ec5e04be1cc5748fcb3b05d7"
+    "docker_product_chain": "passed from committed HEAD 935319d76f98c3fbbbdf47b82f4c9a25ad814908",
+    "dynamic_binder_sidecar": "passed; binder present and independently loaded from run artifact root"
   }
 }
