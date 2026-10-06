@@ -426,7 +426,10 @@ class SummarizeChangeRuntimeCapability(_Base):
                 "data_source": "landsat-c2-l2",
                 "provenance_summary": "Verified Jianghan AOI and A-owned Landsat preparation handoff.",
                 "provenance": product.provenance,
-                "artifacts": product.artifacts,
+                # Persist server-owned artifact IDs as references.  The files
+                # themselves remain under the deterministic artifact root and
+                # are resolved by ID by the artifact API.
+                "artifacts": {artifact_id: artifact_id for artifact_id in product.artifacts},
                 "verifier_status": "passed",
                 "execution_mode": LANDSAT_EXECUTION_MODE,
                 "selected_scene_evidence": {
