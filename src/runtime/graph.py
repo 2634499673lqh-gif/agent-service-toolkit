@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from core.llm import get_model
 from core.settings import settings
+from geochange.artifacts import load_dynamic_evidence
 from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
 from geochange.skill import (
@@ -621,6 +622,12 @@ def build_runtime_graph(
             try:
                 if state.geochange_task is None:
                     raise ValueError("trusted GeoChange task is missing")
+                if isinstance(result, TrustedDynamicExecutionResult):
+                    if (
+                        load_dynamic_evidence(state.task_id, state.task_run_id)
+                        != result.canonical_evidence
+                    ):
+                        raise ValueError("dynamic terminal binder is not server-owned")
                 validate_terminal_result(
                     runtime_context.skill,
                     candidate,
@@ -690,6 +697,13 @@ def build_runtime_graph(
                     "execution_result": result.model_dump(mode="json"),
                     "failure": failure.model_dump(mode="json"),
                 }
+            if load_dynamic_evidence(state.task_id, state.task_run_id) != result.canonical_evidence:
+                failure = _failure(failure_classifier, "capability_output_invalid")
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "execution_result": result.model_dump(mode="json"),
+                    "failure": failure.model_dump(mode="json"),
+                }
             state_update["trusted_dynamic_evidence"] = result.canonical_evidence
         parsed_output = _bounded_json_object(
             result.output,
@@ -717,7 +731,11 @@ def build_runtime_graph(
         if state.plan is None or state.execution_result is None:
             return {"failure": _failure(failure_classifier, "runtime_verification_input_invalid")}
         if isinstance(state.execution_result, TrustedDynamicExecutionResult):
-            if state.trusted_dynamic_evidence != state.execution_result.canonical_evidence:
+            if (
+                state.trusted_dynamic_evidence != state.execution_result.canonical_evidence
+                or load_dynamic_evidence(state.task_id, state.task_run_id)
+                != state.execution_result.canonical_evidence
+            ):
                 return {"failure": _failure(failure_classifier, "skill_result_invalid")}
         step = state.plan.steps[state.plan_position]
         try:

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from geochange.aoi import resolve_aoi
+from geochange.artifacts import load_dynamic_evidence
 from geochange.fixture import scene_evidence, validate_binding
 from geochange.ndbi import scene_evidence as ndbi_scene_evidence
 from geochange.ndbi import validate_binding as validate_ndbi_binding
@@ -1339,6 +1340,8 @@ class TaskRuntimeService:
                         and (
                             not isinstance(state.execution_result, TrustedDynamicExecutionResult)
                             or state.trusted_dynamic_evidence
+                            != state.execution_result.canonical_evidence
+                            or load_dynamic_evidence(str(task_id), str(task_run_id))
                             != state.execution_result.canonical_evidence
                         )
                     ):

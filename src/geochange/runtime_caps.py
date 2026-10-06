@@ -19,7 +19,7 @@ from runtime.executor import (
 from schema.planner import PlanStep
 
 from .aoi import TrustedAOI, resolve_aoi
-from .artifacts import ARTIFACT_ROOT
+from .artifacts import ARTIFACT_ROOT, write_dynamic_evidence
 from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
 from .landsat import MonthlyPeriod, PeriodPair, prepare_landsat_periods
 from .landsat_ndvi import (
@@ -497,11 +497,20 @@ class SummarizeChangeRuntimeCapability(_Base):
                 raise ValueError(
                     f"landsat verifier failed: {projection_verification.get('code', 'projection')}"
                 )
-            return self._trusted_dynamic_result(
-                step,
-                payload,
-                build_landsat_terminal_projection(product, pair),
+            canonical_evidence = build_landsat_terminal_projection(product, pair)
+            if not context.runtime_task_id or not context.runtime_task_run_id:
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="dynamic_runtime_identity_missing",
+                    error_message="Dynamic terminal run identity is unavailable",
+                )
+            write_dynamic_evidence(
+                str(context.runtime_task_id),
+                str(context.runtime_task_run_id),
+                canonical_evidence,
             )
+            return self._trusted_dynamic_result(step, payload, canonical_evidence)
         if task.analysis_type == "water_change":
             try:
                 change = compute_cached_water_change(
