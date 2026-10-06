@@ -432,10 +432,32 @@ class SummarizeChangeRuntimeCapability(_Base):
                 "selected_scene_evidence": {
                     "preparation_contract_version": pair.contract_version,
                     "period_a": json.dumps(
-                        pair.period_a.provenance, sort_keys=True, separators=(",", ":")
+                        {
+                            key: pair.period_a.provenance[key]
+                            for key in (
+                                "scene_ids",
+                                "acquisition_dates",
+                                "asset_key_map",
+                                "asset_identity_hashes",
+                            )
+                            if key in pair.period_a.provenance
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
                     ),
                     "period_b": json.dumps(
-                        pair.period_b.provenance, sort_keys=True, separators=(",", ":")
+                        {
+                            key: pair.period_b.provenance[key]
+                            for key in (
+                                "scene_ids",
+                                "acquisition_dates",
+                                "asset_key_map",
+                                "asset_identity_hashes",
+                            )
+                            if key in pair.period_b.provenance
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
                     ),
                     "target_grid": json.dumps(
                         pair.pair_grid.model_dump(mode="json"),
