@@ -1,14 +1,14 @@
 {
   "evidence_schema": "taskpilot.v03.b.final-chain.v1",
-  "code_head": "a0dd0dc985ccb3ea3d44b93d48bf3551ab90ea30",
+  "code_head": "1776233b445e69d7ec5e04be1cc5748fcb3b05d7",
   "docker": {
     "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
     "service": "taskpilot-v03-final-agent_service-1",
     "task_run_status": "succeeded"
   },
   "run": {
-    "task_id": "df60ec1a-de65-4d6e-ab85-d65b818c8dbc",
-    "run_id": "4ee6c83b-5ba4-4bb0-8f01-1c5a681a311c",
+    "task_id": "044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912",
+    "run_id": "9e75320f-39f9-497b-9ba0-f46e3a8e6f77",
     "verifier_status": "passed",
     "execution_mode": "real_stac_landsat_local",
     "aoi_id": "jianghan_district_420103",
@@ -88,8 +88,8 @@
     "scene_b": "LC09_L2SP_123039_20240721_02_T1"
   },
   "history": {
-    "task_id": "df60ec1a-de65-4d6e-ab85-d65b818c8dbc",
-    "run_id": "4ee6c83b-5ba4-4bb0-8f01-1c5a681a311c",
+    "task_id": "044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912",
+    "run_id": "9e75320f-39f9-497b-9ba0-f46e3a8e6f77",
     "recomputed": false
   },
   "cross_tenant": {
@@ -101,12 +101,18 @@
     "history": []
   },
   "checks": {
-    "focused_tests": "56 passed, 1 skipped",
+    "focused_tests": "52 passed, 1 skipped",
     "affected_runtime_tests": "87 passed, 39 skipped, 1 known out-of-scope NDBI baseline failure",
     "ruff": "passed",
     "ruff_format": "passed",
     "pyrefly_changed_files": "0 errors",
     "uv_lock_check": "passed",
-    "git_diff_check": "passed"
+    "git_diff_check": "passed",
+    "all_required_artifact_api_200": true,
+    "numeric_artifact_metadata": "passed for all six numeric GeoTIFF/mask artifacts",
+    "mask_tiff_mime": "passed",
+    "dynamic_observation_bound": "passed; persisted observation omits duplicated binder/payload",
+    "no_credentials_in_logs": "passed; no SAS/query credentials or tokens observed",
+    "docker_product_chain": "passed from committed HEAD 1776233b445e69d7ec5e04be1cc5748fcb3b05d7"
   }
 }

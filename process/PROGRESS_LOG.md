@@ -6374,3 +6374,15 @@ artifact IDs and SHA-256 values, an API byte/checksum confirmation, map metadata
 same-run history reopening, and authenticated second-tenant denials. It contains
 no tokens, credentials, signed URLs, or raw provider URLs.
 
+
+## Trusted dynamic lifecycle closure pass (2026-10-06)
+
+From committed code HEAD 1776233b445e69d7ec5e04be1cc5748fcb3b05d7, the clean Docker product chain completed for task 044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912 / run 9e75320f-39f9-497b-9ba0-f46e3a8e6f77.
+
+A generic capability can no longer select the 8,192-character envelope from payload fields or a trusted marker. The larger result is emitted only by the wired Jianghan summarize capability after server-owned A/B product verification, and the terminal payload is bound to a separate canonical projection covering periods, metrics, provenance, scene/grid evidence, and artifacts. Checkpoint state requires that binder; resume/terminal validation rejects missing or mismatched dynamic evidence. Dynamic observations persist a compact marker rather than duplicating the bounded binder and payload into the 8,192-byte observability field.
+
+Focused adversarial tests passed for generic dynamic marker/type/payload rejection, checkpoint binder enforcement, forged dynamic evidence, and bounded observations. The first committed smoke exposed and fixed the observability-size defect before final smoke.
+
+The final persisted run reached succeeded with verifier passed and real_stac_landsat_local. It persisted all nine approved artifact IDs and mandatory SHA-256 checksums. All nine artifact API routes returned 200; the three numeric GeoTIFFs and three masks reopened with expected dtype, EPSG:32649, 264×296 dimensions, transform, and NoData; masks returned image/tiff. Jianghan map metadata reported the trusted label, EPSG:32649, 296×264 dimensions, and both real scene identities. History reopened the same original run without recomputation. A second tenant received 404 for task/run/artifact/map and an empty history. Logs contained no SAS/query credentials or tokens.
+
+Science remained unchanged: 2023 final NDVI-valid 81.9537307% (26,108/31,857), 2024 99.9968610% (31,856/31,857), common 81.9505917% (26,107/31,857), mean delta 0.00556586. Provisional 60% and 50% gates remain unfrozen and are ready for freeze review. Machine-readable details are in process/evidence_taskpilot_v03_b_final_chain.json.
