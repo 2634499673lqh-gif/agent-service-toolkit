@@ -6336,3 +6336,9 @@ fixture. Clean committed Docker persistence/API/history smoke remains required.
 The clean committed Docker NDVI product probe passed with artifact-bound
 verification: AOI 31,857 pixels; final coverage 81.9537% / 99.9969%; common
 26,107 (81.9506%).
+
+## Focused runtime asset-read diagnosis (2026-10-06)
+
+- Exact `d95887e3db1899b67295cfeb1fcd8233309277bc` Docker controls: standalone probe passed; a direct unguarded control reproduced sanitized `provider_unavailable`/`asset_read` from multiprocessing spawn bootstrapping; guarded synchronous and guarded `asyncio.to_thread` controls passed. A real persisted PostgreSQL TaskRun reached A preparation and wrote all nine NDVI artifacts, then failed before verifier because the trusted dynamic payload exceeded the legacy 2,000-character execution envelope (`geochange_output_oversized`).
+- Minimal fix: permit only the server-owned Landsat dynamic execution payload to use the bounded 8,192-character runtime envelope; legacy cached outputs remain capped at 2,000. No verifier, artifact, map, history, timeout, concurrency, process-isolation, or credential behavior was changed.
+- Focused validation: 48 passed, 1 skipped; Ruff, format, Pyrefly, `uv lock --check`, and `git diff --check` passed. Known NDBI digest debt remains unrelated.

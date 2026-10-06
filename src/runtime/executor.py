@@ -16,6 +16,8 @@ from schema.planner import PlanStep
 from .observability import normalize_provider_metadata, normalize_provider_usage
 from .planner import PlannerTaskInput
 
+RUNTIME_OUTPUT_MAX_LENGTH = 8192
+
 
 class ExecutionResult(BaseModel):
     """Normalized, checkpoint-safe result for one PlanStep execution."""
@@ -24,7 +26,7 @@ class ExecutionResult(BaseModel):
 
     step_position: int = Field(gt=0)
     success: bool
-    output: str | None = Field(default=None, max_length=2000)
+    output: str | None = Field(default=None, max_length=RUNTIME_OUTPUT_MAX_LENGTH)
     error_code: str | None = Field(default=None, max_length=64)
     error_message: str | None = Field(default=None, max_length=500)
     usage: dict[str, Any] | None = None

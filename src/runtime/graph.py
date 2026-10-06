@@ -28,7 +28,7 @@ from schema.planner import PlanStep
 from .capabilities import DeterministicFixtureCapability
 from .capability import CapabilityDispatcher, CapabilityMetadata
 from .context import ContextBuilder, ContextEnvelope
-from .executor import ExecutionResult, Executor
+from .executor import RUNTIME_OUTPUT_MAX_LENGTH, ExecutionResult, Executor
 from .failure import FailureClassifier, RuntimeFailure
 from .observability import (
     duration_ms,
@@ -959,7 +959,7 @@ def _offline_geochange_task(
 
 
 def _bounded_json_object(output: str | None) -> dict[str, Any] | None:
-    if not output or len(output) > 2000:
+    if not output or len(output) > RUNTIME_OUTPUT_MAX_LENGTH:
         return None
     try:
         value = json.loads(output)
