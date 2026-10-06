@@ -418,6 +418,7 @@ def validate_terminal_result(
     task: GeoChangeTask,
     aoi_evidence: Mapping[str, str],
     scene_evidence_values: Mapping[str, str],
+    canonical_dynamic_evidence: Mapping[str, object] | None = None,
 ) -> None:
     """Validate terminal output against canonical server-owned evidence."""
 
@@ -437,6 +438,17 @@ def validate_terminal_result(
             or provenance.get("aoi_hash") != aoi.source_hash
         ):
             raise SkillValidationError("dynamic AOI hash is not server-authorized")
+        if not isinstance(canonical_dynamic_evidence, Mapping):
+            raise SkillValidationError("dynamic terminal binder is missing")
+        for key in (
+            "analysis_periods",
+            "metrics",
+            "provenance",
+            "artifacts",
+            "selected_scene_evidence",
+        ):
+            if payload.get(key) != canonical_dynamic_evidence.get(key):
+                raise SkillValidationError("dynamic terminal evidence is not server-authorized")
         skill.validate_result(
             payload, task=task, aoi_evidence=canonical_aoi, require_trusted_evidence=False
         )

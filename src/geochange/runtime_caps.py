@@ -26,6 +26,7 @@ from .landsat_ndvi import (
     EXECUTION_MODE as LANDSAT_EXECUTION_MODE,
 )
 from .landsat_ndvi import (
+    build_landsat_terminal_projection,
     compute_landsat_ndvi_product,
     verify_landsat_ndvi_metadata,
     verify_landsat_ndvi_product,
@@ -82,8 +83,7 @@ def _live_scene_evidence(task: GeoChangeTask, item_a: Any, item_b: Any) -> dict[
 class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
         output = json.dumps(payload, separators=(",", ":"))
-        dynamic = payload.get("execution_mode") == LANDSAT_EXECUTION_MODE
-        max_length = TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH if dynamic else 2000
+        max_length = 2000
         if len(output) > max_length and isinstance(payload.get("summary"), str):
             # Provider prose is presentation only. Keep the trusted metrics,
             # artifact references and scene evidence intact when a provider
@@ -98,14 +98,36 @@ class _Base:
                 error_code="geochange_output_oversized",
                 error_message="GeoChange output exceeds the bounded limit",
             )
-        if dynamic:
-            return TrustedDynamicExecutionResult(
-                step_position=step.position,
-                success=True,
-                output=output,
-                trusted_dynamic=True,
-            )
         return ExecutionResult(step_position=step.position, success=True, output=output)
+
+    def _trusted_dynamic_result(
+        self,
+        step: PlanStep,
+        payload: dict[str, Any],
+        canonical_evidence: dict[str, Any],
+    ) -> TrustedDynamicExecutionResult | ExecutionResult:
+        """Build the only result allowed to carry the dynamic output budget.
+
+        The ordinary result path never selects this limit from payload data.
+        This method is called only after the server-owned Landsat product and
+        its terminal projection have both been verified.
+        """
+
+        output = json.dumps(payload, separators=(",", ":"))
+        if len(output) > TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH:
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_output_oversized",
+                error_message="GeoChange output exceeds the bounded limit",
+            )
+        return TrustedDynamicExecutionResult(
+            step_position=step.position,
+            success=True,
+            output=output,
+            trusted_dynamic=True,
+            canonical_evidence=canonical_evidence,
+        )
 
 
 class ResolveAOIRuntimeCapability(_Base):
@@ -475,7 +497,11 @@ class SummarizeChangeRuntimeCapability(_Base):
                 raise ValueError(
                     f"landsat verifier failed: {projection_verification.get('code', 'projection')}"
                 )
-            return self._result(step, payload)
+            return self._trusted_dynamic_result(
+                step,
+                payload,
+                build_landsat_terminal_projection(product, pair),
+            )
         if task.analysis_type == "water_change":
             try:
                 change = compute_cached_water_change(

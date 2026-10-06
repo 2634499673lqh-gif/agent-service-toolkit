@@ -627,6 +627,11 @@ def build_runtime_graph(
                     task=state.geochange_task,
                     aoi_evidence=state.geochange_aoi_evidence,
                     scene_evidence_values=state.geochange_evidence,
+                    canonical_dynamic_evidence=(
+                        result.canonical_evidence
+                        if isinstance(result, TrustedDynamicExecutionResult)
+                        else None
+                    ),
                 )
             except (SkillValidationError, ValueError, TypeError):
                 failure = _failure(failure_classifier, "skill_result_invalid")
@@ -677,6 +682,15 @@ def build_runtime_graph(
             "pending_approval": None,
             "failure": None,
         }
+        if isinstance(result, TrustedDynamicExecutionResult):
+            if not isinstance(result.canonical_evidence, dict):
+                failure = _failure(failure_classifier, "capability_output_invalid")
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "execution_result": result.model_dump(mode="json"),
+                    "failure": failure.model_dump(mode="json"),
+                }
+            state_update["trusted_dynamic_evidence"] = result.canonical_evidence
         parsed_output = _bounded_json_object(
             result.output,
             max_length=(
@@ -702,6 +716,9 @@ def build_runtime_graph(
     async def verify_step(state: AgentState) -> dict[str, object]:
         if state.plan is None or state.execution_result is None:
             return {"failure": _failure(failure_classifier, "runtime_verification_input_invalid")}
+        if isinstance(state.execution_result, TrustedDynamicExecutionResult):
+            if state.trusted_dynamic_evidence != state.execution_result.canonical_evidence:
+                return {"failure": _failure(failure_classifier, "skill_result_invalid")}
         step = state.plan.steps[state.plan_position]
         try:
             result = await verifier_node(
@@ -730,6 +747,7 @@ def build_runtime_graph(
         return {
             "retry_count": decision.retry_count,
             "execution_result": None,
+            "trusted_dynamic_evidence": None,
             "verification": None,
         }
 

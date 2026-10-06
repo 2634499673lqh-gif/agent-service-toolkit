@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from runtime import ExecutionResult, Executor, PlannerTaskInput
 from runtime.executor import TrustedDynamicExecutionResult
+from runtime.state import AgentState
 from schema import PlanStep
 
 
@@ -107,6 +108,23 @@ def test_dynamic_marker_is_required_when_rehydrating() -> None:
             step_position=1,
             success=True,
             output="x" * 2001,
+        )
+
+
+def test_dynamic_checkpoint_requires_the_server_binder() -> None:
+    result = TrustedDynamicExecutionResult(
+        step_position=1,
+        success=True,
+        output="{}",
+        trusted_dynamic=True,
+        canonical_evidence={"metrics": {"common": 1}},
+    )
+    with pytest.raises(ValidationError, match="binder"):
+        AgentState(
+            task_id="11111111-1111-4111-8111-111111111111",
+            task_run_id="22222222-2222-4222-8222-222222222222",
+            task_input=PlannerTaskInput(title="dynamic", description=None),
+            execution_result=result,
         )
 
 

@@ -30,7 +30,7 @@ def _context(task: GeoChangeTask, instruction: str):
     )
 
 
-def test_only_server_owned_landsat_payload_gets_dynamic_bound():
+def test_payload_cannot_select_dynamic_bound_on_generic_capability():
     step = PlanStep(position=1, instruction="summarize_change")
     capability = _Base()
     generic = capability._result(step, {"large": "x" * 2100})
@@ -39,8 +39,8 @@ def test_only_server_owned_landsat_payload_gets_dynamic_bound():
         step,
         {"execution_mode": "real_stac_landsat_local", "large": "x" * 2100},
     )
-    assert dynamic.success
-    assert len(dynamic.output or "") <= 8192
+    assert not dynamic.success
+    assert dynamic.error_code == "geochange_output_oversized"
 
 
 @pytest.mark.asyncio

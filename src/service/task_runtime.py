@@ -37,7 +37,7 @@ from persistence.repositories import AgentRunRepository, TaskRunRepository, Tool
 from runtime.capabilities import DeterministicFixtureCapability
 from runtime.capability import CapabilityDispatcher, CapabilityMetadata
 from runtime.context import ContextBuilder, ContextEnvelope
-from runtime.executor import ExecutionResult, Executor
+from runtime.executor import ExecutionResult, Executor, TrustedDynamicExecutionResult
 from runtime.failure import FailureClassifier
 from runtime.graph import RuntimeGraphContext, RuntimeObservation, build_runtime_graph
 from runtime.planner import PlannerNode
@@ -1333,12 +1333,23 @@ class TaskRuntimeService:
                         if state.execution_result
                         else None
                     )
+                    if (
+                        isinstance(payload, dict)
+                        and payload.get("execution_mode") == "real_stac_landsat_local"
+                        and (
+                            not isinstance(state.execution_result, TrustedDynamicExecutionResult)
+                            or state.trusted_dynamic_evidence
+                            != state.execution_result.canonical_evidence
+                        )
+                    ):
+                        raise ValueError("dynamic terminal capability binder is invalid")
                     validate_terminal_result(
                         skill,
                         payload,
                         task=trusted_task,
                         aoi_evidence=state.geochange_aoi_evidence,
                         scene_evidence_values=state.geochange_evidence,
+                        canonical_dynamic_evidence=state.trusted_dynamic_evidence,
                     )
             except (TypeError, ValueError, SkillValidationError):
                 state = self._failed_state(state, "skill_result_invalid")

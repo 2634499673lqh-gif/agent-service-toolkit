@@ -297,6 +297,53 @@ def test_dynamic_terminal_routing_bypasses_legacy_scene_fixture(monkeypatch):
         )
 
 
+def test_dynamic_terminal_rejects_self_consistent_forged_binder():
+    task = GeoChangeTask(
+        aoi_key="jianghan_district_420103",
+        period_a={"start": "2023-07-01", "end": "2023-07-31"},
+        period_b={"start": "2024-07-01", "end": "2024-07-31"},
+        data_mode="real_stac_landsat_local",
+    )
+    aoi = resolve_aoi(task.aoi_key)
+    canonical = {
+        "analysis_periods": {
+            "period_a": "2023-07-01/2023-07-31",
+            "period_b": "2024-07-01/2024-07-31",
+        },
+        "metrics": {"final_common_comparison_pixels": 26107},
+        "provenance": {"aoi_hash": aoi.source_hash},
+        "artifacts": {"ndvi_before_raster": "ndvi_before_raster"},
+        "selected_scene_evidence": {"target_grid": "server-grid"},
+    }
+    payload = {
+        "execution_mode": "real_stac_landsat_local",
+        "provenance": {"aoi_hash": aoi.source_hash},
+        **canonical,
+    }
+
+    class _BinderSkill:
+        result_type = "vegetation_change"
+
+        def validate_result(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return None
+
+    forged = copy.deepcopy(payload)
+    forged["metrics"]["final_common_comparison_pixels"] = 1
+    with pytest.raises(SkillValidationError, match="dynamic terminal evidence"):
+        validate_terminal_result(
+            _BinderSkill(),
+            forged,
+            task=task,
+            aoi_evidence={
+                "catalog_key": aoi.catalog_key,
+                "crs": aoi.crs,
+                "source": aoi.source,
+            },
+            scene_evidence_values={},
+            canonical_dynamic_evidence=canonical,
+        )
+
+
 def test_jianghan_confirmation_rejects_non_month_and_out_of_range():
     base = {
         "analysis_type": "vegetation_change",

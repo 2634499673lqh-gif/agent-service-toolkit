@@ -474,6 +474,19 @@ def verify_landsat_terminal_projection(
 ) -> dict[str, Any]:
     """Compare a terminal projection with the server-owned B product/pair."""
 
+    expected = build_landsat_terminal_projection(product, pair)
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            return {"status": "failed", "code": f"{key}_evidence_mismatch"}
+    return {"status": "passed"}
+
+
+def build_landsat_terminal_projection(
+    product: LandsatNDVIProduct,
+    pair: PreparedPeriodPair,
+) -> dict[str, Any]:
+    """Build the server-owned dynamic terminal binder from A and B."""
+
     expected_periods = {
         "period_a": f"{pair.period_a.requested_period.start_utc.date().isoformat()}/{(pair.period_a.requested_period.end_utc - timedelta(days=1)).date().isoformat()}",
         "period_b": f"{pair.period_b.requested_period.start_utc.date().isoformat()}/{(pair.period_b.requested_period.end_utc - timedelta(days=1)).date().isoformat()}",
@@ -502,17 +515,13 @@ def verify_landsat_terminal_projection(
             pair.pair_grid.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
         ),
     }
-    expected = {
+    return {
         "analysis_periods": expected_periods,
         "metrics": product.metrics,
         "provenance": product.provenance,
         "artifacts": {name: name for name in product.artifacts},
         "selected_scene_evidence": expected_selected,
     }
-    for key, value in expected.items():
-        if payload.get(key) != value:
-            return {"status": "failed", "code": f"{key}_evidence_mismatch"}
-    return {"status": "passed"}
 
 
 __all__ = [
@@ -522,5 +531,6 @@ __all__ = [
     "verify_landsat_ndvi_product",
     "verify_landsat_ndvi_metadata",
     "verify_landsat_terminal_projection",
+    "build_landsat_terminal_projection",
     "artifact_sha256",
 ]

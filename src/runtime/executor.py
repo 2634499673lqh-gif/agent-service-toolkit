@@ -86,12 +86,17 @@ class ExecutionResult(BaseModel):
 class TrustedDynamicExecutionResult(ExecutionResult):
     """Server-created Landsat terminal result with its explicit trust marker.
 
-    The marker is required when this result is reconstructed from a checkpoint,
-    so generic JSON-shaped execution results cannot silently inherit the larger
-    dynamic limit.
+    The marker identifies the dynamic shape, while the runtime dispatcher and
+    checkpoint state require the separate server-built evidence binder before
+    this result can be trusted.
     """
 
     trusted_dynamic: Literal[True]
+    # This projection is produced only by the server-owned Jianghan
+    # summarize capability after it has verified the real A/B product.  It is
+    # carried separately from the serialized terminal payload so checkpoint
+    # validation can compare the payload with an independent binder.
+    canonical_evidence: dict[str, Any] | None = None
     output: str | None = Field(
         default=None,
         max_length=TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
