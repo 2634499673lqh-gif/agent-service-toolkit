@@ -818,6 +818,7 @@ def build_runtime_graph(
             else None,
             "geochange_aoi_evidence": state.geochange_aoi_evidence,
             "geochange_evidence": state.geochange_evidence,
+            "trusted_dynamic_evidence": None,
             **replacement.model_dump(mode="json"),
         }
 
