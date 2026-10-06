@@ -437,8 +437,6 @@ class SummarizeChangeRuntimeCapability(_Base):
                             for key in (
                                 "scene_ids",
                                 "acquisition_dates",
-                                "asset_key_map",
-                                "asset_identity_hashes",
                             )
                             if key in pair.period_a.provenance
                         },
@@ -451,8 +449,6 @@ class SummarizeChangeRuntimeCapability(_Base):
                             for key in (
                                 "scene_ids",
                                 "acquisition_dates",
-                                "asset_key_map",
-                                "asset_identity_hashes",
                             )
                             if key in pair.period_b.provenance
                         },
