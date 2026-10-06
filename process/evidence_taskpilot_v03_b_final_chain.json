@@ -103,7 +103,7 @@
   "checks": {
     "focused_tests": "54 passed, 1 skipped",
     "affected_runtime_tests": "87 passed, 39 skipped, 1 known out-of-scope NDBI baseline failure",
-    "ruff": "passed",
+    "ruff": "passed on changed/affected files; unrelated pre-existing src/geochange/__init__.py import-order I001 remains untouched",
     "ruff_format": "passed",
     "pyrefly_changed_files": "0 errors",
     "uv_lock_check": "passed",
