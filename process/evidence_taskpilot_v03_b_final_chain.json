@@ -1,14 +1,14 @@
 {
   "evidence_schema": "taskpilot.v03.b.final-chain.v1",
-  "code_head": "146f0cb115b0b76c5d420e1f62df1f2f701f8ed2",
+  "code_head": "65b2600699d0fd7cc46c00de0942d6a1e10567a0",
   "docker": {
     "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
     "service": "taskpilot-v03-final-agent_service-1",
     "task_run_status": "succeeded"
   },
   "run": {
-    "task_id": "eab50e97-22e6-4ed1-b0e5-8b87c106730e",
-    "run_id": "dae9f408-2638-4966-b4aa-f3c908dcc04f",
+    "task_id": "cde33ee5-a09f-4475-a55e-34dcf32c2fdd",
+    "run_id": "994e6a8b-14d1-4f07-bd87-39429516b8f3",
     "verifier_status": "passed",
     "execution_mode": "real_stac_landsat_local",
     "aoi_id": "jianghan_district_420103",
@@ -101,8 +101,8 @@
     "history": []
   },
   "checks": {
-    "focused_tests": "54 passed, 1 skipped",
-    "affected_runtime_tests": "87 passed, 39 skipped, 1 known out-of-scope NDBI baseline failure",
+    "focused_tests": "8 passed, 4 warnings (adversarial lifecycle closure)",
+    "affected_runtime_tests": "121 passed, 1 skipped, 1 known out-of-scope NDBI baseline failure",
     "ruff": "passed on changed/affected files; unrelated pre-existing src/geochange/__init__.py import-order I001 remains untouched",
     "ruff_format": "passed",
     "pyrefly_changed_files": "0 errors",
@@ -113,7 +113,9 @@
     "mask_tiff_mime": "passed",
     "dynamic_observation_bound": "passed; persisted observation omits duplicated binder/payload",
     "no_credentials_in_logs": "passed; no SAS/query credentials or tokens observed",
-    "docker_product_chain": "passed from committed HEAD 146f0cb115b0b76c5d420e1f62df1f2f701f8ed2",
-    "dynamic_binder_sidecar": "passed; binder present and independently loaded from run artifact root"
+    "docker_product_chain": "passed from committed HEAD 65b2600699d0fd7cc46c00de0942d6a1e10567a0",
+    "dynamic_binder_sidecar": "passed; binder present and independently loaded from run artifact root",
+    "adversarial_lifecycle": "passed: forged self-consistent checkpoint, binder mismatch, missing/malformed sidecar, resume rebinding, terminal rejection, and replan stale-trust clearing",
+    "replan_dynamic_binder_clear": "passed; production fix clears trusted_dynamic_evidence during replan"
   }
 }
