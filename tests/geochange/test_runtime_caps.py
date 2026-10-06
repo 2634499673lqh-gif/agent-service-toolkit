@@ -12,6 +12,7 @@ from geochange.runtime_caps import (
     ResolveAOIRuntimeCapability,
     SearchSentinel2RuntimeCapability,
     SummarizeChangeRuntimeCapability,
+    _Base,
 )
 from geochange.stac import Sentinel2Item
 from runtime.context import ContextBuilder
@@ -27,6 +28,19 @@ def _context(task: GeoChangeTask, instruction: str):
         runtime_task_run_id=str(uuid4()),
         geochange_task=task,
     )
+
+
+def test_only_server_owned_landsat_payload_gets_dynamic_bound():
+    step = PlanStep(position=1, instruction="summarize_change")
+    capability = _Base()
+    generic = capability._result(step, {"large": "x" * 2100})
+    assert not generic.success
+    dynamic = capability._result(
+        step,
+        {"execution_mode": "real_stac_landsat_local", "large": "x" * 2100},
+    )
+    assert dynamic.success
+    assert len(dynamic.output or "") <= 8192
 
 
 @pytest.mark.asyncio

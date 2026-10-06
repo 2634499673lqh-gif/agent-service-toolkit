@@ -212,14 +212,22 @@ class SkillSpec:
             ):
                 raise SkillValidationError("Landsat metric is invalid")
             artifacts = payload.get("artifacts")
-            if not isinstance(artifacts, dict) or not {
+            expected_artifacts = {
+                "ndvi_before",
+                "ndvi_after",
+                "ndvi_change",
                 "ndvi_before_raster",
                 "ndvi_after_raster",
                 "ndvi_change_raster",
                 "ndvi_valid_before",
                 "ndvi_valid_after",
                 "ndvi_common_comparison",
-            }.issubset(artifacts):
+            }
+            if (
+                not isinstance(artifacts, dict)
+                or set(artifacts) != expected_artifacts
+                or any(artifacts.get(name) != name for name in expected_artifacts)
+            ):
                 raise SkillValidationError("Landsat numeric artifacts are incomplete")
             if payload.get("verifier_status") != "passed":
                 raise SkillValidationError("Landsat verifier status is invalid")
@@ -236,9 +244,35 @@ class SkillSpec:
             selected_scene = payload.get("selected_scene_evidence")
             if not isinstance(selected_scene, dict) or not all(
                 isinstance(selected_scene.get(key), str)
-                for key in ("period_a", "period_b", "target_grid")
+                for key in ("period_a", "period_b", "target_grid", "preparation_contract_version")
             ):
                 raise SkillValidationError("Landsat scene evidence is incomplete")
+            if selected_scene["preparation_contract_version"] != "v0.3-preparation-1":
+                raise SkillValidationError("Landsat preparation contract is invalid")
+            try:
+                selected_periods = {
+                    period: json.loads(selected_scene[period])
+                    for period in ("period_a", "period_b")
+                }
+                selected_grid = json.loads(selected_scene["target_grid"])
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raise SkillValidationError("Landsat scene evidence is malformed") from None
+            scene_provenance = provenance["scene_provenance"]
+            if (
+                selected_grid != provenance.get("target_grid")
+                or any(
+                    selected_periods[period].get("scene_ids")
+                    != scene_provenance.get(period, {}).get("scene_ids")
+                    or selected_periods[period].get("acquisition_dates")
+                    != scene_provenance.get(period, {}).get("acquisition_dates")
+                    for period in ("period_a", "period_b")
+                )
+                or any(
+                    not scene_provenance.get(period, {}).get("asset_identity_hashes")
+                    for period in ("period_a", "period_b")
+                )
+            ):
+                raise SkillValidationError("Landsat scene evidence is not server-authorized")
             checksums = provenance.get("artifact_checksums")
             if not isinstance(checksums, dict) or set(checksums) != set(artifacts):
                 raise SkillValidationError("Landsat artifact checksums are incomplete")

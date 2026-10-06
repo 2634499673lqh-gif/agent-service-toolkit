@@ -9,7 +9,7 @@ from geochange.models import GeoChangeTask
 from schema.planner import Plan
 
 from .context import ContextEnvelope
-from .executor import ExecutionResult
+from .executor import ExecutionResult, TrustedDynamicExecutionResult
 from .failure import RuntimeFailure
 from .planner import PlannerTaskInput
 from .verifier import VerificationResult
@@ -46,7 +46,7 @@ class AgentState(BaseModel):
     plan: Plan | None = None
     plan_position: int = Field(default=0, ge=0)
     capability_context: ContextEnvelope | None = None
-    execution_result: ExecutionResult | None = None
+    execution_result: TrustedDynamicExecutionResult | ExecutionResult | None = None
     verification: VerificationResult | None = None
     failure: RuntimeFailure | None = None
     retry_count: int = Field(default=0, ge=0)

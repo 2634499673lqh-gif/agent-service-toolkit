@@ -28,7 +28,13 @@ from schema.planner import PlanStep
 from .capabilities import DeterministicFixtureCapability
 from .capability import CapabilityDispatcher, CapabilityMetadata
 from .context import ContextBuilder, ContextEnvelope
-from .executor import RUNTIME_OUTPUT_MAX_LENGTH, ExecutionResult, Executor
+from .executor import (
+    RUNTIME_OUTPUT_MAX_LENGTH,
+    TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
+    ExecutionResult,
+    Executor,
+    TrustedDynamicExecutionResult,
+)
 from .failure import FailureClassifier, RuntimeFailure
 from .observability import (
     duration_ms,
@@ -567,7 +573,11 @@ def build_runtime_graph(
                 "failure": failure.model_dump(mode="json"),
             }
         try:
-            result = ExecutionResult.model_validate(raw_result)
+            result = (
+                raw_result
+                if isinstance(raw_result, TrustedDynamicExecutionResult)
+                else ExecutionResult.model_validate(raw_result)
+            )
         except Exception:
             failure = _failure(failure_classifier, "capability_output_invalid")
             await observe(
@@ -667,7 +677,14 @@ def build_runtime_graph(
             "pending_approval": None,
             "failure": None,
         }
-        parsed_output = _bounded_json_object(result.output)
+        parsed_output = _bounded_json_object(
+            result.output,
+            max_length=(
+                TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH
+                if isinstance(result, TrustedDynamicExecutionResult)
+                else RUNTIME_OUTPUT_MAX_LENGTH
+            ),
+        )
         if parsed_output is not None:
             if selected_capability == "resolve_aoi":
                 state_update["geochange_aoi_evidence"] = _bounded_string_map(parsed_output)
@@ -958,8 +975,12 @@ def _offline_geochange_task(
     return GeoChangeTask.model_validate({**_default_geochange_task().model_dump(), **updates})
 
 
-def _bounded_json_object(output: str | None) -> dict[str, Any] | None:
-    if not output or len(output) > RUNTIME_OUTPUT_MAX_LENGTH:
+def _bounded_json_object(
+    output: str | None,
+    *,
+    max_length: int = RUNTIME_OUTPUT_MAX_LENGTH,
+) -> dict[str, Any] | None:
+    if not output or len(output) > max_length:
         return None
     try:
         value = json.loads(output)

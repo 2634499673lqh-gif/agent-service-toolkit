@@ -10,11 +10,13 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
+from .artifacts import CANONICAL_ARTIFACT_FILENAMES
 from .landsat import PreparedPeriodPair
 
 try:  # rasterio is a production dependency, but keep import errors explicit.
@@ -388,7 +390,7 @@ def verify_landsat_ndvi_product(
             return {"status": "failed", "code": "artifact_root_missing"}
         root = Path(artifact_root).resolve()
         for name, filename in product.artifacts.items():
-            if not isinstance(filename, str) or Path(filename).name != filename:
+            if not isinstance(filename, str) or filename != CANONICAL_ARTIFACT_FILENAMES.get(name):
                 return {"status": "failed", "code": "artifact_reference_invalid"}
             path = (root / filename).resolve()
             if root not in path.parents or not path.is_file():
@@ -465,11 +467,60 @@ def artifact_sha256(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def verify_landsat_terminal_projection(
+    payload: dict[str, Any],
+    product: LandsatNDVIProduct,
+    pair: PreparedPeriodPair,
+) -> dict[str, Any]:
+    """Compare a terminal projection with the server-owned B product/pair."""
+
+    expected_periods = {
+        "period_a": f"{pair.period_a.requested_period.start_utc.date().isoformat()}/{(pair.period_a.requested_period.end_utc - timedelta(days=1)).date().isoformat()}",
+        "period_b": f"{pair.period_b.requested_period.start_utc.date().isoformat()}/{(pair.period_b.requested_period.end_utc - timedelta(days=1)).date().isoformat()}",
+    }
+    expected_selected = {
+        "preparation_contract_version": pair.contract_version,
+        "period_a": json.dumps(
+            {
+                key: pair.period_a.provenance[key]
+                for key in ("scene_ids", "acquisition_dates")
+                if key in pair.period_a.provenance
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "period_b": json.dumps(
+            {
+                key: pair.period_b.provenance[key]
+                for key in ("scene_ids", "acquisition_dates")
+                if key in pair.period_b.provenance
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "target_grid": json.dumps(
+            pair.pair_grid.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+        ),
+    }
+    expected = {
+        "analysis_periods": expected_periods,
+        "metrics": product.metrics,
+        "provenance": product.provenance,
+        "artifacts": {name: name for name in product.artifacts},
+        "selected_scene_evidence": expected_selected,
+    }
+    for key, value in expected.items():
+        if payload.get(key) != value:
+            return {"status": "failed", "code": f"{key}_evidence_mismatch"}
+    return {"status": "passed"}
+
+
 __all__ = [
     "EXECUTION_MODE",
     "LandsatNDVIProduct",
     "compute_landsat_ndvi_product",
     "verify_landsat_ndvi_product",
     "verify_landsat_ndvi_metadata",
+    "verify_landsat_terminal_projection",
     "artifact_sha256",
 ]

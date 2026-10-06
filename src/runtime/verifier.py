@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from schema.planner import PlanStep
 from schema.verifier import VerificationResult
 
-from .executor import ExecutionResult
+from .executor import ExecutionResult, TrustedDynamicExecutionResult
 from .planner import PlannerTaskInput
 
 
@@ -65,7 +65,11 @@ class VerifierNode:
 
         sanitized_task_input = PlannerTaskInput.model_validate(task_input)
         validated_step = PlanStep.model_validate(step)
-        normalized_execution_result = ExecutionResult.model_validate(execution_result)
+        normalized_execution_result = (
+            execution_result
+            if isinstance(execution_result, TrustedDynamicExecutionResult)
+            else ExecutionResult.model_validate(execution_result)
+        )
         initial_request = VerifierRequest(
             task_input=sanitized_task_input,
             step=validated_step,

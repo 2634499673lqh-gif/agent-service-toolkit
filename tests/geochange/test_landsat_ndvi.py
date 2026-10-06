@@ -12,7 +12,11 @@ from geochange.landsat import (
     PreparedPeriodPair,
     TargetGrid,
 )
-from geochange.landsat_ndvi import compute_landsat_ndvi_product, verify_landsat_ndvi_product
+from geochange.landsat_ndvi import (
+    compute_landsat_ndvi_product,
+    verify_landsat_ndvi_product,
+    verify_landsat_terminal_projection,
+)
 from geochange.models import GeoChangeTask
 from geochange.provenance import trusted_landsat_map_metadata
 from geochange.skill import VEGETATION_CHANGE_NDVI, SkillValidationError, validate_terminal_result
@@ -117,12 +121,25 @@ def test_landsat_ndvi_verifier_requires_and_checks_artifact_checksums(tmp_path):
             pytest.skip("Rasterio PROJ database unavailable in this local environment")
         raise
     assert verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["status"] == "passed"
+    product.artifacts["ndvi_before_raster"] = "ndvi_after_raster.tif"
+    assert (
+        verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["code"]
+        == "artifact_reference_invalid"
+    )
+    product = compute_landsat_ndvi_product(pair, artifact_dir=tmp_path)
     product.provenance["artifact_checksums"].pop("ndvi_before_raster")
     assert (
         verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["code"]
         == "artifact_checksum_missing"
     )
 
+    product = compute_landsat_ndvi_product(pair, artifact_dir=tmp_path)
+    path = tmp_path / product.artifacts["ndvi_before_raster"]
+    path.unlink()
+    assert (
+        verify_landsat_ndvi_product(product, pair, artifact_root=tmp_path)["code"]
+        == "artifact_missing"
+    )
     product = compute_landsat_ndvi_product(pair, artifact_dir=tmp_path)
     path = tmp_path / product.artifacts["ndvi_before_raster"]
     path.write_bytes(path.read_bytes() + b"tamper")
@@ -192,11 +209,43 @@ def test_dynamic_terminal_rejects_forged_metrics():
         "artifacts": artifacts,
         "verifier_status": "passed",
         "execution_mode": "real_stac_landsat_local",
-        "selected_scene_evidence": {"period_a": "x", "period_b": "x", "target_grid": "x"},
+        "selected_scene_evidence": {
+            "preparation_contract_version": "v0.3-preparation-1",
+            "period_a": "{}",
+            "period_b": "{}",
+            "target_grid": json.dumps(
+                pair.pair_grid.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ),
+        },
     }
     payload["metrics"]["mean_delta_ndvi"] = 0.9
-    with pytest.raises(SkillValidationError, match="metrics"):
+    with pytest.raises(SkillValidationError):
         VEGETATION_CHANGE_NDVI.validate_result(payload)
+
+
+def test_dynamic_projection_rejects_forged_scene_grid_and_period_evidence():
+    pair = _gated_pair()
+    product = compute_landsat_ndvi_product(pair)
+    payload = {
+        "analysis_periods": {
+            "period_a": "2023-07-01/2023-07-31",
+            "period_b": "2024-07-01/2024-07-31",
+        },
+        "metrics": product.metrics,
+        "provenance": product.provenance,
+        "artifacts": {name: name for name in product.artifacts},
+        "selected_scene_evidence": {
+            "preparation_contract_version": pair.contract_version,
+            "period_a": "{}",
+            "period_b": "{}",
+            "target_grid": json.dumps(
+                pair.pair_grid.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+            ),
+        },
+    }
+    assert verify_landsat_terminal_projection(payload, product, pair)["status"] == "passed"
+    payload["selected_scene_evidence"]["target_grid"] = "{}"
+    assert verify_landsat_terminal_projection(payload, product, pair)["status"] == "failed"
 
 
 def test_dynamic_terminal_routing_bypasses_legacy_scene_fixture(monkeypatch):

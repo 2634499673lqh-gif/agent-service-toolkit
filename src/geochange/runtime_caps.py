@@ -11,7 +11,11 @@ import numpy as np
 from core.llm import get_model
 from core.settings import settings
 from runtime.capability import CapabilityMetadata
-from runtime.executor import RUNTIME_OUTPUT_MAX_LENGTH, ExecutionResult
+from runtime.executor import (
+    TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
+    ExecutionResult,
+    TrustedDynamicExecutionResult,
+)
 from schema.planner import PlanStep
 
 from .aoi import TrustedAOI, resolve_aoi
@@ -25,6 +29,7 @@ from .landsat_ndvi import (
     compute_landsat_ndvi_product,
     verify_landsat_ndvi_metadata,
     verify_landsat_ndvi_product,
+    verify_landsat_terminal_projection,
 )
 from .llm import GeoChangeLLM
 from .models import GeoChangeResult, GeoChangeTask
@@ -77,11 +82,8 @@ def _live_scene_evidence(task: GeoChangeTask, item_a: Any, item_b: Any) -> dict[
 class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
         output = json.dumps(payload, separators=(",", ":"))
-        max_length = (
-            RUNTIME_OUTPUT_MAX_LENGTH
-            if payload.get("execution_mode") == LANDSAT_EXECUTION_MODE
-            else 2000
-        )
+        dynamic = payload.get("execution_mode") == LANDSAT_EXECUTION_MODE
+        max_length = TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH if dynamic else 2000
         if len(output) > max_length and isinstance(payload.get("summary"), str):
             # Provider prose is presentation only. Keep the trusted metrics,
             # artifact references and scene evidence intact when a provider
@@ -96,11 +98,14 @@ class _Base:
                 error_code="geochange_output_oversized",
                 error_message="GeoChange output exceeds the bounded limit",
             )
-        return ExecutionResult(
-            step_position=step.position,
-            success=True,
-            output=output,
-        )
+        if dynamic:
+            return TrustedDynamicExecutionResult(
+                step_position=step.position,
+                success=True,
+                output=output,
+                trusted_dynamic=True,
+            )
+        return ExecutionResult(step_position=step.position, success=True, output=output)
 
 
 class ResolveAOIRuntimeCapability(_Base):
@@ -465,6 +470,11 @@ class SummarizeChangeRuntimeCapability(_Base):
                     ),
                 },
             }
+            projection_verification = verify_landsat_terminal_projection(payload, product, pair)
+            if projection_verification["status"] != "passed":
+                raise ValueError(
+                    f"landsat verifier failed: {projection_verification.get('code', 'projection')}"
+                )
             return self._result(step, payload)
         if task.analysis_type == "water_change":
             try:

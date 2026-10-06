@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from runtime import ExecutionResult, Executor, PlannerTaskInput
+from runtime.executor import TrustedDynamicExecutionResult
 from schema import PlanStep
 
 
@@ -81,6 +82,32 @@ def test_rejects_blank_error_code() -> None:
 def test_rejects_overlong_output() -> None:
     with pytest.raises(ValidationError):
         ExecutionResult(step_position=1, success=True, output="x" * 2001)
+
+
+def test_trusted_dynamic_result_has_explicit_larger_bound() -> None:
+    result = TrustedDynamicExecutionResult(
+        step_position=1,
+        success=True,
+        output="x" * 8000,
+        trusted_dynamic=True,
+    )
+    assert len(result.output or "") == 8000
+    with pytest.raises(ValidationError):
+        TrustedDynamicExecutionResult(
+            step_position=1,
+            success=True,
+            output="x" * 8193,
+            trusted_dynamic=True,
+        )
+
+
+def test_dynamic_marker_is_required_when_rehydrating() -> None:
+    with pytest.raises(ValidationError):
+        TrustedDynamicExecutionResult(
+            step_position=1,
+            success=True,
+            output="x" * 2001,
+        )
 
 
 def test_rejects_overlong_error_code() -> None:

@@ -16,7 +16,8 @@ from schema.planner import PlanStep
 from .observability import normalize_provider_metadata, normalize_provider_usage
 from .planner import PlannerTaskInput
 
-RUNTIME_OUTPUT_MAX_LENGTH = 8192
+RUNTIME_OUTPUT_MAX_LENGTH = 2000
+TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH = 8192
 
 
 class ExecutionResult(BaseModel):
@@ -82,6 +83,21 @@ class ExecutionResult(BaseModel):
         return self
 
 
+class TrustedDynamicExecutionResult(ExecutionResult):
+    """Server-created Landsat terminal result with its explicit trust marker.
+
+    The marker is required when this result is reconstructed from a checkpoint,
+    so generic JSON-shaped execution results cannot silently inherit the larger
+    dynamic limit.
+    """
+
+    trusted_dynamic: Literal[True]
+    output: str | None = Field(
+        default=None,
+        max_length=TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
+    )
+
+
 class Executor(Protocol):
     """Narrow async execution interface consumed by the later runtime stages."""
 
@@ -129,4 +145,11 @@ class DeterministicExecutor:
         return False
 
 
-__all__ = ["DeterministicExecutor", "ExecutionResult", "Executor"]
+__all__ = [
+    "DeterministicExecutor",
+    "ExecutionResult",
+    "Executor",
+    "RUNTIME_OUTPUT_MAX_LENGTH",
+    "TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH",
+    "TrustedDynamicExecutionResult",
+]

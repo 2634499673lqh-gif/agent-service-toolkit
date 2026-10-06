@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from schema.planner import PlanStep
 
-from .executor import ExecutionResult
+from .executor import ExecutionResult, TrustedDynamicExecutionResult
 from .failure import FailureClassifier, RuntimeFailure
 
 _MAX_NAME_LENGTH = 64
@@ -139,7 +139,11 @@ class CapabilityDispatcher[CapabilityContextT]:
             return self._normalize_failure(raw_result)
 
         try:
-            result = ExecutionResult.model_validate(raw_result)
+            result = (
+                raw_result
+                if isinstance(raw_result, TrustedDynamicExecutionResult)
+                else ExecutionResult.model_validate(raw_result)
+            )
         except Exception:
             return _terminal_failure(_CAPABILITY_OUTPUT_INVALID)
 
