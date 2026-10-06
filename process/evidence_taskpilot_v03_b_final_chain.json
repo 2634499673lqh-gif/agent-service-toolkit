@@ -1,6 +1,6 @@
 {
   "evidence_schema": "taskpilot.v03.b.final-chain.v1",
-  "code_head": "4460ecb",
+  "code_head": "4460ecba4c9ded20414bfbe68a81eb306bca08b0",
   "docker": {
     "command": "docker compose -p taskpilot-v03-final -f compose.smoke.yaml up -d --build",
     "service": "taskpilot-v03-final-agent_service-1",

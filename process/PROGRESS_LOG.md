@@ -6368,7 +6368,7 @@ freeze review.
 
 Machine-readable evidence is committed in
 `process/evidence_taskpilot_v03_b_final_chain.json`. It records the exact code
-HEAD `4460ecb`, Docker build command, successful authenticated Jianghan TaskRun,
+HEAD `4460ecba4c9ded20414bfbe68a81eb306bca08b0`, Docker build command, successful authenticated Jianghan TaskRun,
 verifier and runtime mode, AOI/period/scene/grid binding, all nine canonical
 artifact IDs and SHA-256 values, an API byte/checksum confirmation, map metadata,
 same-run history reopening, and authenticated second-tenant denials. It contains
