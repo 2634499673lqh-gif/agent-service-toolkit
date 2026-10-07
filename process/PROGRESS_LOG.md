@@ -6431,3 +6431,52 @@ The visual blocker was a trusted map-geometry bug: dynamic `native_bounds` incor
 Learner notes: keep WGS84 display bounds separate from native raster bounds; coordinate transforms must be applied exactly once. Read `src/geochange/provenance.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `tests/geochange/test_landsat_ndvi.py`. Exercise: transform the returned native corners to EPSG:4326 and compare them with the map's trusted extent. No new provider or basemap was added.
 
 Follow-up: the frontend now distinguishes an OSM basemap failure from a result-layer failure; the former explicitly states that verified result layers remain available. Web typecheck and production build pass.
+
+## V0.3 coverage gate freeze closure (2026-10-07)
+
+The user explicitly froze the V0.3 final NDVI-valid data coverage gate at 60% per
+period and the final common-comparison valid-data coverage gate at 50%. These
+are data-quality/valid-comparison thresholds, not vegetation coverage, FVC, or
+vegetation-area percentages. Future versions may revise the thresholds through
+a new documented decision while preserving this V0.3 baseline. Implementation
+A and B remain COMPLETE / APPROVED; product wiring is COMPLETE and manual
+browser acceptance is PASS. The prior Final Audit returned NOT APPROVED only
+because the gate-freeze decision had not yet been formally made; that blocker is
+resolved pending focused Final Audit re-review. Earlier provisional records
+above remain historical.
+
+Runtime keeps the numeric gates at 60.0 / 50.0, removes the stale provisional
+comments, emits `coverage_gates_provisional=false` for new products, and adds
+`coverage_gates_v0_3_status="frozen"`; no historical persisted run was changed.
+Focused coverage tests assert the frozen values, retained real July coverage
+passes, period coverage still fails closed below threshold, and common
+comparison fails closed below threshold. No science formula or numeric output
+changed.
+
+Validation: affected GeoChange tests 54 passed / 1 skipped; dynamic lifecycle
+and runtime-dispatch regressions 11 passed; Ruff check/format, Pyrefly on the
+production NDVI module, `uv lock --check`, and `git diff --check` passed.
+Pyrefly over the entire affected test module still reports four pre-existing
+typing issues outside the new coverage cases (`AOI.source_hash` references and
+the `_BinderSkill` test stub). No code was committed or pushed.
+
+## 2026-10-07 — V0.3 focused Final Audit approval status synchronization
+
+The user-reported focused Final Audit re-review is APPROVED. The previous
+Final Audit returned NOT APPROVED only because the user freeze decision had
+not yet been formally recorded; that blocker is CLOSED. The coverage-gate
+closure is COMPLETE, all focused closure checks PASS, and the remaining blocker
+is none. Implementation A and B remain COMPLETE /
+APPROVED; product wiring is COMPLETE; manual browser acceptance is PASS. V0.3
+is COMPLETE / FINAL AUDIT APPROVED. PR / merge main remain pending.
+
+The frozen gates remain final NDVI-valid data coverage `>=60%` per period and
+final common-comparison valid-data coverage `>=50%`. They describe valid-data
+quality, not vegetation coverage or FVC. Historical provisional and NOT
+APPROVED entries were preserved. This status-only sync changes no scientific
+computation or runtime semantics. No commit or push was made.
+
+Post-sync validation: GeoChange coverage/provider tests `54 passed, 1 skipped`;
+dynamic lifecycle/runtime-dispatch regression `11 passed`; Ruff check passed;
+Ruff format check passed; Pyrefly on `src/geochange/landsat_ndvi.py` reported
+`0 errors`; `uv lock --check` resolved 260 packages; `git diff --check` passed.

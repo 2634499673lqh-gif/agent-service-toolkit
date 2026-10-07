@@ -2,6 +2,10 @@
 
 你是独立的 Codex Implementation 会话。仅在 Implementation A 已经通过独立 Strong Review、用户确认其接口和 baseline 后执行。本批次只做 B；不得重建 A、改变 A 的 AOI/provider 科学契约或把旧 fixture 当作动态数据。
 
+## 当前 V0.3 状态与已冻结门槛（2026-10-07）
+
+Implementation A、Implementation B 均为 COMPLETE / APPROVED；browser product wiring 为 COMPLETE，manual browser acceptance 为 PASS。用户已冻结 final NDVI-valid data coverage `>=60%`/period 和 final common-comparison valid-data coverage `>=50%`。这些是 V0.3 数据质量/有效比较门槛，不是 vegetation coverage、FVC 或植被面积百分比。Coverage-gate focused closure COMPLETE；focused Final Audit re-review APPROVED。上一轮 Final Audit NOT APPROVED 的唯一原因是 freeze decision 尚未正式记录；该 blocker CLOSED。Remaining blocker: none。V0.3 为 COMPLETE / FINAL AUDIT APPROVED；PR / merge main pending。历史记录中的 provisional 与 NOT APPROVED 状态保留为历史，不改变当前结论。
+
 ## 1. Dependency and baseline gate
 
 先阅读 `AGENTS.md`、`TASKPILOT_V03_IMPLEMENTATION_PLAN.md`、本 Prompt、A 的最终报告/接口模型和当前仓库状态。只读核对：
@@ -70,7 +74,7 @@ delta = NDVI_period_b - NDVI_period_a
 
 `final_ndvi_valid_mask_p = aoi_mask & preparation_valid_mask_p & finite(red_p) & finite(nir_p) & finite(denominator_p) & (abs(denominator_p) > 1e-6) & finite(ndvi_p) & (ndvi_p within [-1-1e-5,1+1e-5])`；B 必须校验 A 的 `common_preparation_valid_mask == aoi_mask & preparation_valid_mask_a & preparation_valid_mask_b`，并生成 `final_common_comparison_mask = common_preparation_valid_mask & final_ndvi_valid_mask_a & final_ndvi_valid_mask_b`。A/B means 和 delta stats 必须使用这一相同 final comparison mask；period-specific counts 另行报告。保留质量/辐射率有效水像元的负 NDVI；NoData、QA invalid、Red/NIR 对应饱和或 denominator 非 finite/`abs(sum) <= 1e-6`、NDVI 非 finite/超范围才排除。B 不因负 reflectance、低反射率或 water bit 单独排除像元。Verifier 必须检查 A 的 DN/QA/radiometry evidence、finite、range、preparation/final/common counts、A/B mean、delta identity、period/common coverage、target grid、AOI area 和 artifact/checksum 绑定。不得从 NDVI 低值推导植被面积或因果。
 
-最小 metrics：`aoi_area_m2`、`aoi_rasterized_pixels`、`preparation_valid_pixels_period_a/b`、`final_ndvi_valid_pixels_period_a/b`、`final_common_comparison_pixels`、`preparation_coverage_period_a/b_pct`、`final_ndvi_coverage_period_a/b_pct`、`final_common_comparison_coverage_pct`、`mean_ndvi_period_a`、`mean_ndvi_period_b`、`mean_delta_ndvi`，以及有理由保留的 min/max。所有 coverage denominator 都是 pair-wide `aoi_mask` pixels；不得用 scene footprint、bbox 或行政面积替代。推荐初始 gates 为 preparation ≥0.70/period、final NDVI ≥0.60/period、final common ≥0.50；这些数值须由 bounded AOI quality probe 后由用户冻结，未冻结时只能标 provisional，不能由实现者猜测。任一不满足返回 `insufficient_ndvi_coverage` 或 `insufficient_comparison_coverage`，不生成成功统计。字段有界、finite、不可由用户覆盖。
+最小 metrics：`aoi_area_m2`、`aoi_rasterized_pixels`、`preparation_valid_pixels_period_a/b`、`final_ndvi_valid_pixels_period_a/b`、`final_common_comparison_pixels`、`preparation_coverage_period_a/b_pct`、`final_ndvi_coverage_period_a/b_pct`、`final_common_comparison_coverage_pct`、`mean_ndvi_period_a`、`mean_ndvi_period_b`、`mean_delta_ndvi`，以及有理由保留的 min/max。所有 coverage denominator 都是 pair-wide `aoi_mask` pixels；不得用 scene footprint、bbox 或行政面积替代。V0.3 final NDVI-valid data coverage gate 为 ≥0.60/period，final common-comparison valid-data coverage gate 为 ≥0.50，已由用户冻结；它们不表示 vegetation coverage、FVC 或植被面积。Preparation gate 依照 A contract。任一不满足返回 `insufficient_ndvi_coverage` 或 `insufficient_comparison_coverage`，不生成成功统计。字段有界、finite、不可由用户覆盖。
 
 ### 5.3 Evidence/result boundary
 

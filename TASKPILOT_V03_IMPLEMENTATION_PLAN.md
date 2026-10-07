@@ -1,6 +1,17 @@
 # TaskPilot V0.3 Implementation Plan
 
-状态：Planning draft，等待用户批准 baseline、AOI 许可和预算后才能开始 Implementation A。
+状态：V0.3 COMPLETE / FINAL AUDIT APPROVED。Implementation A、Implementation B 均 COMPLETE / APPROVED；产品 wiring COMPLETE；手动浏览器验收 PASS。覆盖率门槛 focused closure 已完成，focused Final Audit re-review APPROVED。上一轮 Final Audit NOT APPROVED 的唯一原因是 gate-freeze decision 尚未正式记录；该 blocker 已关闭。Remaining blocker: none。PR / merge main 仍待后续处理。
+
+## V0.3 当前状态与冻结门槛（2026-10-07）
+
+- Implementation A：COMPLETE / APPROVED。
+- Implementation B：COMPLETE / APPROVED。
+- Browser product wiring：COMPLETE；manual browser acceptance：PASS。
+- 每期 final NDVI-valid data coverage `>=60%`，final common-comparison valid-data coverage `>=50%`。二者是 V0.3 数据质量/有效比较门槛，不是 vegetation coverage、FVC 或植被面积百分比。
+- 用户明确冻结以上 V0.3 门槛。未来版本可通过新的、已记录的决策修订，同时保留本 V0.3 历史基线。Coverage-gate focused closure COMPLETE；focused Final Audit re-review APPROVED；上一轮唯一 blocker（freeze decision 未正式记录）CLOSED。Remaining blocker: none。
+- V0.3 整体状态：COMPLETE / FINAL AUDIT APPROVED。PR / merge main：pending。
+
+下文保留了规划阶段的基线与决策记录；其历史状态不覆盖以上当前状态。
 
 本文件只规划 V0.3，不实施业务代码、数据库、依赖、分支或 Git 状态变更。代码标识使用英文；用户界面和规划结论使用中文。
 
@@ -27,7 +38,7 @@ V0.3 的首个真实产品闭环是：用户请求“比较武汉市江汉区 20
 
 不在本版本实现：全国或武汉全市 AOI、GEE、多 provider、动态 NDWI/NDBI、高分一号/MODIS/HLS、SHP 上传、全国边界库、任意 URL 下载、土地覆盖分类、植被面积归因、复杂趋势、新 Agent 框架和无关旧模块重构。既有 Sentinel-2 缓存、NDWI/NDBI Skill 和历史结果必须保留。
 
-## B. 当前仓库基线
+## B. Planning-time 仓库基线快照（历史）
 
 以本地仓库为权威，不能用旧交接文档替代实际状态。
 
@@ -142,7 +153,7 @@ QA_PIXEL 必须按 Landsat Collection 2 官方 bit 定义解码并测试 fill、
 
 至少保存/显示：实际 acquisition date、scene count、AOI administrative area、各期 preparation-valid pixels、各期 final NDVI-valid pixels、final common-comparison pixels、各期 preparation/final coverage%、common-comparison coverage%、共同像元上的 mean NDVI A/B/delta，以及在不误导的前提下的 min/max。必须区分 AOI rasterized pixels、preparation-valid pixels、final NDVI-valid pixels、common comparison-valid pixels、行政面积和有效观测面积；本版本不输出“植被变化面积”或因果归因。
 
-覆盖门槛（待 bounded AOI quality probe 后由用户冻结）：coverage denominator 是 pair-wide target grid 中 `aoi_mask == true` 的 rasterized AOI pixel count，而不是 scene footprint、bbox 或全国面积。推荐初始门槛为每期 preparation-valid coverage ≥ 0.70、每期 final NDVI-valid coverage ≥ 0.60、final common-comparison coverage ≥ 0.50；任一不满足即返回 `insufficient_preparation_coverage`（A）或 `insufficient_ndvi_coverage`/`insufficient_comparison_coverage`（B），不得换月或输出成功统计。这里的百分比只能由相应 mask 计数得到，真实面积需使用 AOI 投影几何/像元面积 evidence。现有 preflight 只有 bbox/点和 window 读取，没有真实 AOI 面积或 July pixel-quality 证据，因此这些值在 probe 前明确是 provisional；若 probe 不能支持它们，A/B 必须先提交修改后的明确门槛供用户批准，实现者不得自行猜测。
+覆盖门槛的 denominator 是 pair-wide target grid 中 `aoi_mask == true` 的 rasterized AOI pixel count，而不是 scene footprint、bbox 或全国面积。每期 preparation-valid coverage 的既有门槛为 ≥0.70；用户已明确冻结每期 final NDVI-valid data coverage ≥0.60、final common-comparison valid-data coverage ≥0.50。后两者是 V0.3 数据质量/有效比较门槛，不表示 vegetation coverage、FVC 或植被面积。任一不满足即返回 `insufficient_preparation_coverage`（A）或 `insufficient_ndvi_coverage`/`insufficient_comparison_coverage`（B），不得换月或输出成功统计。百分比只能由相应 mask 计数得到；真实面积需使用 AOI 投影几何/像元面积 evidence。
 
 ### F.3 推荐但待用户批准的初始预算
 
@@ -269,17 +280,17 @@ MapLibre 只从 server-authorized metadata 添加图层：AOI boundary、真实 
 7. **数据源和匿名 SAS 限流。** 2 并发、3 重试、读取字节预算和可重试/终止分类；预算耗尽转可操作失败。
 8. **需要重大数据库改造。** 先用现有 TaskRun JSON 和 artifact store；若无法表达必要证据，停止规划/实现并单独批准 migration。
 
-## M. 需要用户批准的决策
+## M. Planning-time 决策问题（历史；以本文当前状态为准）
 
 1. 是否先完成 V0.2 B 的最终复核并合入更新后的 `main`，再从该 main 创建 V0.3 分支；在此之前 A 不启动。
 2. 是否接受 OSM relation `3077256` 的 immutable snapshot 和 ODbL 合规路径（含 attribution 和衍生数据库义务）；若要 broader/commercial distribution，是否完成单独 license review。
-3. bounded AOI quality probe 后，是否冻结推荐的 preparation ≥0.70、final NDVI ≥0.60、final common ≥0.50 覆盖门槛，或批准 probe 支持的替代数值；probe 前不得把 provisional 值当成科学批准。
+3. **已决（2026-10-07）：** 用户冻结 V0.3 final NDVI-valid data coverage ≥0.60/period、final common-comparison valid-data coverage ≥0.50；它们不表示 vegetation coverage、FVC 或植被面积。Preparation gate 维持其独立的既有 A contract。
 4. 是否批准表 F.3 的硬限制、operational metrics 和 best-effort warnings 分类；这些是可调整的工程 budget，不是科学阈值。
 5. 是否批准优先沿用 `result_metadata` + 受控 artifact store，只有证据表明不足时才引入 migration。
 6. 当 July 质量不足时，是否允许在用户重新确认的前提下使用 A 发现的替代月份/日期作为单独演示；不得预先指定或静默替换。
 
 外部依据：OSM relation [3077256](https://www.openstreetmap.org/relation/3077256)、[OSM copyright/ODbL](https://www.openstreetmap.org/copyright)、USGS [Landsat Collection 2 Level-2 products](https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products)、[negative surface reflectance FAQ](https://www.usgs.gov/faqs/why-are-negative-values-observed-over-water-some-landsat-surface-reflectance-products)、[QA bands](https://www.usgs.gov/landsat-missions/landsat-collection-2-quality-assessment-bands)、Planetary Computer 的 [STAC 文档](https://planetarycomputer.microsoft.com/docs/reference/stac/) 与 [数据访问说明](https://planetarycomputer.microsoft.com/docs/concepts/sas/)。
 
-## Planning status
+## V0.3 当前状态
 
-PLANNING READY FOR CONDITIONAL USER APPROVAL
+V0.3 IMPLEMENTATIONS COMPLETE / APPROVED; PRODUCT WIRING COMPLETE; MANUAL BROWSER ACCEPTANCE PASS; COVERAGE GATES FROZEN; COVERAGE-GATE CLOSURE COMPLETE; FOCUSED FINAL AUDIT RE-REVIEW APPROVED; NO REMAINING BLOCKER; PR / MERGE PENDING

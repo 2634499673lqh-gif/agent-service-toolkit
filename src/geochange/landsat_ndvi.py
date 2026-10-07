@@ -35,8 +35,10 @@ MASK_ARTIFACTS = (
     "ndvi_common_comparison",
 )
 PNG_ARTIFACTS = ("ndvi_before", "ndvi_after", "ndvi_change")
-FINAL_NDVI_COVERAGE_GATE = 60.0  # provisional until user/reviewer freeze
-FINAL_COMMON_COVERAGE_GATE = 50.0  # provisional until user/reviewer freeze
+# User-frozen V0.3 data-quality gates; these are not vegetation-coverage metrics.
+FINAL_NDVI_COVERAGE_GATE = 60.0
+FINAL_COMMON_COVERAGE_GATE = 50.0
+COVERAGE_GATES_V0_3_STATUS = "frozen"
 MAX_NUMERIC_ARTIFACT_BYTES = 16 * 1024 * 1024
 MAX_DISPLAY_ARTIFACT_BYTES = 2 * 1024 * 1024
 
@@ -163,7 +165,8 @@ def compute_landsat_ndvi_product(
         "hard_limits_applied": dict(pair.hard_limits_applied),
         "operational_metrics": dict(pair.operational_metrics),
         "best_effort_warnings": list(pair.best_effort_warnings),
-        "coverage_gates_provisional": True,
+        "coverage_gates_provisional": False,
+        "coverage_gates_v0_3_status": COVERAGE_GATES_V0_3_STATUS,
         "artifact_checksums": {
             name: artifact_sha256(artifact_root / filename) for name, filename in artifacts.items()
         }

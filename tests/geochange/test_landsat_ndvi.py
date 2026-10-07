@@ -14,6 +14,9 @@ from geochange.landsat import (
     TargetGrid,
 )
 from geochange.landsat_ndvi import (
+    COVERAGE_GATES_V0_3_STATUS,
+    FINAL_COMMON_COVERAGE_GATE,
+    FINAL_NDVI_COVERAGE_GATE,
     compute_landsat_ndvi_product,
     verify_landsat_ndvi_product,
     verify_landsat_terminal_projection,
@@ -91,6 +94,8 @@ def test_landsat_ndvi_product_with_server_gate_fixture():
     assert product.final_common_comparison_mask.sum() == 4
     assert product.ndvi_before[0, 0] == pytest.approx(0.2)
     assert product.metrics["final_common_comparison_pixels"] == 4
+    assert product.provenance["coverage_gates_provisional"] is False
+    assert product.provenance["coverage_gates_v0_3_status"] == "frozen"
     assert verify_landsat_ndvi_product(product, pair)["status"] == "passed"
 
 
@@ -153,6 +158,46 @@ def test_landsat_ndvi_verifier_requires_and_checks_artifact_checksums(tmp_path):
 def test_landsat_ndvi_rejects_coverage_gate():
     with pytest.raises(ValueError, match="insufficient_ndvi_coverage"):
         compute_landsat_ndvi_product(_pair())
+
+
+def test_v03_coverage_gates_are_frozen_and_real_july_values_pass():
+    assert FINAL_NDVI_COVERAGE_GATE == 60.0
+    assert FINAL_COMMON_COVERAGE_GATE == 50.0
+    assert COVERAGE_GATES_V0_3_STATUS == "frozen"
+
+    # Retained clean-provider July evidence; these are valid-data percentages,
+    # not vegetation coverage or FVC.
+    real_july_metrics = {
+        "final_ndvi_coverage_period_a_pct": 81.95373073421854,
+        "final_ndvi_coverage_period_b_pct": 99.99686097247073,
+        "final_common_comparison_coverage_pct": 81.95059170668927,
+    }
+    assert real_july_metrics["final_ndvi_coverage_period_a_pct"] >= FINAL_NDVI_COVERAGE_GATE
+    assert real_july_metrics["final_ndvi_coverage_period_b_pct"] >= FINAL_NDVI_COVERAGE_GATE
+    assert real_july_metrics["final_common_comparison_coverage_pct"] >= (FINAL_COMMON_COVERAGE_GATE)
+
+
+def test_landsat_ndvi_rejects_common_coverage_below_frozen_gate():
+    pair = _gated_pair()
+    grid = TargetGrid(
+        crs="EPSG:32649", transform=(30, 0, 0, 0, -30, 0), width=10, height=10, resolution_m=30
+    )
+    aoi = np.ones((10, 10), dtype=bool)
+    prep_a = np.zeros((10, 10), dtype=bool)
+    prep_b = np.zeros((10, 10), dtype=bool)
+    prep_a.flat[:60] = True
+    prep_b.flat[11:71] = True
+    for dataset, preparation in ((pair.period_a, prep_a), (pair.period_b, prep_b)):
+        object.__setattr__(dataset, "red_reflectance", np.full((10, 10), -0.1, dtype=np.float32))
+        object.__setattr__(dataset, "nir_reflectance", np.full((10, 10), -0.15, dtype=np.float32))
+        object.__setattr__(dataset, "preparation_valid_mask", preparation)
+        object.__setattr__(dataset, "aoi_mask", aoi)
+        object.__setattr__(dataset, "target_grid", grid)
+    object.__setattr__(pair, "common_preparation_valid_mask", prep_a & prep_b)
+    object.__setattr__(pair, "pair_grid", grid)
+
+    with pytest.raises(ValueError, match="insufficient_comparison_coverage"):
+        compute_landsat_ndvi_product(pair)
 
 
 def test_dynamic_terminal_rejects_forged_metrics():

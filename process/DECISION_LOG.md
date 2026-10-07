@@ -656,3 +656,31 @@ The 3B and 3C exploratory addendums are limited replacements approved for contin
 ## Phase 14 Final Audit Round 5 approval status synchronization — 2026-10-03
 
 Independent Final Audit Round 5 approved the final indicator-local NULL-intent blocker fix. Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C remain COMPLETE / APPROVED. Phase 14 is now COMPLETE / FINAL AUDIT APPROVED. The NDWI/NDBI exploratory-only scientific limitations remain unchanged; confirmed water-area, built-up classification and expansion claims remain deferred. Final commit, push, PR and merge are pending. Historical NOT APPROVED findings and all correction records above are preserved.
+
+## TaskPilot V0.3 coverage gate freeze — 2026-10-07
+
+The user explicitly freezes the V0.3 data-quality acceptance gates at final
+NDVI-valid data coverage `>=60%` for each period and final common-comparison
+valid-data coverage `>=50%`. These percentages describe valid observations and
+comparison quality; they are not vegetation coverage, FVC, or vegetation-area
+percentages. This decision applies to V0.3 only. A future version may revise
+the thresholds through a new documented decision while retaining this V0.3
+baseline. Implementation A and B remain COMPLETE / APPROVED; product wiring is
+COMPLETE and manual browser acceptance is PASS. The prior Final Audit returned
+NOT APPROVED only because this gate-freeze decision had not yet been formally
+made; that blocker is resolved pending focused Final Audit re-review. Historical
+provisional entries are retained as historical evidence.
+
+## TaskPilot V0.3 focused Final Audit re-review approval — 2026-10-07
+
+The focused Final Audit re-review is APPROVED. The previous Final Audit had
+returned NOT APPROVED only because the user freeze decision had not yet been
+formally recorded; that blocker is CLOSED. The coverage-gate closure is
+complete, all focused closure checks PASS, and the remaining blocker is none.
+Implementation A and B remain COMPLETE /
+APPROVED; product wiring is COMPLETE; manual browser acceptance is PASS; V0.3
+is COMPLETE / FINAL AUDIT APPROVED. The exact frozen gates remain final
+NDVI-valid data coverage `>=60%` per period and common-comparison valid-data
+coverage `>=50%`; they are not vegetation coverage or FVC. Historical
+provisional and NOT APPROVED records remain unchanged. PR / merge main remain
+pending.
