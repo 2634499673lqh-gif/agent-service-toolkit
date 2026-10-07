@@ -351,6 +351,7 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.metrics is invalid")
     analysis_type = value.get("analysis_type")
     indicator = value.get("indicator")
+    execution_mode = value.get("execution_mode")
     if analysis_type is not None and analysis_type not in {
         "vegetation_change",
         "water_change",
@@ -361,6 +362,62 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
         raise ValueError("result_metadata.indicator is invalid")
     if analysis_type == "vegetation_change" and indicator not in {None, "NDVI"}:
         raise ValueError("result_metadata vegetation indicator is invalid")
+    if execution_mode == "real_stac_landsat_local":
+        if analysis_type != "vegetation_change" or indicator != "NDVI":
+            raise ValueError("result_metadata dynamic indicator is invalid")
+        dynamic_metrics = metrics
+        required_dynamic = {
+            "aoi_rasterized_pixels",
+            "aoi_area_m2",
+            "final_ndvi_valid_pixels_period_a",
+            "final_ndvi_valid_pixels_period_b",
+            "final_common_comparison_pixels",
+            "final_ndvi_coverage_period_a_pct",
+            "final_ndvi_coverage_period_b_pct",
+            "final_common_comparison_coverage_pct",
+            "mean_ndvi_period_a",
+            "mean_ndvi_period_b",
+            "mean_delta_ndvi",
+        }
+        if not required_dynamic.issubset(dynamic_metrics):
+            raise ValueError("result_metadata dynamic metrics are incomplete")
+        if any(
+            isinstance(dynamic_metrics[key], bool)
+            or not isinstance(dynamic_metrics[key], (int, float))
+            or not math.isfinite(float(dynamic_metrics[key]))
+            for key in required_dynamic
+        ):
+            raise ValueError("result_metadata dynamic metrics are invalid")
+        if any(
+            not 0 <= float(dynamic_metrics[key]) <= 100
+            for key in (
+                "final_ndvi_coverage_period_a_pct",
+                "final_ndvi_coverage_period_b_pct",
+                "final_common_comparison_coverage_pct",
+            )
+        ):
+            raise ValueError("result_metadata dynamic coverage is invalid")
+        expected_dynamic_artifacts = {
+            "ndvi_before",
+            "ndvi_after",
+            "ndvi_change",
+            "ndvi_before_raster",
+            "ndvi_after_raster",
+            "ndvi_change_raster",
+            "ndvi_valid_before",
+            "ndvi_valid_after",
+            "ndvi_common_comparison",
+        }
+        refs = value.get("artifact_references")
+        if (
+            not isinstance(refs, dict)
+            or set(refs) != expected_dynamic_artifacts
+            or any(refs.get(name) != name for name in expected_dynamic_artifacts)
+        ):
+            raise ValueError("result_metadata dynamic artifacts are invalid")
+        provenance = value.get("provenance")
+        if not isinstance(provenance, dict) or provenance.get("aoi_hash") is None:
+            raise ValueError("result_metadata dynamic provenance is invalid")
     if analysis_type == "water_change":
         if indicator != "NDWI":
             raise ValueError("result_metadata water indicator is invalid")
@@ -523,25 +580,29 @@ def _validate_result_metadata(value: object) -> dict[str, Any] | None:
             or any(not isinstance(k, str) or not isinstance(v, str) for k, v in value[key].items())
         ):
             raise ValueError(f"result_metadata.{key} is invalid")
-    if "provenance" in value and (
-        not isinstance(value["provenance"], dict)
-        or len(value["provenance"]) > 16
-        or set(value["provenance"])
-        - {
-            "aoi_key",
-            "aoi_crs",
-            "aoi_source",
-            "raster_source",
-            "fixture_manifest",
-            "period_a_collection",
-            "period_b_collection",
-        }
-        or any(
-            not isinstance(key, str)
-            or not isinstance(item, str)
-            or len(key) > 80
-            or len(item) > 240
-            for key, item in value["provenance"].items()
+    if (
+        execution_mode != "real_stac_landsat_local"
+        and "provenance" in value
+        and (
+            not isinstance(value["provenance"], dict)
+            or len(value["provenance"]) > 16
+            or set(value["provenance"])
+            - {
+                "aoi_key",
+                "aoi_crs",
+                "aoi_source",
+                "raster_source",
+                "fixture_manifest",
+                "period_a_collection",
+                "period_b_collection",
+            }
+            or any(
+                not isinstance(key, str)
+                or not isinstance(item, str)
+                or len(key) > 80
+                or len(item) > 240
+                for key, item in value["provenance"].items()
+            )
         )
     ):
         raise ValueError("result_metadata.provenance is invalid")

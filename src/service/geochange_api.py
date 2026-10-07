@@ -24,11 +24,24 @@ async def capabilities(principal: PrincipalDependency) -> GeoChangeCapabilitiesR
         capabilities=[
             GeoChangeCapability(
                 indicator="NDVI",
+                label="Landsat 植被指数变化",
+                analysis_type="vegetation_change",
+                periods=["2023-07", "2024-07"],
+                data_source="Landsat 8/9 Collection 2 Level-2",
+                scientific_limit=_LIMITS["NDVI"],
+                aoi_id="jianghan_district_420103",
+                aoi_label="武汉市江汉区",
+                data_mode="real_stac_landsat_local",
+                quick_action="比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDVI 变化",
+            ),
+            GeoChangeCapability(
+                indicator="NDVI",
                 label="植被指数变化",
                 analysis_type="vegetation_change",
                 periods=["2023-07", "2024-07"],
                 data_source="已验证的 Sentinel-2 缓存样例",
                 scientific_limit=_LIMITS["NDVI"],
+                quick_action="比较武汉东湖 2023年7月和2024年7月的 NDVI 变化",
             ),
             GeoChangeCapability(
                 indicator="NDWI",
@@ -37,6 +50,7 @@ async def capabilities(principal: PrincipalDependency) -> GeoChangeCapabilitiesR
                 periods=["2023-07", "2024-07"],
                 data_source="已验证的 Sentinel-2 缓存样例",
                 scientific_limit=_LIMITS["NDWI"],
+                quick_action="比较武汉东湖 2023年7月和2024年7月的 NDWI 变化",
             ),
             GeoChangeCapability(
                 indicator="NDBI",
@@ -45,8 +59,9 @@ async def capabilities(principal: PrincipalDependency) -> GeoChangeCapabilitiesR
                 periods=["2023-07", "2024-07"],
                 data_source="已验证的 Sentinel-2 缓存样例",
                 scientific_limit=_LIMITS["NDBI"],
+                quick_action="比较武汉东湖 2023年7月和2024年7月的 NDBI 变化",
             ),
         ],
-        aoi_label="武汉东湖（受限缓存覆盖区）",
-        data_availability="当前仅支持已验证缓存的武汉东湖样例时段。",
+        aoi_label="武汉市江汉区 / 武汉东湖（能力按区域区分）",
+        data_availability="江汉区支持 Landsat NDVI 完整月比较（2023–2025）；东湖支持已验证 Sentinel-2 缓存样例时段。其他区域尚不支持。",
     )

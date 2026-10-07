@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from core.llm import get_model
 from core.settings import settings
+from geochange.artifacts import load_dynamic_evidence
 from geochange.llm import GeoChangeLLM, extract_explicit_parameters
 from geochange.models import GeoChangeTask
 from geochange.skill import (
@@ -28,7 +29,13 @@ from schema.planner import PlanStep
 from .capabilities import DeterministicFixtureCapability
 from .capability import CapabilityDispatcher, CapabilityMetadata
 from .context import ContextBuilder, ContextEnvelope
-from .executor import ExecutionResult, Executor
+from .executor import (
+    RUNTIME_OUTPUT_MAX_LENGTH,
+    TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
+    ExecutionResult,
+    Executor,
+    TrustedDynamicExecutionResult,
+)
 from .failure import FailureClassifier, RuntimeFailure
 from .observability import (
     duration_ms,
@@ -567,7 +574,11 @@ def build_runtime_graph(
                 "failure": failure.model_dump(mode="json"),
             }
         try:
-            result = ExecutionResult.model_validate(raw_result)
+            result = (
+                raw_result
+                if isinstance(raw_result, TrustedDynamicExecutionResult)
+                else ExecutionResult.model_validate(raw_result)
+            )
         except Exception:
             failure = _failure(failure_classifier, "capability_output_invalid")
             await observe(
@@ -587,7 +598,7 @@ def build_runtime_graph(
                 agent_status="failed",
                 context=context,
                 tool_status="failed",
-                result=result.model_dump(mode="json"),
+                result=_observation_result(result),
                 error=failure,
                 tool_name=selected_capability,
                 usage=result.usage,
@@ -611,12 +622,23 @@ def build_runtime_graph(
             try:
                 if state.geochange_task is None:
                     raise ValueError("trusted GeoChange task is missing")
+                if isinstance(result, TrustedDynamicExecutionResult):
+                    if (
+                        load_dynamic_evidence(state.task_id, state.task_run_id)
+                        != result.canonical_evidence
+                    ):
+                        raise ValueError("dynamic terminal binder is not server-owned")
                 validate_terminal_result(
                     runtime_context.skill,
                     candidate,
                     task=state.geochange_task,
                     aoi_evidence=state.geochange_aoi_evidence,
                     scene_evidence_values=state.geochange_evidence,
+                    canonical_dynamic_evidence=(
+                        result.canonical_evidence
+                        if isinstance(result, TrustedDynamicExecutionResult)
+                        else None
+                    ),
                 )
             except (SkillValidationError, ValueError, TypeError):
                 failure = _failure(failure_classifier, "skill_result_invalid")
@@ -624,7 +646,7 @@ def build_runtime_graph(
                     agent_status="failed",
                     context=context,
                     tool_status="failed",
-                    result=result.model_dump(mode="json"),
+                    result=_observation_result(result),
                     error=failure,
                     tool_name=selected_capability,
                 )
@@ -641,7 +663,7 @@ def build_runtime_graph(
                 agent_status="failed",
                 context=context,
                 tool_status="failed",
-                result=result.model_dump(mode="json"),
+                result=_observation_result(result),
                 error=failure,
                 tool_name=capability_name,
                 usage=result.usage,
@@ -656,7 +678,7 @@ def build_runtime_graph(
             agent_status="succeeded",
             context=context,
             tool_status="succeeded",
-            result=result.model_dump(mode="json"),
+            result=_observation_result(result),
             tool_name=selected_capability,
             usage=result.usage,
             provider_metadata=result.provider_metadata,
@@ -667,7 +689,30 @@ def build_runtime_graph(
             "pending_approval": None,
             "failure": None,
         }
-        parsed_output = _bounded_json_object(result.output)
+        if isinstance(result, TrustedDynamicExecutionResult):
+            if not isinstance(result.canonical_evidence, dict):
+                failure = _failure(failure_classifier, "capability_output_invalid")
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "execution_result": result.model_dump(mode="json"),
+                    "failure": failure.model_dump(mode="json"),
+                }
+            if load_dynamic_evidence(state.task_id, state.task_run_id) != result.canonical_evidence:
+                failure = _failure(failure_classifier, "capability_output_invalid")
+                return {
+                    "capability_context": context.model_dump(mode="json"),
+                    "execution_result": result.model_dump(mode="json"),
+                    "failure": failure.model_dump(mode="json"),
+                }
+            state_update["trusted_dynamic_evidence"] = result.canonical_evidence
+        parsed_output = _bounded_json_object(
+            result.output,
+            max_length=(
+                TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH
+                if isinstance(result, TrustedDynamicExecutionResult)
+                else RUNTIME_OUTPUT_MAX_LENGTH
+            ),
+        )
         if parsed_output is not None:
             if selected_capability == "resolve_aoi":
                 state_update["geochange_aoi_evidence"] = _bounded_string_map(parsed_output)
@@ -685,6 +730,13 @@ def build_runtime_graph(
     async def verify_step(state: AgentState) -> dict[str, object]:
         if state.plan is None or state.execution_result is None:
             return {"failure": _failure(failure_classifier, "runtime_verification_input_invalid")}
+        if isinstance(state.execution_result, TrustedDynamicExecutionResult):
+            if (
+                state.trusted_dynamic_evidence != state.execution_result.canonical_evidence
+                or load_dynamic_evidence(state.task_id, state.task_run_id)
+                != state.execution_result.canonical_evidence
+            ):
+                return {"failure": _failure(failure_classifier, "skill_result_invalid")}
         step = state.plan.steps[state.plan_position]
         try:
             result = await verifier_node(
@@ -713,6 +765,7 @@ def build_runtime_graph(
         return {
             "retry_count": decision.retry_count,
             "execution_result": None,
+            "trusted_dynamic_evidence": None,
             "verification": None,
         }
 
@@ -765,6 +818,7 @@ def build_runtime_graph(
             else None,
             "geochange_aoi_evidence": state.geochange_aoi_evidence,
             "geochange_evidence": state.geochange_evidence,
+            "trusted_dynamic_evidence": None,
             **replacement.model_dump(mode="json"),
         }
 
@@ -958,8 +1012,24 @@ def _offline_geochange_task(
     return GeoChangeTask.model_validate({**_default_geochange_task().model_dump(), **updates})
 
 
-def _bounded_json_object(output: str | None) -> dict[str, Any] | None:
-    if not output or len(output) > 2000:
+def _observation_result(result: ExecutionResult) -> dict[str, object]:
+    """Keep dynamic terminal observations compact and free of duplicate binders."""
+
+    if isinstance(result, TrustedDynamicExecutionResult):
+        return {
+            "step_position": result.step_position,
+            "success": result.success,
+            "output": "[server-owned dynamic terminal result]",
+        }
+    return result.model_dump(mode="json")
+
+
+def _bounded_json_object(
+    output: str | None,
+    *,
+    max_length: int = RUNTIME_OUTPUT_MAX_LENGTH,
+) -> dict[str, Any] | None:
+    if not output or len(output) > max_length:
         return None
     try:
         value = json.loads(output)

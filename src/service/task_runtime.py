@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from geochange.aoi import resolve_aoi
+from geochange.artifacts import load_dynamic_evidence
 from geochange.fixture import scene_evidence, validate_binding
 from geochange.ndbi import scene_evidence as ndbi_scene_evidence
 from geochange.ndbi import validate_binding as validate_ndbi_binding
@@ -37,7 +38,7 @@ from persistence.repositories import AgentRunRepository, TaskRunRepository, Tool
 from runtime.capabilities import DeterministicFixtureCapability
 from runtime.capability import CapabilityDispatcher, CapabilityMetadata
 from runtime.context import ContextBuilder, ContextEnvelope
-from runtime.executor import ExecutionResult, Executor
+from runtime.executor import ExecutionResult, Executor, TrustedDynamicExecutionResult
 from runtime.failure import FailureClassifier
 from runtime.graph import RuntimeGraphContext, RuntimeObservation, build_runtime_graph
 from runtime.planner import PlannerNode
@@ -330,7 +331,9 @@ class TaskRuntimeService:
                     "source": aoi.source,
                 }
                 canonical_scene_evidence = (
-                    ndwi_scene_evidence(confirmed_task)
+                    {"execution_mode": "real_stac_landsat_local", "collection": "landsat-c2-l2"}
+                    if confirmed_task.data_mode == "real_stac_landsat_local"
+                    else ndwi_scene_evidence(confirmed_task)
                     if selected_skill.result_type == "water_change"
                     else ndbi_scene_evidence(confirmed_task)
                     if selected_skill.result_type == "urban_change"
@@ -1331,12 +1334,25 @@ class TaskRuntimeService:
                         if state.execution_result
                         else None
                     )
+                    if (
+                        isinstance(payload, dict)
+                        and payload.get("execution_mode") == "real_stac_landsat_local"
+                        and (
+                            not isinstance(state.execution_result, TrustedDynamicExecutionResult)
+                            or state.trusted_dynamic_evidence
+                            != state.execution_result.canonical_evidence
+                            or load_dynamic_evidence(str(task_id), str(task_run_id))
+                            != state.execution_result.canonical_evidence
+                        )
+                    ):
+                        raise ValueError("dynamic terminal capability binder is invalid")
                     validate_terminal_result(
                         skill,
                         payload,
                         task=trusted_task,
                         aoi_evidence=state.geochange_aoi_evidence,
                         scene_evidence_values=state.geochange_evidence,
+                        canonical_dynamic_evidence=state.trusted_dynamic_evidence,
                     )
             except (TypeError, ValueError, SkillValidationError):
                 state = self._failed_state(state, "skill_result_invalid")
@@ -1483,6 +1499,10 @@ def _validate_checkpoint_geochange_evidence(
     if require_complete:
         if scene != canonical_scene_evidence:
             raise ValueError("checkpoint scene evidence is incomplete")
+        if getattr(task, "data_mode", None) == "real_stac_landsat_local":
+            # Scene selection and numerical evidence are verified inside the
+            # server-owned preparation/product boundary, not a legacy fixture.
+            return
         if getattr(task, "analysis_type", None) == "water_change":
             validate_ndwi_binding(task, scene)
         elif getattr(task, "analysis_type", None) == "urban_change":

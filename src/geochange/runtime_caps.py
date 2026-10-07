@@ -1,20 +1,37 @@
 """Capability adapters used by the existing runtime graph."""
 
+import asyncio
 import hashlib
 import json
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
 
 import numpy as np
 
 from core.llm import get_model
 from core.settings import settings
 from runtime.capability import CapabilityMetadata
-from runtime.executor import ExecutionResult
+from runtime.executor import (
+    TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH,
+    ExecutionResult,
+    TrustedDynamicExecutionResult,
+)
 from schema.planner import PlanStep
 
-from .aoi import resolve_aoi
-from .artifacts import ARTIFACT_ROOT
+from .aoi import TrustedAOI, resolve_aoi
+from .artifacts import ARTIFACT_ROOT, write_dynamic_evidence
 from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
+from .landsat import MonthlyPeriod, PeriodPair, prepare_landsat_periods
+from .landsat_ndvi import (
+    EXECUTION_MODE as LANDSAT_EXECUTION_MODE,
+)
+from .landsat_ndvi import (
+    build_landsat_terminal_projection,
+    compute_landsat_ndvi_product,
+    verify_landsat_ndvi_metadata,
+    verify_landsat_ndvi_product,
+    verify_landsat_terminal_projection,
+)
 from .llm import GeoChangeLLM
 from .models import GeoChangeResult, GeoChangeTask
 from .ndbi import (
@@ -66,24 +83,50 @@ def _live_scene_evidence(task: GeoChangeTask, item_a: Any, item_b: Any) -> dict[
 class _Base:
     def _result(self, step: PlanStep, payload: dict[str, Any]) -> ExecutionResult:
         output = json.dumps(payload, separators=(",", ":"))
-        if len(output) > 2000 and isinstance(payload.get("summary"), str):
+        max_length = 2000
+        if len(output) > max_length and isinstance(payload.get("summary"), str):
             # Provider prose is presentation only. Keep the trusted metrics,
             # artifact references and scene evidence intact when a provider
             # spends the whole budget on prose.
             compact = dict(payload)
             compact["summary"] = payload["summary"][:80]
             output = json.dumps(compact, separators=(",", ":"))
-        if len(output) > 2000:
+        if len(output) > max_length:
             return ExecutionResult(
                 step_position=step.position,
                 success=False,
                 error_code="geochange_output_oversized",
                 error_message="GeoChange output exceeds the bounded limit",
             )
-        return ExecutionResult(
+        return ExecutionResult(step_position=step.position, success=True, output=output)
+
+    def _trusted_dynamic_result(
+        self,
+        step: PlanStep,
+        payload: dict[str, Any],
+        canonical_evidence: dict[str, Any],
+    ) -> TrustedDynamicExecutionResult | ExecutionResult:
+        """Build the only result allowed to carry the dynamic output budget.
+
+        The ordinary result path never selects this limit from payload data.
+        This method is called only after the server-owned Landsat product and
+        its terminal projection have both been verified.
+        """
+
+        output = json.dumps(payload, separators=(",", ":"))
+        if len(output) > TRUSTED_DYNAMIC_RUNTIME_OUTPUT_MAX_LENGTH:
+            return ExecutionResult(
+                step_position=step.position,
+                success=False,
+                error_code="geochange_output_oversized",
+                error_message="GeoChange output exceeds the bounded limit",
+            )
+        return TrustedDynamicExecutionResult(
             step_position=step.position,
             success=True,
             output=output,
+            trusted_dynamic=True,
+            canonical_evidence=canonical_evidence,
         )
 
 
@@ -115,6 +158,11 @@ class SearchSentinel2RuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            # A performs real scene selection in the preparation boundary.
+            return self._result(
+                step, {"execution_mode": LANDSAT_EXECUTION_MODE, "collection": "landsat-c2-l2"}
+            )
         if settings.GEOCHANGE_TEST_REPLAN and context.runtime_replan_count == 0:
             return ExecutionResult(
                 step_position=step.position,
@@ -185,6 +233,10 @@ class ComputeVegetationRuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            # Keep the A arrays and B verification together in summarize_change;
+            # never checkpoint raw arrays or fall back to cached Sentinel-2.
+            return self._result(step, {"preparation_boundary": "prepare_landsat_periods"})
         evidence = dict(getattr(context, "geochange_evidence", {}) or {})
         try:
             change = compute_cached_change(task, evidence)
@@ -281,6 +333,184 @@ class SummarizeChangeRuntimeCapability(_Base):
             / str(context.runtime_task_run_id or "current")
         )
         scene_evidence = dict(getattr(context, "geochange_evidence", {}) or {})
+        if task.data_mode == LANDSAT_EXECUTION_MODE:
+            if task.aoi_key != "jianghan_district_420103" or task.indicator != "NDVI":
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="invalid_landsat_intent",
+                    error_message="Landsat mode requires the trusted Jianghan NDVI intent",
+                )
+            try:
+                from .aoi import resolve_aoi
+
+                aoi = resolve_aoi(task.aoi_key)
+                if not isinstance(aoi, TrustedAOI):
+                    raise ValueError("Landsat mode requires a trusted AOI")
+
+                def month(period: Any, period_id: str) -> MonthlyPeriod:
+                    start = datetime(period.start.year, period.start.month, 1, tzinfo=UTC)
+                    end = datetime(
+                        start.year + (start.month == 12),
+                        1 if start.month == 12 else start.month + 1,
+                        1,
+                        tzinfo=UTC,
+                    )
+                    if period.start != start.date() or period.end != (
+                        end.date() - timedelta(days=1)
+                    ):
+                        raise ValueError("Landsat periods must be complete UTC calendar months")
+                    return MonthlyPeriod(
+                        period_id=cast(Literal["a", "b"], period_id),
+                        start_utc=start,
+                        end_utc=end,
+                    )
+
+                pair = await asyncio.to_thread(
+                    prepare_landsat_periods,
+                    aoi,
+                    PeriodPair(
+                        period_a=month(task.period_a, "a"), period_b=month(task.period_b, "b")
+                    ),
+                )
+                product = compute_landsat_ndvi_product(pair, artifact_dir=artifact_root)
+                verification = verify_landsat_ndvi_product(
+                    product, pair, artifact_root=artifact_root
+                )
+                if verification["status"] != "passed":
+                    raise ValueError("landsat verifier failed")
+            except Exception as error:
+                error_text = str(error)
+                error_code = (
+                    "insufficient_ndvi_coverage"
+                    if "insufficient_ndvi_coverage" in error_text
+                    else "insufficient_comparison_coverage"
+                    if "insufficient_comparison_coverage" in error_text
+                    else "landsat_preparation_failed"
+                )
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_text[:200],
+                )
+            metrics = product.metrics
+            period_provenance = {
+                "period_a": pair.period_a.provenance,
+                "period_b": pair.period_b.provenance,
+            }
+            product.provenance.update(
+                {
+                    "aoi_id": aoi.aoi_id,
+                    "aoi_hash": aoi.source_hash,
+                    "aoi_source_version": aoi.source_version,
+                    "aoi_source_url": aoi.source_url,
+                    "aoi_area_m2": aoi.area_m2,
+                    "aoi_bbox": list(aoi.bbox),
+                    "scene_provenance": period_provenance,
+                    "target_crs": pair.pair_grid.crs,
+                    "target_dimensions": [pair.pair_grid.height, pair.pair_grid.width],
+                }
+            )
+            product.metrics["aoi_area_m2"] = float(aoi.area_m2)
+            product.provenance["metrics_sha256"] = hashlib.sha256(
+                json.dumps(
+                    product.metrics, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ).encode()
+            ).hexdigest()
+            metadata_verification = verify_landsat_ndvi_metadata(
+                product,
+                pair,
+                expected_aoi={
+                    "aoi_id": aoi.aoi_id,
+                    "source_hash": aoi.source_hash,
+                    "source_version": aoi.source_version,
+                    "source_url": aoi.source_url,
+                    "area_m2": aoi.area_m2,
+                },
+                expected_periods={
+                    "period_a": pair.period_a.requested_period.model_dump(mode="json"),
+                    "period_b": pair.period_b.requested_period.model_dump(mode="json"),
+                },
+                artifact_root=artifact_root,
+            )
+            if metadata_verification["status"] != "passed":
+                raise ValueError(
+                    f"landsat verifier failed: {metadata_verification.get('code', 'metadata')}"
+                )
+            payload = {
+                "schema_version": "geochange.v1",
+                "analysis_type": "vegetation_change",
+                "indicator": "NDVI",
+                "mode": LANDSAT_EXECUTION_MODE,
+                "summary": f"江汉区 NDVI 对比：共同有效像元平均值从 {metrics['mean_ndvi_period_a']:.3f} 变为 {metrics['mean_ndvi_period_b']:.3f}，平均变化 {metrics['mean_delta_ndvi']:.3f}。",
+                "metrics": metrics,
+                "analysis_area": task.aoi_key,
+                "analysis_periods": {
+                    "period_a": f"{task.period_a.start.isoformat()}/{task.period_a.end.isoformat()}",
+                    "period_b": f"{task.period_b.start.isoformat()}/{task.period_b.end.isoformat()}",
+                },
+                "data_source": "landsat-c2-l2",
+                "provenance_summary": "Verified Jianghan AOI and A-owned Landsat preparation handoff.",
+                "provenance": product.provenance,
+                # Persist server-owned artifact IDs as references.  The files
+                # themselves remain under the deterministic artifact root and
+                # are resolved by ID by the artifact API.
+                "artifacts": {artifact_id: artifact_id for artifact_id in product.artifacts},
+                "verifier_status": "passed",
+                "execution_mode": LANDSAT_EXECUTION_MODE,
+                "selected_scene_evidence": {
+                    "preparation_contract_version": pair.contract_version,
+                    "period_a": json.dumps(
+                        {
+                            key: pair.period_a.provenance[key]
+                            for key in (
+                                "scene_ids",
+                                "acquisition_dates",
+                            )
+                            if key in pair.period_a.provenance
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "period_b": json.dumps(
+                        {
+                            key: pair.period_b.provenance[key]
+                            for key in (
+                                "scene_ids",
+                                "acquisition_dates",
+                            )
+                            if key in pair.period_b.provenance
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    "target_grid": json.dumps(
+                        pair.pair_grid.model_dump(mode="json"),
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                },
+            }
+            projection_verification = verify_landsat_terminal_projection(payload, product, pair)
+            if projection_verification["status"] != "passed":
+                raise ValueError(
+                    f"landsat verifier failed: {projection_verification.get('code', 'projection')}"
+                )
+            canonical_evidence = build_landsat_terminal_projection(product, pair)
+            if not context.runtime_task_id or not context.runtime_task_run_id:
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code="dynamic_runtime_identity_missing",
+                    error_message="Dynamic terminal run identity is unavailable",
+                )
+            write_dynamic_evidence(
+                str(context.runtime_task_id),
+                str(context.runtime_task_run_id),
+                canonical_evidence,
+            )
+            return self._trusted_dynamic_result(step, payload, canonical_evidence)
         if task.analysis_type == "water_change":
             try:
                 change = compute_cached_water_change(

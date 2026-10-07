@@ -29,16 +29,19 @@ class GeoChangeTask(BaseModel):
     )
     indicator: Literal["NDVI", "NDWI", "NDBI"] = "NDVI"
     version: Literal["1"] = "1"
-    aoi_key: Literal["wuhan_east_lake"] = "wuhan_east_lake"
+    aoi_key: Literal["wuhan_east_lake", "jianghan_district_420103"] = "wuhan_east_lake"
     period_a: Period
     period_b: Period
     cloud_threshold: float = Field(default=30.0, ge=0.0, le=100.0)
     decline_threshold: float | None = Field(default=-0.2, ge=-1.0, le=0.0)
     cloud_threshold_source: Literal["user_text", "server_default"] = "server_default"
     decline_threshold_source: Literal["user_text", "server_default"] | None = "server_default"
-    data_mode: Literal["real_online", "cached_real_metadata", "local_real_raster_fixture"] = (
-        "local_real_raster_fixture"
-    )
+    data_mode: Literal[
+        "real_online",
+        "cached_real_metadata",
+        "local_real_raster_fixture",
+        "real_stac_landsat_local",
+    ] = "local_real_raster_fixture"
 
     @model_validator(mode="after")
     def indicator_matches_analysis(self) -> "GeoChangeTask":

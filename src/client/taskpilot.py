@@ -293,6 +293,12 @@ class TaskPilotClient:
             "ndbi_before",
             "ndbi_after",
             "ndbi_change",
+            "ndvi_before_raster",
+            "ndvi_after_raster",
+            "ndvi_change_raster",
+            "ndvi_valid_before",
+            "ndvi_valid_after",
+            "ndvi_common_comparison",
         }:
             raise ValueError("unsupported artifact")
         return f"{self.base_url}{self._resource_path(task_id, f'/runs/{run_id}/artifacts/{artifact_name}')}"
@@ -308,12 +314,31 @@ class TaskPilotClient:
             "ndbi_before",
             "ndbi_after",
             "ndbi_change",
+            "ndvi_before_raster",
+            "ndvi_after_raster",
+            "ndvi_change_raster",
+            "ndvi_valid_before",
+            "ndvi_valid_after",
+            "ndvi_common_comparison",
         }:
             raise ValueError("unsupported artifact")
         response = self._request(
             "GET", self._resource_path(task_id, f"/runs/{run_id}/artifacts/{artifact_name}")
         )
-        if response.headers.get("content-type", "").split(";", 1)[0] != "image/png":
+        expected_type = (
+            "image/tiff"
+            if artifact_name
+            in {
+                "ndvi_before_raster",
+                "ndvi_after_raster",
+                "ndvi_change_raster",
+                "ndvi_valid_before",
+                "ndvi_valid_after",
+                "ndvi_common_comparison",
+            }
+            else "image/png"
+        )
+        if response.headers.get("content-type", "").split(";", 1)[0] != expected_type:
             raise TaskPilotClientError(
                 "The service returned an invalid artifact.", kind="malformed_response"
             )

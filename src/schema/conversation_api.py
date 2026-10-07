@@ -24,6 +24,12 @@ class TaskProposal(BaseModel):
     period_a: Period | None = None
     period_b: Period | None = None
     required_parameters: dict[str, str] = Field(default_factory=dict)
+    data_mode: Literal[
+        "real_online",
+        "cached_real_metadata",
+        "local_real_raster_fixture",
+        "real_stac_landsat_local",
+    ] = "local_real_raster_fixture"
 
     @field_validator("title", "description", "analysis_type", "indicator")
     @classmethod
@@ -107,7 +113,9 @@ class LLMIntent(BaseModel):
         if normalized.get("description") is None:
             normalized["description"] = ""
         for period_key in ("period_a", "period_b"):
-            if normalized.get(period_key) is None or not isinstance(normalized.get(period_key), dict):
+            if normalized.get(period_key) is None or not isinstance(
+                normalized.get(period_key), dict
+            ):
                 normalized[period_key] = None
         if not isinstance(normalized.get("required_parameters"), dict):
             normalized["required_parameters"] = {}

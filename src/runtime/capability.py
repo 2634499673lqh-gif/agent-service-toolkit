@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 
 from schema.planner import PlanStep
 
-from .executor import ExecutionResult
+from .executor import ExecutionResult, TrustedDynamicExecutionResult
 from .failure import FailureClassifier, RuntimeFailure
 
 _MAX_NAME_LENGTH = 64
@@ -112,7 +112,13 @@ class CapabilityDispatcher[CapabilityContextT]:
         except Exception:
             return _terminal_failure(_CAPABILITY_EXECUTION_FAILED)
 
-        return self._normalize_result(raw_result, validated_step)
+        return self._normalize_result(
+            raw_result,
+            validated_step,
+            capability_name=name,
+            capability=capability,
+            context=context,
+        )
 
     def metadata_for(self, name: str) -> CapabilityMetadata | RuntimeFailure:
         """Return validated, server-wired metadata without executing a capability."""
@@ -134,12 +140,26 @@ class CapabilityDispatcher[CapabilityContextT]:
         self,
         raw_result: object,
         step: PlanStep,
+        *,
+        capability_name: str,
+        capability: object,
+        context: object,
     ) -> ExecutionResult | RuntimeFailure:
         if _looks_like_failure(raw_result):
             return self._normalize_failure(raw_result)
 
         try:
-            result = ExecutionResult.model_validate(raw_result)
+            if isinstance(raw_result, TrustedDynamicExecutionResult):
+                if not _is_server_owned_dynamic_result(
+                    raw_result,
+                    capability_name=capability_name,
+                    capability=capability,
+                    context=context,
+                ):
+                    return _terminal_failure(_CAPABILITY_OUTPUT_INVALID)
+                result = raw_result
+            else:
+                result = ExecutionResult.model_validate(raw_result)
         except Exception:
             return _terminal_failure(_CAPABILITY_OUTPUT_INVALID)
 
@@ -215,6 +235,34 @@ def _terminal_failure(code: str) -> RuntimeFailure:
         classification="TERMINAL",
         code=code,
         sanitized_message=_SAFE_FAILURE_MESSAGES[code],
+    )
+
+
+def _is_server_owned_dynamic_result(
+    result: TrustedDynamicExecutionResult,
+    *,
+    capability_name: str,
+    capability: object,
+    context: object,
+) -> bool:
+    """Accept the larger result budget only from the wired Landsat terminal.
+
+    Payload fields and the result subclass are data.  The capability identity
+    and the validated Jianghan task context are the authorization boundary.
+    """
+
+    from geochange.runtime_caps import SummarizeChangeRuntimeCapability
+
+    task = getattr(context, "geochange_task", None)
+    return bool(
+        capability_name == "summarize_change"
+        and type(capability) is SummarizeChangeRuntimeCapability
+        and getattr(task, "aoi_key", None) == "jianghan_district_420103"
+        and getattr(task, "indicator", None) == "NDVI"
+        and getattr(task, "data_mode", None) == "real_stac_landsat_local"
+        and getattr(context, "runtime_task_id", None)
+        and getattr(context, "runtime_task_run_id", None)
+        and isinstance(result.canonical_evidence, dict)
     )
 
 

@@ -33,7 +33,7 @@ _AREA_RE = re.compile(
     r"(?:分析|查看|研究|比较)(?P<area>[^，。:：,.！？!]{1,80}?)(?:最近|近几年|植被|NDVI|变化|有没有|是否|[，。:：,.！？!]|$)"
 )
 _DATE_RE = re.compile(r"20\d{2}-\d{2}-\d{2}")
-_MONTH_RE = re.compile(r"(20\d{2})年\s*(1[0-2]|0?[1-9])月")
+_MONTH_RE = re.compile(r"(20\d{2})\s*年\s*(1[0-2]|0?[1-9])\s*月")
 _RESULT_QUERY_FILLER = (
     "打开",
     "之前",
@@ -95,8 +95,12 @@ def _proposal_from_intent(intent: LLMIntent, message: str) -> TaskProposal:
     area = intent.analysis_area
     if area in {"东湖", "武汉东湖", "wuhan_east_lake"}:
         area = "武汉东湖"
+    elif area in {"江汉区", "武汉市江汉区", "jianghan_district_420103", "江汉"}:
+        area = "武汉市江汉区"
     elif area:
         area = area.strip()
+    if area == "武汉市江汉区" and indicator != "NDVI":
+        raise ValueError("Jianghan supports NDVI only")
     return TaskProposal(
         title=(intent.title or "遥感变化分析")[:255],
         description=(intent.description or message)[:2000],
@@ -105,7 +109,13 @@ def _proposal_from_intent(intent: LLMIntent, message: str) -> TaskProposal:
         indicator=indicator,
         period_a=intent.period_a,
         period_b=intent.period_b,
-        required_parameters={"source": "Sentinel-2", **intent.required_parameters},
+        required_parameters={
+            "source": "Landsat-8/9" if area == "武汉市江汉区" else "Sentinel-2",
+            **intent.required_parameters,
+        },
+        data_mode="real_stac_landsat_local"
+        if area == "武汉市江汉区"
+        else "local_real_raster_fixture",
     )
 
 
@@ -135,13 +145,23 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
     ]
     system = (
         "你是 TaskPilot 的平台遥感助手。只输出结构化意图，不执行工具。"
-        "支持新建武汉东湖 Sentinel-2 NDVI/NDWI/NDBI 双时相连续指数变化；"
-        "不支持任意地点、在线下载、面积扩张结论。区分新分析、历史、结果、闲聊、澄清和不支持。"
+        "支持两类受限产品：武汉市江汉区 Landsat 8/9 Collection 2 Level-2 NDVI 双时相分析，"
+        "以及武汉东湖 Sentinel-2 缓存 NDVI/NDWI/NDBI 双时相连续指数变化。"
+        "江汉区仅支持 NDVI/vegetation_change，source=Landsat-8/9；"
+        "data_mode=real_stac_landsat_local 由服务器依据受控区域决定。"
+        "江汉区时段必须是 2023–2025 年的两个不重叠完整自然月。"
+        "请求‘帮我比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDVI 变化。’"
+        "必须返回 new_analysis，analysis_area=武汉市江汉区，indicator=NDVI，"
+        "analysis_type=vegetation_change，period_a={start:2023-07-01,end:2023-07-31}，"
+        "period_b={start:2024-07-01,end:2024-07-31}，required_parameters={source:Landsat-8/9}。"
+        "江汉区 NDWI/NDBI、其他地点和面积扩张或因果结论均不支持。"
+        "不得把微小 NDVI 均值变化说成显著改善或植被面积增加。"
+        "区分新分析、历史、结果、闲聊、澄清和不支持。"
         "若请求含新地点/指标/日期，即使出现‘结果’也必须是 new_analysis。"
         "日期必须输出 ISO 日期；缺少必要字段使用 clarification。"
         "输出 JSON 字段必须是 intent,response,title,description,analysis_area,indicator,"
         "analysis_type,period_a,period_b,required_parameters；period_a/period_b 使用"
-        "{start,end}，闲聊和能力问答也必须保留 intent=response。"
+        "{start,end}，闲聊和能力问答使用 intent=chat 和 response 文本。"
     )
     prompt = {"message": message, "context": bounded_context}
     try:
@@ -163,17 +183,44 @@ async def interpret_message(message: str, context: list[dict[str, str]] | None =
             provider, model_name = configured_model_identity()
             intent.response = f"我是 TaskPilot AI 遥感助手，当前由平台配置的 {provider} 模型服务支持（{model_name}）。"
         elif intent.intent == "chat" and not intent.response:
-            intent.response = "我可以分析武汉东湖缓存场景中的 NDVI、NDWI 和 NDBI 双时相连续指数变化，并在确认方案后执行任务。"
+            intent.response = "我支持武汉市江汉区 Landsat NDVI 双时相分析，以及武汉东湖 Sentinel-2 缓存 NDVI、NDWI、NDBI 分析；确认方案后才执行任务。"
+        if intent.analysis_area in {
+            "江汉区",
+            "武汉市江汉区",
+            "jianghan_district_420103",
+            "江汉",
+        } and intent.indicator in {"NDWI", "NDBI"}:
+            intent.intent = "unsupported"
+            intent.response = (
+                "武汉市江汉区当前仅支持 Landsat NDVI；NDWI/NDBI 仅支持武汉东湖缓存分析。"
+            )
         return intent
     except TimeoutError as error:
-        logger.warning("conversation_llm_failure category=timeout provider=deepseek model=%s request_id=%s", settings.DEFAULT_MODEL, current_request_id())
+        logger.warning(
+            "conversation_llm_failure category=timeout provider=deepseek model=%s request_id=%s",
+            settings.DEFAULT_MODEL,
+            current_request_id(),
+        )
         raise LLMConversationError("timeout", "AI 服务响应超时，请稍后重试。") from error
     except LLMConversationError:
         raise
     except Exception as error:
-        category = "malformed_response" if error.__class__.__name__ in {"ValidationError", "JSONDecodeError", "ValueError"} else "provider"
-        logger.warning("conversation_llm_failure category=%s provider=deepseek model=%s request_id=%s", category, settings.DEFAULT_MODEL, current_request_id())
-        message = "AI 返回格式无法验证，请重试。" if category == "malformed_response" else "AI 服务暂时不可用，请稍后重试。"
+        category = (
+            "malformed_response"
+            if error.__class__.__name__ in {"ValidationError", "JSONDecodeError", "ValueError"}
+            else "provider"
+        )
+        logger.warning(
+            "conversation_llm_failure category=%s provider=deepseek model=%s request_id=%s",
+            category,
+            settings.DEFAULT_MODEL,
+            current_request_id(),
+        )
+        message = (
+            "AI 返回格式无法验证，请重试。"
+            if category == "malformed_response"
+            else "AI 服务暂时不可用，请稍后重试。"
+        )
         raise LLMConversationError(category, message) from error
 
 
@@ -230,7 +277,9 @@ async def explain_result(metadata: dict[str, Any], question: str = "") -> Result
         try:
             return ResultInterpretation.model_validate(_json_object(_model_text(result)))
         except (ValueError, TypeError) as error:
-            raise LLMConversationError("malformed_response", "分析解读格式无法验证，请稍后重试。") from error
+            raise LLMConversationError(
+                "malformed_response", "分析解读格式无法验证，请稍后重试。"
+            ) from error
     except TimeoutError as error:
         raise LLMConversationError("timeout", "分析解读响应超时，请稍后重试。") from error
     except LLMConversationError:
@@ -244,7 +293,9 @@ def proposal_from_message(message: str) -> TaskProposal:
 
     text = message.strip()
     area_match = _AREA_RE.search(text)
-    if "武汉东湖" in text or "东湖" in text:
+    if any(token in text for token in ("江汉区", "江汉区", "Jianghan", "jianghan")):
+        area = "武汉市江汉区"
+    elif "武汉东湖" in text or "东湖" in text:
         area = "武汉东湖"
     else:
         area = area_match.group("area").strip() if area_match else None
@@ -271,10 +322,14 @@ def proposal_from_message(message: str) -> TaskProposal:
             period_a, period_b = month_periods
     if any(token in text.casefold() for token in ("ndbi", "urban", "built-up", "建成区", "城市")):
         analysis_type, indicator = "urban_change", "NDBI"
-    elif "水" in text and "植被" not in text and "NDVI" not in text.upper():
+    elif "NDWI" in text.upper() or (
+        "水" in text and "植被" not in text and "NDVI" not in text.upper()
+    ):
         analysis_type, indicator = "water_change", "NDWI"
     else:
         analysis_type, indicator = "vegetation_change", "NDVI"
+    if area == "武汉市江汉区" and indicator != "NDVI":
+        raise ValueError("Jianghan supports NDVI only")
     area_label = area or "未指定区域"
     title = f"{area_label} {indicator}变化分析" if area else "遥感变化分析"
     return TaskProposal(
@@ -285,7 +340,10 @@ def proposal_from_message(message: str) -> TaskProposal:
         indicator=indicator,
         period_a=period_a,
         period_b=period_b,
-        required_parameters={"source": "Sentinel-2"},
+        required_parameters={"source": "Landsat-8/9" if area == "武汉市江汉区" else "Sentinel-2"},
+        data_mode="real_stac_landsat_local"
+        if area == "武汉市江汉区"
+        else "local_real_raster_fixture",
     )
 
 
@@ -309,6 +367,7 @@ def confirmed_intent_from_proposal(proposal: TaskProposal) -> ConfirmedIntent:
             "period_a": proposal.period_a,
             "period_b": proposal.period_b,
             "parameters": proposal.required_parameters,
+            "data_mode": proposal.data_mode,
         }
     )
 

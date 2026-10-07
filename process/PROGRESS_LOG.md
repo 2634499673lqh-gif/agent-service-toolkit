@@ -6169,3 +6169,314 @@ Learner notes: history loading is a server-authorized read path, while confirmat
 真实日志定位到 `geochange_output_oversized` 是 provider 解读文本与受信 scene evidence 合并后超过旧 2 KiB envelope；现在仅截断展示摘要，保留 metrics/artifact/scene evidence。DeepSeek provider 还会对能力问答返回 `capability_query`、空 period 字段；边界层已归一化并区分 malformed/timeout/provider 日志。真实复测“你好”“你是什么模型”“你能做什么”和 NDVI 请求成功；已有 NDWI 成功 Run 的真实解释也通过。
 
 验证：focused conversation/runtime-cap tests 通过；Ruff、Pyrefly、git diff check、前端 build/typecheck 通过；Docker compose rebuild/force-recreate 后四服务健康，artifact 持久化前后验证完成。浏览器自动化工具不可用，登录后的视觉与点击流程仍需人工确认。
+
+### 2026-10-04 — V0.3 Landsat data-access preflight (read-only)
+
+完成独立的 Microsoft Planetary Computer Landsat C2 L2 真实访问预检；未修改 TaskPilot 业务代码、数据库、迁移、fixture、manifest 或 Git 历史。测试窗口为武汉市江汉区附近 `bbox=[114.23,30.56,114.30,30.62]`，采样点 `(114.27,30.59)`，仅读取 128×128 像元窗口，不代表正式行政 AOI。
+
+Environment/evidence: Windows Python 3.12.4；宿主 Docker 29.8.1 / Compose 5.5.1，现有 `agent_service`、web、Streamlit、PostgreSQL 容器均 healthy；分支 `codex/taskpilot-v02-b`，HEAD `22b189e`。宿主原有依赖没有 Rasterio、Planetary Computer SDK 或 pystac-client；使用临时目录安装 Rasterio 1.5.2 完成 COG 窗口验证，未改动项目依赖。容器内 Python 3.13.14 同样没有 Rasterio，但 requests 可用；容器 DNS/TLS/STAC/SAS/Blob Range 均通过。无需账号或 API Key。
+
+Remote results: STAC endpoint HTTP 200，SAS 根路径按预期不是资源目录（GET 404），`/api/sas/v1/sign` 使用公开 GET 签名；宿主 STAC Search 2023-07 返回 6 个 items、2024-07 返回 4 个 items，容器复核同样为 6/4。选取同一 path/row 的 `LC08_L2SP_123039_20230727_02_T1`（2023-07-27，cloud 15.97%）和 `LC08_L2SP_123039_20240729_02_T1`（2024-07-29，cloud 21.41%）；两者 footprint bbox 均覆盖测试点，真实资产含 red、nir08、qa_pixel、MTL JSON，资产描述确认 Collection 2 Level-2 Surface Reflectance。
+
+Raster evidence: 两期 red 与 nir08 均通过匿名 SAS + Rasterio/GDAL COG HTTP Range 读取 128×128；dtype uint16、CRS EPSG:32649、分辨率 30 m、nodata 0。2023 red DN 3295–34197（有效 16384），nir08 7550–35605（有效 16384）；2024 red 6024–31601、nir08 7323–33512（各有效 16384）。2024 qa_pixel 也读取成功（uint16、128×128、EPSG:32649、30 m；DN 21762–24144）；2023 QA 的匿名签名与 Blob Range 成功，宿主端完整窗口读取受本轮临时 Rasterio 运行时限制未重复执行。2024 MTL JSON 实际核对 `REFLECTANCE_MULT_BAND_4/5=2.75e-05`、`REFLECTANCE_ADD_BAND_4/5=-0.2`；STAC raster:bands 同时确认 scale、offset、nodata=0。按实际 scale/offset 转换后，2024 小窗口 NDVI 在正反射率且分母>0.05的 15,571 个像元上范围 -0.2014–0.9977，中位数 0.2704；未使用原始 DN 直接计算。
+
+Validation: Host DNS resolved `planetarycomputer.microsoft.com`; TLS 1.3 handshake succeeded. Host and container STAC requests had HTTP 200, SAS signing HTTP 200, signed Blob range HTTP 206 with bounded 64 KiB response. One transient SAS HTTP 504 occurred during retries; finite retry recovered. No 401/403/429 observed. Signed URLs were never printed or persisted. Existing repository working tree had pre-existing untracked V0.2 prompt/handoff documents and pytest-temp permission warnings; they were not touched.
+
+Result: V0.3 Landsat preflight PASS for retrieval and bounded real reads. The evidence supports a minimal future Landsat data interface, but does not claim Jianghan administrative AOI coverage or produce a TaskRun/analysis artifact. The agent_service image needs a deliberate Rasterio/GDAL capability decision before productionizing window reads; this preflight did not change that image or project dependencies.
+
+Learner notes: read the task prompt, `compose.yaml`, and the STAC item asset metadata. The key concept is separating STAC discovery, anonymous SAS authorization, bounded COG byte access, and radiometric conversion. Exercise: inspect one asset's `raster:bands` and explain why DN 0 is masked before applying scale/offset. Do not worry yet about implementing a provider adapter, AOI boundary service, or NDVI Skill changes.
+
+Suggested next task: independently review this evidence, then design (without implementing in this preflight) the smallest server-owned Landsat asset-read interface with explicit AOI/window bounds and no signed-URL persistence.
+
+# 2026-10-05 — TaskPilot V0.3 Implementation A
+
+建立了受信的江汉区 AOI 与 Landsat C2 L2 准备边界。AOI 使用 OpenStreetMap relation 3077256 version 21 的不可变快照，CRS 为 EPSG:4326，面积 28,521,331.34 m²，SHA-256 为 `11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25`，保留 ODbL attribution 和 provenance。新增 Planetary Computer STAC discovery、受限 SAS/host 校验、资产物理波段映射、MTL 校准核对、Rasterio/GDAL 子进程 COG 读取、QA mask、辐射定标、确定性 priority-fill、pair-wide 30 m target grid、准备掩膜和 `PreparedPeriodPair` contract。未修改 Sentinel-2 legacy fixture 或 Agent/UI 层。
+
+真实 AOI probe 选出 `LC08_L2SP_123039_20230727_02_T1`（2023-07）与 `LC09_L2SP_123039_20240721_02_T1`（2024-07）；实际资产映射为 red→SR_B4、nir08→SR_B5、qa_pixel→QA_PIXEL、qa_radsat→QA_RADSAT，并成功核对 MTL reflectance scale `2.75e-05` 与 offset `-0.2`。两期共享 pair grid 为 EPSG:32649、30 m、296×264；AOI pixels 为 31,857，准备覆盖率分别为 81.9537% 与 99.9969%，common prepared pixels 为 26,107。探测结果在宿主与 Docker `agent_service` 中一致。
+
+资源边界保持冻结：target pixels、AOI/scene 数、wall-clock deadline、child-process timeout 与有限重试是 hard limits；`bytes_observed=524288` 是受限 Range probe 的运行指标，附带 lower-bound warning，不宣称完整网络字节统计。拒绝非 Planetary Computer/blob host、拒绝带 SAS credential query 的输入；signed URL 只在受控读取过程中短暂存在，不进入返回值、日志或 provenance。Docker image 已包含 Rasterio/GDAL capability 与 AOI snapshot，`rasterio 1.5.1` / `GDAL 3.12.4` 容器探针通过。
+
+Validation: `uv run pytest -q tests/geochange`（140 passed，5 warnings）；`uv run pytest -q tests/runtime/test_geochange_offline_authority.py tests/service/test_runtime_dispatch.py`（5 passed，5 warnings）；Ruff check/format、Pyrefly、`uv lock --check`、`git diff --check`、Compose config 均通过。Docker Compose 四项服务 healthy，容器内 real bounded AOI probe 与 legacy fixture smoke 通过。无数据库迁移，无 full dynamic NDVI product flow，无 Implementation B，无最终产品 readiness claim。
+
+Learner notes: 重点是把外部 STAC metadata、短期签名 URL、COG window read、QA 与 reflectance preparation 分成可审计边界，并让两个时段共享同一 target grid。建议阅读 `src/geochange/aoi.py`、`src/geochange/landsat.py`、`tests/geochange/test_landsat.py`、`data/geochange-aoi/jianghan_district_420103.geojson` 和 `docker/Dockerfile.service`。练习：追踪一个 `SR_B4` DN 从资产映射到定标后的 mask，并解释为什么 common mask 只能在 pair-wide grid 上生成。暂时不必处理最终 NDVI 产品、动态 AOI、UI 或 Implementation B。
+
+Suggested next task: independent Strong Review of Implementation A, followed by the separately scoped Implementation B only after review approval.
+
+# 2026-10-05 — V0.3 Implementation A Docker probe completion
+
+在 `codex/taskpilot-v03-a` / `ac9c670` 上完成生产容器证据补齐。Docker Desktop server `29.8.1` 正常；重建 `agent_service`、启动 PostgreSQL 与 migrate 后，`agent_service`、PostgreSQL、web、Streamlit 均 healthy，migration 正常退出。容器运行时报告 Rasterio `1.5.1`、GDAL `3.12.4`、PROJ `9.8.1`；`CRS.from_epsg(32649)` 和 `CRS.from_epsg(4326)` 均成功解析。
+
+使用仓库现有 `scripts/probe_landsat_pair.py` 在容器内走同一 discovery/selection/preparation 路径，结果独立确认：trusted AOI `jianghan_district_420103`、admin code `420103`、OSM relation version `21`、EPSG:4326、面积 `28521331.34 m²`，source hash `11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25`。实际准备场景为 `LC08_L2SP_123039_20230727_02_T1`（2023-07-27）和 `LC09_L2SP_123039_20240721_02_T1`（2024-07-21）；每期 scene count 为 1，因第一景达到 provisional preparation gate，未继续读取后备景。
+
+容器实际验证 physical band → Planetary Computer asset key：`SR_B4→red`、`SR_B5→nir08`、`QA_PIXEL→qa_pixel`、`QA_RADSAT→qa_radsat`、`SR_QA_AEROSOL→qa_aerosol`。真实资产 metadata 为 SR `uint16`、nodata `0`、scale `2.75e-05`、offset `-0.2`；QA_PIXEL/QA_RADSAT 和 aerosol 均成功读取，源 CRS 为 EPSG:32649、30 m。MTL validation 两期均为 true，MTL band 4/5 scale 与 offset 均与 STAC 一致。SR_QA_AEROSOL diagnostic 也在容器中实际执行：2023 pixels `78144`、fill `0`、valid retrieval `7419`、interpolated `69520`；2024 pixels `78144`、fill `0`、valid retrieval `7861`、interpolated `69432`。QA policy 继续只用 QA_PIXEL/QA_RADSAT 控制 preparation validity，aerosol 保持 diagnostic-only。
+
+Pair-wide grid 为 EPSG:32649、30 m、`296×264`；AOI rasterized pixels `31857`；2023 preparation `26108/31857 = 81.9537307%`，2024 preparation `31856/31857 = 99.9968610%`，common preparation pixels `26107`。两期与宿主 real-provider probe 的 grid、scene、coverage 和 common-valid 结果一致。容器 hard limits 记录为 max target pixels `500000`、max window pixels `262144`、array cache `100663296` bytes、GDAL cache `33554432` bytes、最大并发远程 asset operations `2`、retry limit `3`、request deadline `180 s`；本次 elapsed `83455.22 ms`。`bytes_observed=655360` 明确标注为每个资产 64 KiB Range probe 的 lower bound，不是完整网络流量统计。
+
+Probe 输出仅包含稳定 scene identity、asset identity hash、CRS、校准值、计数和 sanitized provenance；未输出或持久化 SAS URL、signed query string、credential 或 secret。与之前宿主 probe 的唯一运行指标差异是 lower-bound `bytes_observed`（容器 `655360`，宿主此前 `524288`），由当前包含 SR_QA_AEROSOL 的五资产读取路径造成；科学结果和资源边界没有差异。
+
+两期 default preparation coverage 均超过 70%，因此建议正式冻结 `preparation-valid coverage >= 70%`。不冻结 `final NDVI-valid coverage >= 60%` 或 `final common-comparison coverage >= 50%`，这些仍属于 Implementation B 的 provisional contract。此轮只补充 Docker evidence；未开始 Implementation B。
+
+# 2026-10-05 — V0.3 Implementation A focused Strong Review blocker correction
+
+修复了本轮 Strong Review 指出的 A blockers：Trusted Jianghan AOI 现在使用代码外部固定 SHA-256 与 relation/version/source/license 元数据绑定，完整校验 Polygon/MultiPolygon 所有 part、holes、闭环、有限坐标、拓扑和 pilot location，并独立计算投影/有界地理面积；每次加载返回 canonical geometry 的深拷贝。Landsat scene selection 不再以 footprint-complete 直接选单景，而是按确定性候选顺序读取真实 AOI QA 质量，必要时 bounded priority-fill 同月候选，最多三景并在 70% provisional gate 达成后停止；Red/NIR 同源填充。Provider 边界固定至真实 `landsateuwest.blob.core.windows.net` 账户，HTTP 禁止 redirects，签名后再次校验 host。
+
+资源边界现在在 prepare 入口重新校验 <=3 scenes，worker 接收 `max_window_pixels`，预分配前估算 retained arrays/working buffers，array+GDAL cache 总预算不超过 128 MiB，进程级 provider semaphore 为 2，共享 deadline 覆盖 STAC/sign/probe/MTL/child work，child cleanup 为 terminate→join→kill→join→IPC close；A 不写 staged artifacts，hard_limits_applied 以 0/False 记录该事实。实际 raster dtype/CRS/transform/dimensions/nodata/scale/offset 与 STAC/MTL 对照；可用 SR_QA_AEROSOL 通过同一路径读取并输出有界 diagnostics。
+
+新增 `scripts/probe_landsat_pair.py`（生产 A 路径、仅稳定 identity/coverage/grid/limits/metrics、无 SAS 输出）及 provider/limit/AOI 负例回归测试；Dockerfile 将 probe 脚本复制进 agent_service。Focused AOI/Landsat/provider tests：34 passed；完整 `tests/geochange`：160 passed。Docker real probe 本轮未能运行：Docker Desktop WSL data disk 报 `ERROR_NO_SYSTEM_RESOURCES`，因此未声称真实 Docker probe 或冻结 preparation >=70%。
+
+Learner notes: 这次修复的核心是把“候选 footprint”与“真实像元质量证据”分开，并让每个资源字段对应可执行边界。建议阅读 `src/geochange/aoi.py`、`src/geochange/landsat.py`、`scripts/probe_landsat_pair.py`、`tests/geochange/test_trusted_aoi.py`、`tests/geochange/test_landsat_provider_limits.py`。练习：构造一个全覆盖但 QA 全云的第一景和互补第二景，观察 `source_scene_index` 与 `scene_count`。暂时不必处理 B 的 NDVI、artifact 生成或 UI。
+
+Real-provider bounded probe (host execution of the same production path, 2026-10-05 16:15 Asia/Shanghai) completed successfully after allowing GDAL's raw-DN scale=1/offset=0 metadata with trusted STAC/MTL physical calibration. Jianghan AOI pixels: 31,857; pair grid EPSG:32649, 264×296, 30 m. 2023-07 scene `LC08_L2SP_123039_20230727_02_T1` produced 26,108 preparation pixels (81.9537%, one scene); 2024-07 scene `LC09_L2SP_123039_20240721_02_T1` produced 31,856 pixels (99.9969%, one scene); common preparation pixels: 26,107. Actual Red/NIR/QA/aerosol reads, MTL calibration, metadata checks and sanitized asset identity hashes passed. `bytes_observed=655,360` is a lower-bound range-probe metric; elapsed time was 95,954 ms. Hard-limit evidence reported array 96 MiB + GDAL 32 MiB, max 2 remote operations, 262,144 window pixels, 500,000 target pixels, 180 s deadline, retry limit 3, and zero A-owned staged/artifact writes. No SAS/query credentials were emitted.
+
+Docker execution remains pending because Docker Desktop cannot mount its WSL data disk (`ERROR_NO_SYSTEM_RESOURCES`); the successful host probe is evidence for provider/raster behavior but is not substituted for the required in-container probe.
+
+# 2026-10-05 — V0.3 Implementation A final focused blocker closure
+
+基于远端 clean HEAD `c3dab55` 完成最后一轮 A blocker correction。discovery 与 preparation 现在可以接收同一个 `deadline_monotonic`；生产 probe 在调用方创建一个 180 s deadline，STAC search、SAS/sign、Range probe、MTL、aerosol 和 supervised GDAL child 都消费同一剩余预算，重试不会重置 deadline。增加了 discovery 已消耗预算后 preparation fail-closed 的回归测试。
+
+冻结资源 authority 的解释是 **per active run**：`array_cache_bytes=96 MiB` 与 `gdal_cache_bytes=32 MiB` 合计 `array_plus_gdal_cache_bytes=128 MiB` 是每次 preparation run 的 hard limit；`process_global_array_gdal_cap=false` 明确不声称跨并发 run 的进程级 128 MiB cap。provider semaphore 仍限制最多 2 个远程 asset operations；过程 RSS 是 operational metric。新增测试验证该分类，不实现全局 memory scheduler。
+
+`AssetIdentity` 现在保留 STAC expected CRS、transform、width/height，并在打开 Red、NIR、QA_PIXEL、QA_RADSAT 和 SR_QA_AEROSOL COG 后逐资产比较实际 Rasterio metadata；asset-level projection 优先，缺失时使用语义有效的 item-level `proj:*` evidence，缺失 optional fields 不会被伪造。expected transform、shape、CRS、aerosol projection 和 consistent-but-wrong actual raster 的负例均 fail closed。raw COG scale=1/offset=0 只有在 STAC calibration 与 MTL 独立一致时才允许。
+
+MTL 读取现在在签名前拒绝输入 SAS/token query，签名结果再次执行 trusted host 和 redirect 检查；失败诊断、provenance 和日志不包含 signed query。新增 MTL query、untrusted signed host、redirect 和 credential leakage 测试。
+
+新增/更新测试覆盖云景互补 priority-fill、单景达标停止、覆盖率不足、shared deadline、per-run memory/GDAL budget、STAC/actual raster metadata mismatch、aerosol alignment、raw scale MTL requirement、MTL SSRF/SAS boundary。Focused provider/Landsat/AOI tests：`40 passed`；完整 `tests/geochange`：`170 passed, 7 failed`，7 个失败均为既有无关 Sentinel-2 NDBI fixture `manifest.json` hash mismatch，不修改 fixture；runtime regression：`5 passed`。Ruff check/format、Pyrefly、`uv lock --check`、`git diff --check` 和 Compose config 通过。
+
+从精确 committed clean worktree `c3dab55` 重建 production `agent_service` image，并在隔离 Compose project 内执行 `PYTHONPATH=/app python scripts/probe_landsat_pair.py`，exit code 0。Docker Rasterio `1.5.1`、GDAL `3.12.4`、PROJ `9.8.1`；真实 Jianghan AOI probe 结果保持：AOI pixels `31,857`，pair grid EPSG:32649、30 m、`296×264`，2023 preparation `26,108/31,857 = 81.9537307%`，2024 `31,856/31,857 = 99.9968610%`，common `26,107`。selected scenes 为 `LC08_L2SP_123039_20230727_02_T1` 和 `LC09_L2SP_123039_20240721_02_T1`，两期 scene count 均为 1。STAC asset map、MTL scale/offset、QA_PIXEL/QA_RADSAT 和 aerosol diagnostics 均在 clean container 路径通过；容器输出无 SAS URL、signed query、credential 或 secret。
+
+此轮没有修改 V0.2、Sentinel-2 或 NDBI fixture，没有开始 Implementation B，没有把 preparation、final NDVI 或 common-comparison 阈值写成代码冻结。clean Docker evidence 仍支持 `preparation-valid coverage >= 70%`，但该阈值继续等待独立 Strong Review/final approval；final NDVI-valid `>=60%` 与 final common-comparison `>=50%` 仍为 B-owned provisional thresholds。
+
+# 2026-10-05 — V0.3 A QA nodata semantic blocker fix
+
+将 Landsat 元数据 nodata 校验按角色分开：SR_B4/SR_B5 继续严格要求可信 STAC/MTL 与实际 COG 的 Collection 2 fill `0` 一致；QA_PIXEL、QA_RADSAT、SR_QA_AEROSOL 以 bit 0 Fill 语义为准，STAC nodata `1` 对实际 COG nodata `None` 合法，但显式矛盾值 fail closed。新增 QA_PIXEL/SR_QA_AEROSOL optional-tag 与 contradictory-tag 回归，保留 QA bit 解码和 SR 校准约束。
+
+`uv run pytest -q tests/geochange/test_landsat_provider_limits.py tests/geochange/test_landsat.py`：52 passed；Ruff、`uv lock --check`、`git diff --check` 通过。Pyrefly 在本机因 Rust checker 内存分配失败而未完成。精确 clean commit `34bf236` 重建 `agent_service` 后，容器内 `PYTHONPATH=/app python scripts/probe_landsat_pair.py` exit 0；AOI 31,857 pixels，2023/2024 preparation 分别 26,108（81.9537307%）与 31,856（99.9968610%），common 26,107，网格 EPSG:32649、30 m、296×264，bytes_observed 655,360 为 lower-bound 指标。容器版本 Rasterio 1.5.1 / GDAL 3.12.4 / PROJ 9.8.1；输出与日志未泄漏 SAS、signed query 或 credential。
+
+该证据仅关闭 Implementation A 的 QA nodata blocker；未开始 Implementation B。Preparation ≥70% 具备可复现 committed evidence，仍等待最终 focused freeze review。
+
+# 2026-10-05 — V0.3 clean-commit Docker probe reconciliation
+
+从临时 clean worktree 的精确 committed HEAD `a0da08ff11d7131018f64b7c7b95bc1fecb46071` 重建 `agent_service` image，并在容器内运行 `PYTHONPATH=/app python scripts/probe_landsat_pair.py`；该显式路径只匹配镜像将 package 复制到 `/app` 的布局，不改变源代码。PostgreSQL/migrate/agent_service healthy，probe exit code 0。容器版本：Rasterio 1.5.1、GDAL 3.12.4、bundled PROJ 9.8.1。
+
+Clean committed probe evidence：AOI `jianghan_district_420103`、admin code `420103`、relation version 21、EPSG:4326、area `28521331.34 m²`、SHA-256 `11633b0f428a884c414c90dd4c7c94d14f7ed903fa954aae666eae35984f8c25`；2023 scene `LC08_L2SP_123039_20230727_02_T1`、2024 scene `LC09_L2SP_123039_20240721_02_T1`；asset mapping `SR_B4→red`、`SR_B5→nir08`、`QA_PIXEL→qa_pixel`、`QA_RADSAT→qa_radsat`、`SR_QA_AEROSOL→qa_aerosol`；MTL/STAC band 4/5 scale `2.75e-05`、offset `-0.2` 一致。QA_PIXEL diagnostics（每个 78,144 source pixels）：2023 valid 67,970 / invalid 10,174，2024 valid 78,125 / invalid 19；QA_RADSAT 两期 valid 78,144 / invalid 0。Aerosol diagnostics：2023 fill 0、valid retrieval 7,419、interpolated 69,520、level-count 289；2024 fill 0、valid retrieval 7,861、interpolated 69,432、level-count 198。
+
+Pair grid 为 EPSG:32649、30 m、296×264；AOI pixels `31,857`；2023 preparation `26,108/31,857 = 81.9537307%`；2024 `31,856/31,857 = 99.9968610%`；common preparation `26,107`。Hard limits：target 500,000 pixels、window 262,144 pixels、array 100,663,296 bytes、GDAL cache 33,554,432 bytes、最大并发 2、retry 3、deadline 180 s；本次 `bytes_observed=655,360` 为 lower-bound Range probe metric，A-owned staged/artifact writes 为 0。Probe 与 clean image 未输出 SAS、signed query、credential 或 secret。
+
+这次结果证明 `clean committed Git HEAD → Docker image → real provider probe PASS`。此前 primary worktree 的 7 行 `landsat.py` resolution check 属于实施 A 的实际 source-grid metadata 校验，但未进入该 clean image；选中的真实 30 m source grid 与目标 grid 一致，因此该 dirty diff 未影响本次 probe 结果。
+
+# 2026-10-05 — V0.3 A final three-blocker fix validation
+
+On isolated clean worktree, commit `fd78271` adds the authoritative `prepare_landsat_operation` wrapper, which owns one monotonic 180 s deadline and passes it through discovery and preparation; strict trusted-STAC nodata binding; and raw COG scale=1/offset=0 rejection unless physical STAC and matching MTL calibration are present. The production probe now uses the shared-deadline wrapper.
+
+Focused validation: `uv run pytest -q tests/geochange/test_landsat.py tests/geochange/test_landsat_provider_limits.py` — 48 passed. Provider-limit tests include shared-deadline consumption, expected nodata None/0/conflict cases, and all four raw-calibration cases. Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed. Runtime suite: 248 passed, 39 skipped, 1 pre-existing unrelated NDBI presentation-fixture failure (`urban_change-NDBI` confirmed-intent validation).
+
+Docker server 29.8.1 was healthy; the clean committed image rebuilt successfully and PostgreSQL/migrate/agent_service started. The required container probe failed closed at `invalid_raster_metadata / expected_nodata`: live Planetary Computer QA_PIXEL and SR_QA_AEROSOL STAC metadata report expected nodata `1`, while the opened COG metadata reports actual nodata `None`. This is the required strict binding behavior and is a real provider metadata conflict; no coverage/common-valid values were accepted from this run. A diagnostic read independently reproduced the conflict without persisting signed URLs or credentials. The temporary Compose project and override files were removed.
+
+No threshold was frozen. The prior clean reference remains approximately AOI 31,857 pixels, 2023 81.9537%, 2024 99.9969%, common 26,107, but this final strict Docker run cannot support formal freeze until the provider nodata conflict is resolved under the frozen contract.
+
+# 2026-10-05 — V0.3 A final MTL fail-closed fix
+
+`_prepare_period()` now requires independently fetched and validated MTL calibration for every selected Red/NIR scene. Missing MTL fails with `invalid_radiometry / mtl_required`; malformed/incomplete MTL and STAC/MTL scale-offset mismatches fail closed; matching STAC + MTL continues, including the approved raw COG scale=1/offset=0 path. Added focused missing, malformed/incomplete, mismatch, and matching regressions without changing QA nodata or NDBI scope.
+
+Focused Landsat/provider tests: 55 passed. Ruff check/format, Pyrefly, `uv lock --check`, and `git diff --check` passed. From clean committed code commit `ed9547c`, the rebuilt `agent_service` container ran `PYTHONPATH=/app python scripts/probe_landsat_pair.py` with exit code 0: AOI 31,857 pixels; 2023 preparation 26,108 (81.9537307%); 2024 preparation 31,856 (99.9968610%); common 26,107; grid EPSG:32649, 30 m, 296×264; `bytes_observed=655,360` lower-bound metric. No SAS, signed query, or credential leakage was emitted. Preparation-valid coverage remains reproducibly above 70%; Implementation B was not started.
+# V0.3 Implementation B — dynamic Landsat NDVI product (2026-10-05)
+
+Implemented on isolated `codex/taskpilot-v03-b` worktree from approved A HEAD
+`bdcde6681491c4978cc6f5e91c1880350e9d64b6`. Added the A handoff-only NDVI
+calculation boundary, final NDVI/common masks, provisional coverage gates,
+statistics, verifier, numeric GeoTIFF/mask and display PNG artifacts, Jianghan
+Landsat confirmed-intent fields, and artifact API allowlisting. Legacy
+Sentinel-2 fixture paths remain unchanged.
+
+Validation: `tests/geochange/test_landsat.py`, `test_trusted_aoi.py`,
+`test_skill.py`, and new `test_landsat_ndvi.py` pass. Real provider/Docker
+product smoke remains to be run. July threshold recommendation remains
+provisional until the real B execution records final mask-derived coverage.
+
+Learner note: B consumes aligned, calibrated Red/NIR arrays from A; it must not
+reopen STAC assets or redo QA/reprojection. The final common mask is the only
+mask used for paired means and delta statistics.
+
+The bounded real-provider B smoke then succeeded. Final NDVI-valid coverage was
+81.9537% (2023-07; 26,108/31,857) and 99.9969% (2024-07; 31,856/31,857).
+Final common comparison was 81.9506% (26,107/31,857). Verified common-pixel
+means were 0.332632 (2023), 0.338198 (2024), and mean delta +0.005566; the
+verifier passed. The 60% and 50% thresholds are supported by this pair but
+remain provisional until user/reviewer freeze. Host-side GeoTIFF writing needs
+the Docker GDAL/PROJ runtime (`proj.db` is not available in the host virtualenv).
+Docker images built successfully. Compose startup was blocked by the existing
+host PostgreSQL port allocation on `0.0.0.0:5432`; no existing container was
+stopped or altered.
+
+# V0.3 B focused Strong Review fix (2026-10-05)
+
+Closed dynamic-result blockers: terminal validation now binds Jianghan AOI
+hash, confirmed monthly periods, scene/grid evidence, metrics digest and all
+artifact checksums; dynamic map metadata uses EPSG:32649 and the real 296×264
+grid; result metadata accepts only the approved nine dynamic artifact IDs;
+GeoTIFFs are reopened and checked after writing. Confirmation rejects
+non-calendar-month and out-of-range Jianghan periods before task creation.
+
+Focused tests and Ruff/Pyrefly pass. A clean rebuilt Docker compose smoke ran
+the real Jianghan A→B→verifier path and produced all nine artifacts; verifier
+passed with final coverage 81.9537% / 99.9969% and common 81.9506%.
+
+# V0.3 B trusted result-chain fix (2026-10-05)
+
+Dynamic terminal routing now bypasses legacy fixture evidence. The NDVI
+verifier independently recomputes masks, metrics, periods, grid, scene
+provenance, and artifact bytes from the server-owned preparation pair. Dynamic
+artifact checksums are mandatory for map and retrieval APIs.
+
+Focused Landsat tests: 9 passed, 1 skipped because the host virtualenv lacks
+Rasterio's PROJ database. Runtime/service regression: 86 passed, 3 skipped;
+the one remaining failure is the known out-of-scope confirmed NDBI baseline
+fixture. Clean committed Docker persistence/API/history smoke remains required.
+
+The clean committed Docker NDVI product probe passed with artifact-bound
+verification: AOI 31,857 pixels; final coverage 81.9537% / 99.9969%; common
+26,107 (81.9506%).
+
+## Focused runtime asset-read diagnosis (2026-10-06)
+
+- Exact `d95887e3db1899b67295cfeb1fcd8233309277bc` Docker controls: standalone probe passed; a direct unguarded control reproduced sanitized `provider_unavailable`/`asset_read` from multiprocessing spawn bootstrapping; guarded synchronous and guarded `asyncio.to_thread` controls passed. A real persisted PostgreSQL TaskRun reached A preparation and wrote all nine NDVI artifacts, then failed before verifier because the trusted dynamic payload exceeded the legacy 2,000-character execution envelope (`geochange_output_oversized`).
+- Minimal fix: permit only the server-owned Landsat dynamic execution payload to use the bounded 8,192-character runtime envelope; legacy cached outputs remain capped at 2,000. No verifier, artifact, map, history, timeout, concurrency, process-isolation, or credential behavior was changed.
+- Focused validation: 48 passed, 1 skipped; Ruff, format, Pyrefly, `uv lock --check`, and `git diff --check` passed. Known NDBI digest debt remains unrelated.
+
+## Persisted Jianghan product chain (2026-10-06)
+
+From committed HEAD `1d920c083fe76b8dd20a1d02433fc2b38179737f`, an authenticated
+confirmed Jianghan task completed real Landsat A preparation, B NDVI, independent
+verifier, and persistence with TaskRun status `succeeded`. Result metadata records
+`verifier_status=passed`, `execution_mode=real_stac_landsat_local`, the trusted AOI
+hash, monthly periods, scene IDs, EPSG:32649 target grid, 296×264 dimensions, all
+nine approved artifact IDs, and mandatory SHA-256 checksums.
+
+Artifact API retrieval of `ndvi_before_raster` returned 98,212 bytes whose SHA-256
+matched the persisted checksum. Jianghan map metadata returned EPSG:32649, the
+296×264 grid, both real scene identities, and 26,107 common pixels. Conversation
+history reopened the original task/run without recomputation. An unauthenticated
+foreign-token request received 401 for both artifact and map routes; tenant-scoped
+authorization tests cover foreign-resource denial.
+
+Science values: 2023 final NDVI-valid 81.9537307% (26,108/31,857), 2024
+99.9968610% (31,856/31,857), common 81.9505917% (26,107/31,857), mean delta
+0.00556586. The provisional 60% and 50% gates remain unfrozen and are ready for
+freeze review.
+
+## Final trusted product closure evidence (2026-10-06)
+
+Machine-readable evidence is committed in
+`process/evidence_taskpilot_v03_b_final_chain.json`. It records the exact code
+HEAD `a0dd0dc985ccb3ea3d44b93d48bf3551ab90ea30`, Docker build command, successful authenticated Jianghan TaskRun,
+verifier and runtime mode, AOI/period/scene/grid binding, all nine canonical
+artifact IDs and SHA-256 values, an API byte/checksum confirmation, map metadata,
+same-run history reopening, and authenticated second-tenant denials. It contains
+no tokens, credentials, signed URLs, or raw provider URLs.
+
+
+## Trusted dynamic lifecycle closure pass (2026-10-06)
+
+From committed code HEAD 1776233b445e69d7ec5e04be1cc5748fcb3b05d7, the clean Docker product chain completed for task 044f8ed3-cc8f-4d7a-ba3d-2b2e2a768912 / run 9e75320f-39f9-497b-9ba0-f46e3a8e6f77.
+
+A generic capability can no longer select the 8,192-character envelope from payload fields or a trusted marker. The larger result is emitted only by the wired Jianghan summarize capability after server-owned A/B product verification, and the terminal payload is bound to a separate canonical projection covering periods, metrics, provenance, scene/grid evidence, and artifacts. Checkpoint state requires that binder; resume/terminal validation rejects missing or mismatched dynamic evidence. Dynamic observations persist a compact marker rather than duplicating the bounded binder and payload into the 8,192-byte observability field.
+
+Focused adversarial tests passed for generic dynamic marker/type/payload rejection, checkpoint binder enforcement, forged dynamic evidence, and bounded observations. The first committed smoke exposed and fixed the observability-size defect before final smoke.
+
+The final persisted run reached succeeded with verifier passed and real_stac_landsat_local. It persisted all nine approved artifact IDs and mandatory SHA-256 checksums. All nine artifact API routes returned 200; the three numeric GeoTIFFs and three masks reopened with expected dtype, EPSG:32649, 264×296 dimensions, transform, and NoData; masks returned image/tiff. Jianghan map metadata reported the trusted label, EPSG:32649, 296×264 dimensions, and both real scene identities. History reopened the same original run without recomputation. A second tenant received 404 for task/run/artifact/map and an empty history. Logs contained no SAS/query credentials or tokens.
+
+Science remained unchanged: 2023 final NDVI-valid 81.9537307% (26,108/31,857), 2024 99.9968610% (31,856/31,857), common 81.9505917% (26,107/31,857), mean delta 0.00556586. Provisional 60% and 50% gates remain unfrozen and are ready for freeze review. Machine-readable details are in process/evidence_taskpilot_v03_b_final_chain.json.
+
+## Trusted dynamic lifecycle closure evidence update (2026-10-06)
+
+The checkpoint binder is now independently anchored in a bounded server-only sidecar under the run artifact directory. Fresh graph execution, verifier entry, resumed checkpoints, and TaskRuntime terminal persistence compare the dynamic result against that sidecar; a checkpoint cannot grant trust by replacing the payload and its copied binder together.
+
+The final clean Docker run from code HEAD 935319d76f98c3fbbbdf47b82f4c9a25ad814908 completed successfully: task fab788ec-1ff7-4922-b35f-bb94ef7facd6, run e8f89109-2ddd-457f-902f-2cccd0f90c11, status succeeded, verifier passed. The sidecar reopened, all nine canonical artifact references and checksums passed API retrieval, all six numeric GeoTIFF/mask artifacts reopened with expected metadata, Jianghan map metadata was correct, same-run history reopened without recomputation, and cross-tenant task/run/artifact/map/history access failed closed. Science matched the prior real-pair values exactly. See process/evidence_taskpilot_v03_b_final_chain.json for sanitized machine-readable details.
+
+## Trusted dynamic capability identity closure (2026-10-06)
+
+The dynamic output budget is now authorized only for the exact server-wired SummarizeChangeRuntimeCapability class, in addition to the validated Jianghan NDVI context and independently loaded server binder. A generic capability cannot spoof the class name/module or supply a trusted result marker. Focused adversarial coverage is 54 passed, 1 skipped.
+
+The final exact committed Docker run from code HEAD 146f0cb115b0b76c5d420e1f62df1f2f701f8ed2 completed successfully for task eab50e97-22e6-4ed1-b0e5-8b87c106730e / run dae9f408-2638-4966-b4aa-f3c908dcc04f. Science, verifier, artifact, checksum, map, history, and cross-tenant results match the previously recorded values; all-nine artifact API/checksum validation, six-file numeric metadata validation, mask MIME validation, and the independent binder sidecar passed.
+
+## Adversarial trusted dynamic lifecycle closure (2026-10-06)
+
+The focused closure pass added committed lifecycle regressions in `tests/runtime/test_dynamic_lifecycle_adversarial.py`. The tests drive the TaskRuntime resume boundary and terminal persistence boundary with mutually consistent forged payload/result/binder checkpoints, unchanged server sidecars, missing or malformed sidecars, and a valid matching-sidecar resume. All forged cases fail closed and the valid matching-sidecar resume succeeds. A real graph replan regression also exposed that `trusted_dynamic_evidence` survived replan while `execution_result` was cleared; `src/runtime/graph.py` now clears that binder in the same transition.
+
+The final committed Docker smoke from code HEAD `65b2600699d0fd7cc46c00de0942d6a1e10567a0` persisted Jianghan Task `cde33ee5-a09f-4475-a55e-34dcf32c2fdd` / Run `994e6a8b-14d1-4f07-bd87-39429516b8f3` as `succeeded`, with verifier passed and `real_stac_landsat_local`. It matched 2023 final NDVI-valid `81.95373073421854%`, 2024 `99.99686097247073%`, common comparison `81.95059170668927%` (`26107` pixels), and the prior mean delta. The numeric artifact API returned the original `ndvi_before_raster` bytes (`98212` bytes; SHA-256 `2a72e2e7d8e6c43463801b8831cc1775bba648c816b26a6b08753d9a381dd355`); Jianghan map metadata returned EPSG:32649 and `296×264`; history reopened the same run; and the second tenant received 404 for task/run/artifact/map plus empty history. No credentials or signed query material were recorded.
+
+Validation: adversarial lifecycle tests `8 passed`; affected focused suites `121 passed, 1 skipped, 1 known unrelated NDBI baseline failure`; Ruff and format passed; Pyrefly on changed files reported `0 errors`; `uv lock --check` and `git diff --check` passed. Provisional 60% and 50% gates remain unfrozen and ready for separate freeze review.
+
+Learner notes: the key boundary is that a checkpoint is recovery state, while the sidecar and server-derived product evidence are authority. Read `src/runtime/graph.py`, `src/service/task_runtime.py`, `src/geochange/artifacts.py`, and `tests/runtime/test_dynamic_lifecycle_adversarial.py`. Exercise: remove the replan binder-clear update and watch the real graph regression retain stale trust. Do not worry about browser E2E yet.
+
+## Final evidence reconciliation (2026-10-06)
+
+Verified against the retained Docker Compose environment that `/api/v1/conversation/history` returns the final Jianghan Task `cde33ee5-a09f-4475-a55e-34dcf32c2fdd` with the succeeded Run `994e6a8b-14d1-4f07-bd87-39429516b8f3`; the history route performs a persisted read and no recomputation. Audited the final run metadata, scene/date identities, grid/AOI binding, all persisted artifact checksums and references, numeric artifact API confirmation, map metadata, and cross-tenant denials. Corrected only the stale prior-run UUIDs in the machine-readable evidence `history` object. Historical progress entries remain unchanged.
+# V0.3 browser product wiring closure (2026-10-06)
+
+Updated the live conversation contract, capability discovery, and React product
+surface to represent both approved product families: Jianghan Landsat NDVI and
+legacy East Lake Sentinel-2 cached indices. The frontend now uses trusted map
+identity/bounds and verified PNG artifacts without a fabricated AOI polygon.
+Added exact Chinese Jianghan parsing, unsupported Jianghan NDWI rejection, and
+capability-family regressions. Web typecheck/build and focused conversation
+tests pass; final browser visual acceptance remains manual.
+
+# V0.3 visual raster diagnosis and native-grid fix (2026-10-06)
+
+Inspected retained Jianghan Task `ab061f60-7521-4541-9328-5e6b46e9d657` / Run `71fa2eca-4435-424e-9d7e-e491b8941006` without creating a new analysis. The persisted `ndvi_before.png`, `ndvi_after.png`, and `ndvi_change.png` are 264×296, spatially varying, and pairwise distinct; their numeric GeoTIFF sources also have non-zero variance and the PNG encoding matches the documented `[-1, 1]` transform exactly. The artifact API returns distinct colorized RGBA PNGs with transparent NoData.
+
+The visual blocker was a trusted map-geometry bug: dynamic `native_bounds` incorrectly reused the WGS84 AOI bbox while declaring EPSG:32649. `trusted_landsat_map_metadata()` now derives native bounds from the verified affine transform and raster dimensions. Focused NDVI tests, Ruff, Pyrefly, format, and diff checks pass; the rebuilt live map API now returns native UTM bounds and the existing frontend layer mapping remains unchanged.
+
+Learner notes: keep WGS84 display bounds separate from native raster bounds; coordinate transforms must be applied exactly once. Read `src/geochange/provenance.py`, `src/service/task_api.py`, `web/src/main.tsx`, and `tests/geochange/test_landsat_ndvi.py`. Exercise: transform the returned native corners to EPSG:4326 and compare them with the map's trusted extent. No new provider or basemap was added.
+
+Follow-up: the frontend now distinguishes an OSM basemap failure from a result-layer failure; the former explicitly states that verified result layers remain available. Web typecheck and production build pass.
+
+## V0.3 coverage gate freeze closure (2026-10-07)
+
+The user explicitly froze the V0.3 final NDVI-valid data coverage gate at 60% per
+period and the final common-comparison valid-data coverage gate at 50%. These
+are data-quality/valid-comparison thresholds, not vegetation coverage, FVC, or
+vegetation-area percentages. Future versions may revise the thresholds through
+a new documented decision while preserving this V0.3 baseline. Implementation
+A and B remain COMPLETE / APPROVED; product wiring is COMPLETE and manual
+browser acceptance is PASS. The prior Final Audit returned NOT APPROVED only
+because the gate-freeze decision had not yet been formally made; that blocker is
+resolved pending focused Final Audit re-review. Earlier provisional records
+above remain historical.
+
+Runtime keeps the numeric gates at 60.0 / 50.0, removes the stale provisional
+comments, emits `coverage_gates_provisional=false` for new products, and adds
+`coverage_gates_v0_3_status="frozen"`; no historical persisted run was changed.
+Focused coverage tests assert the frozen values, retained real July coverage
+passes, period coverage still fails closed below threshold, and common
+comparison fails closed below threshold. No science formula or numeric output
+changed.
+
+Validation: affected GeoChange tests 54 passed / 1 skipped; dynamic lifecycle
+and runtime-dispatch regressions 11 passed; Ruff check/format, Pyrefly on the
+production NDVI module, `uv lock --check`, and `git diff --check` passed.
+Pyrefly over the entire affected test module still reports four pre-existing
+typing issues outside the new coverage cases (`AOI.source_hash` references and
+the `_BinderSkill` test stub). No code was committed or pushed.
+
+## 2026-10-07 — V0.3 focused Final Audit approval status synchronization
+
+The user-reported focused Final Audit re-review is APPROVED. The previous
+Final Audit returned NOT APPROVED only because the user freeze decision had
+not yet been formally recorded; that blocker is CLOSED. The coverage-gate
+closure is COMPLETE, all focused closure checks PASS, and the remaining blocker
+is none. Implementation A and B remain COMPLETE /
+APPROVED; product wiring is COMPLETE; manual browser acceptance is PASS. V0.3
+is COMPLETE / FINAL AUDIT APPROVED. PR / merge main remain pending.
+
+The frozen gates remain final NDVI-valid data coverage `>=60%` per period and
+final common-comparison valid-data coverage `>=50%`. They describe valid-data
+quality, not vegetation coverage or FVC. Historical provisional and NOT
+APPROVED entries were preserved. This status-only sync changes no scientific
+computation or runtime semantics. No commit or push was made.
+
+Post-sync validation: GeoChange coverage/provider tests `54 passed, 1 skipped`;
+dynamic lifecycle/runtime-dispatch regression `11 passed`; Ruff check passed;
+Ruff format check passed; Pyrefly on `src/geochange/landsat_ndvi.py` reported
+`0 errors`; `uv lock --check` resolved 260 packages; `git diff --check` passed.

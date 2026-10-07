@@ -1,15 +1,16 @@
 """Checkpoint-safe state for the bounded TaskPilot runtime."""
 
-from typing import Literal
+import json
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from geochange.models import GeoChangeTask
 from schema.planner import Plan
 
 from .context import ContextEnvelope
-from .executor import ExecutionResult
+from .executor import ExecutionResult, TrustedDynamicExecutionResult
 from .failure import RuntimeFailure
 from .planner import PlannerTaskInput
 from .verifier import VerificationResult
@@ -46,7 +47,8 @@ class AgentState(BaseModel):
     plan: Plan | None = None
     plan_position: int = Field(default=0, ge=0)
     capability_context: ContextEnvelope | None = None
-    execution_result: ExecutionResult | None = None
+    execution_result: TrustedDynamicExecutionResult | ExecutionResult | None = None
+    trusted_dynamic_evidence: dict[str, Any] | None = None
     verification: VerificationResult | None = None
     failure: RuntimeFailure | None = None
     retry_count: int = Field(default=0, ge=0)
@@ -63,6 +65,26 @@ class AgentState(BaseModel):
             return str(UUID(str(value)))
         except (TypeError, ValueError):
             raise ValueError("runtime identifiers must be canonical UUID strings") from None
+
+    @field_validator("trusted_dynamic_evidence")
+    @classmethod
+    def bound_dynamic_evidence(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        try:
+            serialized = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError("trusted dynamic evidence must be JSON-safe") from error
+        if len(serialized.encode("utf-8")) > 16_384:
+            raise ValueError("trusted dynamic evidence exceeds the bounded limit")
+        return value
+
+    @model_validator(mode="after")
+    def dynamic_result_requires_binder(self) -> "AgentState":
+        if isinstance(self.execution_result, TrustedDynamicExecutionResult):
+            if self.trusted_dynamic_evidence != self.execution_result.canonical_evidence:
+                raise ValueError("trusted dynamic checkpoint binder is missing or mismatched")
+        return self
 
     @classmethod
     def initial(

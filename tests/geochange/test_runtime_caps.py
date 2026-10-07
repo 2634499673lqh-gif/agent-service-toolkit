@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from core.settings import settings
+from geochange.artifacts import load_dynamic_evidence, write_dynamic_evidence
 from geochange.fixture import load_manifest, scene_evidence
 from geochange.models import GeoChangeTask
 from geochange.runtime_caps import (
@@ -12,6 +13,7 @@ from geochange.runtime_caps import (
     ResolveAOIRuntimeCapability,
     SearchSentinel2RuntimeCapability,
     SummarizeChangeRuntimeCapability,
+    _Base,
 )
 from geochange.stac import Sentinel2Item
 from runtime.context import ContextBuilder
@@ -27,6 +29,27 @@ def _context(task: GeoChangeTask, instruction: str):
         runtime_task_run_id=str(uuid4()),
         geochange_task=task,
     )
+
+
+def test_payload_cannot_select_dynamic_bound_on_generic_capability():
+    step = PlanStep(position=1, instruction="summarize_change")
+    capability = _Base()
+    generic = capability._result(step, {"large": "x" * 2100})
+    assert not generic.success
+    dynamic = capability._result(
+        step,
+        {"execution_mode": "real_stac_landsat_local", "large": "x" * 2100},
+    )
+    assert not dynamic.success
+    assert dynamic.error_code == "geochange_output_oversized"
+
+
+def test_dynamic_binder_is_server_owned_and_bounded(tmp_path, monkeypatch):
+    monkeypatch.setattr("geochange.artifacts.ARTIFACT_ROOT", tmp_path)
+    write_dynamic_evidence("task", "run", {"metrics": {"common": 1}})
+    assert load_dynamic_evidence("task", "run") == {"metrics": {"common": 1}}
+    (tmp_path / "task" / "run" / ".dynamic_evidence.json").write_text("not-json")
+    assert load_dynamic_evidence("task", "run") is None
 
 
 @pytest.mark.asyncio
