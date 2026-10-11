@@ -46,7 +46,7 @@ Sentinel-2 processing.
 
 The underlying protected API is `/api/v1/tasks` (`POST`/`GET`), `/api/v1/tasks/{task_id}` (`GET`), and `/api/v1/tasks/{task_id}/runs` plus `/runs/{run_id}` (`POST`/`GET`). A task or run outside the current organization is not exposed as a visible resource.
 
-Starting a run creates a persisted TaskRun and dispatches the bounded internal Planner/Executor/Verifier runtime through the process-local runtime bridge. The UI performs finite refresh checks while the run is active, then reads the persisted terminal result; it does not invent lifecycle state or results. There is no TaskStep view.
+Starting a run creates a persisted TaskRun and dispatches the bounded internal Planner/Executor/Verifier runtime through the process-local runtime bridge. While active, the UI polls the existing run endpoint for lifecycle state and optional server-reported phase progress; the phase percentage is not elapsed time or a remaining-time estimate. Polling is bounded, with a Continue button after timeout. The UI then reads the persisted terminal result; it does not invent lifecycle state or results. Terminal status and verified results remain visible even when optional terminal phase progress is unavailable. Legacy runs may have no progress snapshot. There is no TaskStep view.
 
 ## Approvals
 
@@ -63,7 +63,7 @@ Trace and approval data are observational evidence. They are not a substitute fo
 ## Current limitations
 
 - No public runtime execution endpoint or background worker is wired to Product run creation.
-- No live progress stream, TaskStep persistence/view, fake progress, or fake result is provided.
+- No WebSocket progress push or TaskStep persistence/view is provided; run progress comes from server events and older runs may show it as unavailable. No fake progress or result is provided.
 - No uploads, admin console, registration, SSO, refresh-token flow, or external side-effect workflow is exposed by this UI.
 - The legacy chat view remains available for the upstream LangGraph experience and has separate caller-supplied thread behavior; it is not the TaskPilot identity boundary.
 

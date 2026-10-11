@@ -1,3 +1,136 @@
+### 2026-10-11 — TaskPilot V0.4 Implementation A final status synchronization
+
+Independent Strong Review approved Implementation A after the A1 terminal
+projection closure. A2 artifact attempt isolation and A3 default pytest
+collection remain closed. Current status is **Implementation A COMPLETE / APPROVED**.
+Implementation B remains unstarted and the V0.4 Final Audit remains pending.
+
+This entry synchronizes current-state wording only. Historical NOT APPROVED
+findings, remediation entries, and approval evidence below remain unchanged.
+
+### 2026-10-09 — TaskPilot V0.4 A1 focused blocker closure
+
+The focused Strong Review reproduction is closed in implementation: when an
+older 80% snapshot survives a failed reset write, the reset now commits a
+strictly newer server-owned `TaskRun.updated_at` generation before file
+publication. Snapshot projection, phase callbacks, and artifact promotion
+require the snapshot generation to match that durable row value, so stale data
+is unavailable after the failure and after process restart. Corrupt or
+tombstone files no longer prevent a later healthy reset from establishing a
+new attempt. A database fence failure does not establish a new attempt and
+does not grant a new callback lease.
+
+Changed: `src/service/task_run_progress.py`,
+`tests/service/test_task_run_progress_postgres.py`, and the affected V0.4
+architecture/API/observability documents. PostgreSQL 16 focused progress tests
+including reset-failure, repeated-failure, late-callback, recovery, replacement
+failure, authority failure, and concurrent-cancellation cases passed (`6
+passed`) against an isolated disposable database. The affected PostgreSQL
+regression passed `101` tests with the three unrelated NDBI baseline failures
+reproduced on the unchanged HEAD archive; focused offline/A2 regression passed
+`15` tests. Full static and frontend checks passed.
+
+Status: A1 implementation is complete and ready for focused Strong Review;
+this entry does not mark the work approved. No commit or push was made.
+
+### 2026-10-10 — TaskPilot V0.4 A1 terminal projection closure
+
+Reproduced the remaining terminal projection exploit: an older snapshot with
+four completed phases and finalization running survived a newer durable attempt
+fence, and a later SUCCEEDED TaskRun with the same replan count incorrectly
+projected that snapshot as 100%. The existing TaskRun schema has no durable
+terminal-attempt identity; terminal `updated_at` changes during the lifecycle
+transition and the artifact pointer can remain stale after a failed reset
+publication. `project_progress()` now fails closed for every terminal status
+when the optional snapshot cannot be bound to that terminal attempt, returning
+`progress: null` while preserving the authoritative TaskRun status and result.
+
+Added focused stale-success, terminal-identity, and failed/cancelled precedence
+regressions. No migration or new authority was introduced. Browser visual
+acceptance remains deferred to Final Audit.
+
+Validation: focused progress `12 passed`; PostgreSQL progress/lifecycle/artifact
+`7 passed`; affected PostgreSQL API/lifecycle/progress `16 passed`; runtime
+PostgreSQL excluding the three established NDBI baseline cases `36 passed, 3
+deselected`; A2 artifact and A3 runtime smoke `4 passed`; default collection
+`1204 tests collected`; web polling `3 passed`, TypeScript and Vite build
+passed. Targeted Ruff check/format, Pyrefly (`0 errors`), `uv lock --check`,
+and `git diff --check` passed.
+
+Learner notes: a progress snapshot is display data and cannot identify which
+attempt committed a terminal result. Read `project_progress()` and the
+TaskRun lifecycle service together; the key exercise is to explain why a
+terminal status cannot safely upgrade an older snapshot without a durable
+attempt binding. Do not worry about adding such a binding until a schema or
+architecture decision explicitly authorizes it.
+
+Suggested next task: focused Strong Review of the terminal projection closure;
+Implementation B remains unstarted.
+
+### 2026-10-09 — TaskPilot V0.4 Implementation A: Execution Progress Observability
+
+Status: implementation code is complete; final validation is BLOCKED pending
+required PostgreSQL concurrency evidence. Not approved.
+Baseline `main` at `cca4063553162099546b9aaedbd5652493791a07` was clean. Created
+and switched to `codex/taskpilot-v04-observability-validation`; HEAD remains at
+the baseline and no commit or push was made.
+
+Implemented a bounded, attempt-scoped progress snapshot for real Jianghan
+Landsat runs and an additive nullable `progress` projection on the existing
+tenant-scoped TaskRun GET route. Actual planner, preparation, NDVI computation,
+product verification, graph verifier, and terminal persistence boundaries
+drive the five phases. Progress callbacks are excluded from checkpoints and
+capability context serialization, exposed only to the exact server-wired
+Landsat capability, and pinned to immutable attempt leases. Short writes lock
+Task then TaskRun; cancellation and reset winners reject late/stale writes.
+Finalization remains running until the successful TaskRun commit is visible.
+The React UI shows phase completion, reset/retry/replan information, last event,
+unavailable fallback, bounded polling, and a Continue action. No migration,
+dependency, science contract, East Lake workflow, or push channel was added.
+
+Changed: `src/runtime/progress.py`, `src/runtime/capability.py`,
+`src/runtime/context.py`, `src/runtime/graph.py`,
+`src/service/task_run_progress.py`, `src/service/task_runtime.py`,
+`src/service/task_api.py`, `src/service/runtime_dispatch.py`,
+`src/schema/task_run_api.py`, `src/geochange/runtime_caps.py`, focused tests,
+`web/src/main.tsx`, `web/src/run-progress.js`,
+`web/src/run-progress.d.ts`, `web/tests/run-progress.test.mjs`,
+`web/package.json`, `web/src/styles.css`, and affected API, architecture,
+observability, user, and progress documentation.
+
+Validation:
+
+- Focused + affected runtime regression with one existing invalid NDBI fixture
+  deselected: `123 passed, 5 skipped, 1 deselected`.
+- The deselected existing test was run separately and fails before runtime
+  dispatch: it changes a confirmed `water_change` intent to `urban_change` /
+  `NDBI` but retains water parameters, so `ConfirmedIntent` correctly rejects
+  the inconsistent fixture. Its test/schema path was not changed in this task.
+- The 5 PostgreSQL-marked tests skipped because
+  `TASKPILOT_TEST_DATABASE_URL` is unset. Docker CLI is installed but its
+  Desktop Linux engine is unavailable; no PostgreSQL service/client is present.
+  PostgreSQL lock/cancellation and HTTP tenant-isolation evidence therefore
+  remains outstanding.
+- Web polling tests: `3 passed`; TypeScript no-emit check passed; Vite
+  production build passed with its existing >500 kB chunk-size warning.
+- Ruff check and format check passed; Pyrefly reported `0 errors`; `uv lock
+  --check` resolved 260 packages; `git diff --check` passed.
+
+Known limits: `asyncio.to_thread()` cannot stop work already running in a
+thread. If cancellation wins, TaskRun terminal state prevents success and
+progress writes, although an in-flight worker may finish writing private
+run-scoped artifacts. Browser visual acceptance was not run. The approved V0.4
+Planning Report was not present in this checkout; implementation followed the
+detailed Implementation A prompt and current repository contracts. This is a
+planning-authority deviation for Strong Review to assess; no planning contract
+was invented or edited.
+
+Learner notes: 进度是服务端真实阶段事件的只读投影，数据库 TaskRun 状态仍是成功/失败的权威。阅读 `src/service/task_run_progress.py`、`src/runtime/graph.py`、`src/geochange/runtime_caps.py`、`web/src/run-progress.js` 和对应测试。练习：把 computation 的开始事件提前到真实函数调用之前，观察阻塞准备测试如何发现错误阶段。暂时不用担心 WebSocket、剩余时间预测或通用工作流进度。
+
+Suggested next task: provide a disposable PostgreSQL test service, rerun the
+skipped locking/tenant/API tests, then enter independent Strong Review.
+Historical V0.3 approval and blocker records below remain unchanged.
+
 ### 2026-10-02 — Phase 14 3B exploratory addendum blocker fix
 
 Revised `process/ADR-014-3B-EXPLORATORY-ADDENDUM.md` with an explicit scope-revision table and a complete proposed exploratory NDWI contract. The proposal now explicitly defers water-class and water-area thresholds, prohibits confirmed water-area/expansion claims, retains all B03/B08/SCL, provenance, mask, Runtime-security and NDVI compatibility requirements, and keeps 3C blocked.
@@ -6480,3 +6613,22 @@ Post-sync validation: GeoChange coverage/provider tests `54 passed, 1 skipped`;
 dynamic lifecycle/runtime-dispatch regression `11 passed`; Ruff check passed;
 Ruff format check passed; Pyrefly on `src/geochange/landsat_ndvi.py` reported
 `0 errors`; `uv lock --check` resolved 260 packages; `git diff --check` passed.
+
+## 2026-10-09 — V0.4 Implementation A blocker closure
+
+Closed Strong Review A blockers in the current Implementation A worktree.
+Progress reset now installs a durable unavailable tombstone before replacing a
+snapshot, so failed replacement persistence cannot expose the prior attempt.
+Real Landsat output is written to immutable server-issued attempt directories;
+only a short Task/TaskRun-ordered promotion transaction can publish the current
+attempt pointer and dynamic evidence binder. Resume copies only the previously
+published verified directory into a new attempt before reactivating it. Late,
+cancelled, or superseded workers cannot overwrite a newer attempt.
+
+Renamed `tests/runtime/test_task_run_progress.py` to
+`tests/runtime/test_task_run_progress_runtime.py` so default pytest collection
+has no module basename collision. Added reset-failure, pointer fencing, and
+promotion-race regressions. PostgreSQL progress/promotion/cancellation tests,
+lifecycle tests, and authenticated TaskRun API tests ran against an isolated
+PostgreSQL 16 database. The three NDBI runtime PostgreSQL failures reproduced
+identically on an unchanged HEAD archive and remain frozen baseline defects.

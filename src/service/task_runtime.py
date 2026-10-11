@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
 from geochange.aoi import resolve_aoi
@@ -42,6 +42,7 @@ from runtime.executor import ExecutionResult, Executor, TrustedDynamicExecutionR
 from runtime.failure import FailureClassifier
 from runtime.graph import RuntimeGraphContext, RuntimeObservation, build_runtime_graph
 from runtime.planner import PlannerNode
+from runtime.progress import ProgressPhase, RuntimeProgressController
 from runtime.risk import RiskRoute, classify_action
 from runtime.state import AgentState, PendingApprovalReference
 from runtime.verifier import VerifierNode
@@ -74,6 +75,7 @@ from service.task_lifecycle import (
     TaskLifecycleError,
     TaskLifecycleService,
 )
+from service.task_run_progress import TaskRunProgressReporter, TaskRunProgressStore
 
 CHECKPOINT_THREAD_PREFIX = "taskpilot-run:"
 RuntimeOutcome = Literal["SUCCEEDED", "FAILED"]
@@ -206,6 +208,7 @@ class _RuntimeObservationCollector:
 
     task_run_id: UUID
     request_id: UUID | None
+    progress_sink: RuntimeProgressController | None = None
     observations: list[RuntimeObservation] = field(default_factory=list)
 
     async def record(self, observation: RuntimeObservation) -> None:
@@ -267,8 +270,10 @@ class TaskRuntimeService:
         verifier: VerifierNode | None = None,
         classifier: FailureClassifier | None = None,
         graph: Any | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self.checkpointer = checkpointer
+        self.session_factory = session_factory
         self.failure_classifier = classifier or FailureClassifier()
         self.capability_name = (
             "executor_adapter" if executor is not None else "deterministic_fixture"
@@ -351,6 +356,22 @@ class TaskRuntimeService:
         run_status = task_run.status
         await session.rollback()
 
+        progress_sink: TaskRunProgressReporter | None = None
+        if (
+            self.session_factory is not None
+            and confirmed_task is not None
+            and confirmed_task.analysis_type == "vegetation_change"
+            and confirmed_task.indicator == "NDVI"
+            and confirmed_task.aoi_key == "jianghan_district_420103"
+            and confirmed_task.data_mode == "real_stac_landsat_local"
+        ):
+            progress_sink = TaskRunProgressReporter(
+                TaskRunProgressStore(self.session_factory),
+                organization_id=organization_id,
+                task_id=task_id,
+                task_run_id=task_run_id,
+            )
+
         if principal is not None and principal.organization_id != organization_id:
             raise TaskRuntimeNotFoundError("task run is not visible in the organization")
         if (
@@ -374,6 +395,7 @@ class TaskRuntimeService:
         observations = _RuntimeObservationCollector(
             task_run_id=task_run_id,
             request_id=_middleware_request_uuid(),
+            progress_sink=progress_sink,
         )
         graph_context = self._runtime_context(
             session,
@@ -384,6 +406,7 @@ class TaskRuntimeService:
             task_snapshot=task_snapshot,
             approval_tracker=approval_tracker,
             observation_sink=observations,
+            progress_sink=progress_sink,
             skill=selected_skill,
         )
 
@@ -400,6 +423,12 @@ class TaskRuntimeService:
                 await TaskLifecycleService(session).begin_run(task_id, organization_id)
             except TaskLifecycleError as error:
                 raise TaskRuntimeConflictError("task run could not begin") from error
+            if progress_sink is not None:
+                await progress_sink.reset_attempt(
+                    reset_reason="start",
+                    retry_count=0,
+                    replan_count=0,
+                )
             initial_state = AgentState.initial(
                 task_id=task_id,
                 task_run_id=task_run_id,
@@ -546,6 +575,15 @@ class TaskRuntimeService:
                     config=config,
                     observations=observations,
                 )
+            if progress_sink is not None:
+                await progress_sink.reset_attempt(
+                    reset_reason="resume",
+                    retry_count=checkpoint_state.retry_count,
+                    replan_count=checkpoint_state.replan_count,
+                    completed_phases=_progress_completed_from_checkpoint(
+                        checkpoint_state, task_id=task_id, task_run_id=task_run_id
+                    ),
+                )
             try:
                 # A non-None input would intentionally restart the graph from
                 # the beginning.  The latest checkpoint is the only input.
@@ -648,11 +686,12 @@ class TaskRuntimeService:
         task_snapshot: tuple[str, str | None],
         approval_tracker: dict[str, UUID],
         observation_sink: _RuntimeObservationCollector | None = None,
+        progress_sink: RuntimeProgressController | None = None,
         skill: SkillSpec | None = None,
     ) -> RuntimeGraphContext | None:
         """Build invocation-only callbacks; no service object enters AgentState."""
 
-        if principal is None and observation_sink is None:
+        if principal is None and observation_sink is None and progress_sink is None:
             return None
 
         async def create_approval(
@@ -690,6 +729,7 @@ class TaskRuntimeService:
         return RuntimeGraphContext(
             approval_gate=create_approval if principal is not None else None,
             observation_sink=observation_sink,
+            progress_sink=progress_sink,
             request_id=None if observation_sink is None else observation_sink.request_id,
             skill=skill,
         )
@@ -1409,6 +1449,10 @@ class TaskRuntimeService:
         # Candidate capability output cannot override the runtime's terminal
         # stage truth (especially after verifier rejection).
         result_metadata["verifier_status"] = stage_status["verifier"]
+        if outcome == "SUCCEEDED" and observations is not None and observations.progress_sink:
+            finalization_sink = observations.progress_sink.current_attempt()
+            if finalization_sink is not None:
+                await finalization_sink.start_phase("finalization")
         try:
             await self._persist_observations(
                 session,
@@ -1466,6 +1510,38 @@ def _terminal_stage_status(state: AgentState) -> dict[str, str]:
         else:
             verifier = "not_run"
     return {"planner": planner, "execution": execution, "verifier": verifier}
+
+
+def _progress_completed_from_checkpoint(
+    state: AgentState,
+    *,
+    task_id: UUID,
+    task_run_id: UUID,
+) -> tuple[ProgressPhase, ...]:
+    """Rebuild only a contiguous prefix supported by the validated checkpoint."""
+
+    if state.plan is None:
+        return ()
+    completed: list[ProgressPhase] = ["planning"]
+    result = state.execution_result
+    expected_step_position = (
+        state.plan.steps[state.plan_position].position
+        if state.plan_position < len(state.plan.steps)
+        else None
+    )
+    if (
+        isinstance(result, TrustedDynamicExecutionResult)
+        and result.success
+        and result.step_position == expected_step_position
+        and isinstance(result.canonical_evidence, dict)
+        and state.trusted_dynamic_evidence == result.canonical_evidence
+        and load_dynamic_evidence(str(task_id), str(task_run_id)) == result.canonical_evidence
+        and state.failure is None
+    ):
+        completed.extend(("preparation", "computation"))
+        if state.verification is not None and state.verification.verdict == "PASS":
+            completed.append("validation")
+    return tuple(completed)
 
 
 def _validate_checkpoint_geochange_evidence(

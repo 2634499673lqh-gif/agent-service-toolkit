@@ -28,6 +28,7 @@ from service.task_lifecycle import (
     TaskLifecycleInconsistentStateError,
     TaskNotFoundError,
 )
+from service.task_run_progress import project_progress
 from service.task_run_service import TaskRunService
 from service.task_service import TaskService
 from service.trace_service import TraceService
@@ -246,7 +247,8 @@ async def get_task_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=RESOURCE_NOT_FOUND_DETAIL,
         )
-    return TaskRunResponse.model_validate(task_run)
+    response = TaskRunResponse.model_validate(task_run)
+    return response.model_copy(update={"progress": project_progress(task_id, run_id, task_run)})
 
 
 @task_router.get("/{task_id}/runs/{run_id}/map", response_model=GeoChangeMapResponse)

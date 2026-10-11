@@ -16,6 +16,7 @@ from geochange.models import GeoChangeTask
 from schema.planner import PlanStep
 
 from .planner import PlannerTaskInput
+from .progress import RuntimeProgressSink
 
 MAX_CONTEXT_SOURCES = 8
 MAX_CONTEXT_BYTES = 8_192
@@ -53,7 +54,7 @@ class ContextSource(BaseModel):
 class ContextEnvelope(BaseModel):
     """The complete bounded context passed to one capability dispatch."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
 
     task_input: PlannerTaskInput
     current_step: PlanStep
@@ -63,6 +64,7 @@ class ContextEnvelope(BaseModel):
     geochange_task: GeoChangeTask | None = Field(default=None, exclude=True)
     geochange_aoi_evidence: dict[str, str] = Field(default_factory=dict, exclude=True)
     geochange_evidence: dict[str, str] = Field(default_factory=dict, exclude=True)
+    progress_sink: RuntimeProgressSink | None = Field(default=None, exclude=True)
     sources: tuple[ContextSource, ...] = Field(
         default_factory=tuple,
         max_length=MAX_CONTEXT_SOURCES,

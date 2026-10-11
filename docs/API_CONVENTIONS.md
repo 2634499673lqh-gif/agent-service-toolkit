@@ -110,6 +110,25 @@ inspection is tenant-scoped through the owning Task and exposes only persisted
 identity, run number, lifecycle status, and timestamps. No runtime metadata or
 application idempotency contract is exposed.
 
+### V0.4 Execution progress (Implementation A; COMPLETE / APPROVED)
+
+The existing TaskRun GET response now has an additive nullable `progress`
+object. Legacy runs and runs without a valid snapshot return `progress: null`;
+authorization and the TaskRun-to-Task tenant scope are resolved before the
+snapshot is read. Real Jianghan Landsat runs report server-observed `planning`,
+`preparation`, `computation`, `validation`, and `finalization` phases, attempt
+and reset identity, run state, completed phase count, and phase-completion
+percentage. The percentage is not elapsed time or a remaining-time estimate.
+Progress is observational: committed TaskRun terminal state and the existing
+verifier facts remain authoritative; the snapshot cannot make a run successful.
+Each new attempt first commits a strictly newer
+server-owned `TaskRun.updated_at` generation. A snapshot or callback whose
+generation does not match the current running row is unavailable, including
+when snapshot replacement fails or a process restarts. Because the existing
+schema has no durable binding between a terminal transition and its fenced
+attempt, terminal snapshots are fail-closed as `progress: null`; the terminal
+TaskRun status and verified result metadata remain independently available.
+
 ## Phase 4 runtime boundary (ADR-006/T040/T050; implementation and integration validated)
 
 T050 implements the internal `TaskRuntimeService.execute_run(...)` entry point

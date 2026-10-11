@@ -45,6 +45,7 @@ from .observability import (
     sanitize_error_text,
 )
 from .planner import PlannerNode, PlannerOutputInvalidError
+from .progress import RuntimeProgressController
 from .replan import ReplanState, apply_replacement_plan, consume_replan
 from .retry import consume_retry
 from .risk import RiskRoute, classify_action
@@ -163,6 +164,7 @@ class RuntimeGraphContext(BaseModel):
 
     approval_gate: ApprovalGate | None = None
     observation_sink: RuntimeObservationSink | None = None
+    progress_sink: RuntimeProgressController | None = None
     request_id: UUID | None = None
     skill: SkillSpec | None = None
 
@@ -305,8 +307,14 @@ def build_runtime_graph(
         started_at = datetime.now(UTC)
         runtime_context = getattr(runtime, "context", None)
         observation_sink = getattr(runtime_context, "observation_sink", None)
+        progress_controller = getattr(runtime_context, "progress_sink", None)
+        progress_sink = (
+            None if progress_controller is None else progress_controller.current_attempt()
+        )
         request_id = getattr(runtime_context, "request_id", None)
         try:
+            if progress_sink is not None:
+                await progress_sink.start_phase("planning")
             plan = await planner_node(state.task_input)
             if runtime_context is not None and runtime_context.skill is not None:
                 runtime_context.skill.validate_plan(plan)
@@ -343,6 +351,8 @@ def build_runtime_graph(
                     )
         except PlannerOutputInvalidError as error:
             failure = _failure(failure_classifier, error.code)
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             if observation_sink is not None:
                 await observation_sink.record(
                     _planner_observation(state, request_id, started_at, failure)
@@ -355,6 +365,8 @@ def build_runtime_graph(
                 else "skill_plan_invalid"
             )
             failure = _failure(failure_classifier, code)
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             if observation_sink is not None:
                 await observation_sink.record(
                     _planner_observation(state, request_id, started_at, failure)
@@ -362,6 +374,8 @@ def build_runtime_graph(
             return {"failure": failure}
         except Exception:
             failure = _failure(failure_classifier, "planner_execution_failed")
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             if observation_sink is not None:
                 await observation_sink.record(
                     _planner_observation(state, request_id, started_at, failure)
@@ -370,6 +384,8 @@ def build_runtime_graph(
         geochange_task_data = (
             None if geochange_task is None else geochange_task.model_dump(mode="json")
         )
+        if progress_sink is not None:
+            await progress_sink.complete_phase("planning")
         return {
             "plan": plan.model_dump(mode="json"),
             "geochange_task": geochange_task_data,
@@ -383,6 +399,10 @@ def build_runtime_graph(
         started_at = datetime.now(UTC)
         runtime_context = getattr(runtime, "context", None)
         observation_sink = getattr(runtime_context, "observation_sink", None)
+        progress_controller = getattr(runtime_context, "progress_sink", None)
+        progress_sink = (
+            None if progress_controller is None else progress_controller.current_attempt()
+        )
         request_id = getattr(runtime_context, "request_id", None)
 
         async def observe(
@@ -542,9 +562,29 @@ def build_runtime_graph(
                 "verification": None,
                 "failure": None,
             }
+        if progress_sink is not None:
+            from geochange.runtime_caps import SummarizeChangeRuntimeCapability
+
+            task = context.geochange_task
+            if (
+                selected_capability == "summarize_change"
+                and capability_dispatcher.is_exact_capability(
+                    selected_capability, SummarizeChangeRuntimeCapability
+                )
+                and task is not None
+                and task.aoi_key == "jianghan_district_420103"
+                and task.indicator == "NDVI"
+                and task.data_mode == "real_stac_landsat_local"
+                and context.runtime_task_id
+                and context.runtime_task_run_id
+            ):
+                context = context.model_copy(update={"progress_sink": progress_sink})
         try:
             raw_result = await capability_dispatcher.dispatch(selected_capability, step, context)
         except Exception:
+            if progress_sink is not None:
+                for phase in ("validation", "computation", "preparation"):
+                    await progress_sink.fail_phase(phase)
             failure = _failure(failure_classifier, "capability_execution_failed")
             await observe(
                 agent_status="failed",
@@ -641,6 +681,8 @@ def build_runtime_graph(
                     ),
                 )
             except (SkillValidationError, ValueError, TypeError):
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("validation")
                 failure = _failure(failure_classifier, "skill_result_invalid")
                 await observe(
                     agent_status="failed",
@@ -656,6 +698,8 @@ def build_runtime_graph(
                     "failure": failure,
                 }
         if not result.success:
+            if progress_sink is not None:
+                await progress_sink.fail_phase("validation")
             failure = failure_classifier.classify(
                 result.error_code or "executor_failed", result.error_message
             )
@@ -691,6 +735,8 @@ def build_runtime_graph(
         }
         if isinstance(result, TrustedDynamicExecutionResult):
             if not isinstance(result.canonical_evidence, dict):
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("validation")
                 failure = _failure(failure_classifier, "capability_output_invalid")
                 return {
                     "capability_context": context.model_dump(mode="json"),
@@ -698,6 +744,8 @@ def build_runtime_graph(
                     "failure": failure.model_dump(mode="json"),
                 }
             if load_dynamic_evidence(state.task_id, state.task_run_id) != result.canonical_evidence:
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("validation")
                 failure = _failure(failure_classifier, "capability_output_invalid")
                 return {
                     "capability_context": context.model_dump(mode="json"),
@@ -727,7 +775,10 @@ def build_runtime_graph(
             return {"failure": _failure(failure_classifier, "approval_reference_invalid")}
         return {}
 
-    async def verify_step(state: AgentState) -> dict[str, object]:
+    async def verify_step(
+        state: AgentState,
+        runtime: Runtime[RuntimeGraphContext],
+    ) -> dict[str, object]:
         if state.plan is None or state.execution_result is None:
             return {"failure": _failure(failure_classifier, "runtime_verification_input_invalid")}
         if isinstance(state.execution_result, TrustedDynamicExecutionResult):
@@ -738,6 +789,13 @@ def build_runtime_graph(
             ):
                 return {"failure": _failure(failure_classifier, "skill_result_invalid")}
         step = state.plan.steps[state.plan_position]
+        runtime_context = getattr(runtime, "context", None)
+        progress_controller = getattr(runtime_context, "progress_sink", None)
+        progress_sink = (
+            None if progress_controller is None else progress_controller.current_attempt()
+        )
+        if progress_sink is not None:
+            await progress_sink.start_phase("validation")
         try:
             result = await verifier_node(
                 state.task_input,
@@ -745,23 +803,43 @@ def build_runtime_graph(
                 state.execution_result,
             )
         except VerifierOutputInvalidError as error:
+            if progress_sink is not None:
+                await progress_sink.fail_phase("validation")
             return {"failure": _failure(failure_classifier, error.code)}
         except Exception:
+            if progress_sink is not None:
+                await progress_sink.fail_phase("validation")
             return {"failure": _failure(failure_classifier, "verifier_execution_failed")}
         if result.verdict == "FAIL":
+            if progress_sink is not None:
+                await progress_sink.fail_phase("validation")
             failure = failure_classifier.classify("recoverable_verifier_inadequacy", result.reason)
             return {
                 "verification": result.model_dump(mode="json"),
                 "failure": failure.model_dump(mode="json"),
             }
+        if progress_sink is not None:
+            await progress_sink.complete_phase("validation")
         return {"verification": result.model_dump(mode="json"), "failure": None}
 
-    async def retry_step(state: AgentState) -> dict[str, object]:
+    async def retry_step(
+        state: AgentState,
+        runtime: Runtime[RuntimeGraphContext],
+    ) -> dict[str, object]:
         if state.failure is None:
             return {"failure": _failure(failure_classifier, "retry_without_failure")}
         decision = consume_retry(state.failure, state.retry_count)
         if not decision.retry_allowed:
             return {"failure": _failure(failure_classifier, "retry_budget_exhausted")}
+        runtime_context = getattr(runtime, "context", None)
+        progress_controller = getattr(runtime_context, "progress_sink", None)
+        if progress_controller is not None:
+            await progress_controller.reset_attempt(
+                reset_reason="retry",
+                retry_count=decision.retry_count,
+                replan_count=state.replan_count,
+                completed_phases=("planning",),
+            )
         return {
             "retry_count": decision.retry_count,
             "execution_result": None,
@@ -778,9 +856,21 @@ def build_runtime_graph(
         decision = consume_replan(state.failure, state.replan_count)
         if not decision.replan_allowed:
             return {"failure": _failure(failure_classifier, "replan_budget_exhausted")}
+        runtime_context = getattr(runtime, "context", None)
+        progress_controller = getattr(runtime_context, "progress_sink", None)
+        if progress_controller is not None:
+            await progress_controller.reset_attempt(
+                reset_reason="replan",
+                retry_count=state.retry_count,
+                replan_count=decision.replan_count,
+            )
+            progress_sink = progress_controller.current_attempt()
+        else:
+            progress_sink = None
+        if progress_sink is not None:
+            await progress_sink.start_phase("planning")
         try:
             replacement_plan = await planner_node(state.task_input)
-            runtime_context = getattr(runtime, "context", None)
             if runtime_context is not None and runtime_context.skill is not None:
                 runtime_context.skill.validate_plan(replacement_plan)
             else:
@@ -801,6 +891,8 @@ def build_runtime_graph(
             )
             replacement = apply_replacement_plan(previous, replacement_plan, decision)
         except PlannerOutputInvalidError as error:
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             return {"failure": _failure(failure_classifier, error.code)}
         except SkillValidationError as error:
             code = (
@@ -808,9 +900,15 @@ def build_runtime_graph(
                 if str(error) == "confirmed intent is required for this Skill"
                 else "skill_plan_invalid"
             )
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             return {"failure": _failure(failure_classifier, code)}
         except Exception:
+            if progress_sink is not None:
+                await progress_sink.fail_phase("planning")
             return {"failure": _failure(failure_classifier, "planner_execution_failed")}
+        if progress_sink is not None:
+            await progress_sink.complete_phase("planning")
         return {
             "capability_context": None,
             "geochange_task": state.geochange_task.model_dump(mode="json")

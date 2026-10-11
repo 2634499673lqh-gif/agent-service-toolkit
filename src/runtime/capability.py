@@ -136,6 +136,11 @@ class CapabilityDispatcher[CapabilityContextT]:
             return _terminal_failure(_CAPABILITY_METADATA_INVALID)
         return metadata
 
+    def is_exact_capability(self, name: str, expected_type: type[object]) -> bool:
+        """Check server-owned capability identity, never the name alone."""
+
+        return type(self._capabilities.get(name)) is expected_type
+
     def _normalize_result(
         self,
         raw_result: object,
