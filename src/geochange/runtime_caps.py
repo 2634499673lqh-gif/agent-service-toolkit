@@ -459,6 +459,8 @@ class SummarizeChangeRuntimeCapability(_Base):
                     "scene_provenance": period_provenance,
                     "target_crs": pair.pair_grid.crs,
                     "target_dimensions": [pair.pair_grid.height, pair.pair_grid.width],
+                    "provider": "microsoft-planetary-computer",
+                    "sensor": "Landsat 8/9 Collection 2 Level 2",
                 }
             )
             product.metrics["aoi_area_m2"] = float(aoi.area_m2)

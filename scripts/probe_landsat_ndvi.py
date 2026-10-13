@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from geochange.aoi import load_trusted_aoi
 from geochange.landsat import DiscoveryLimits, default_period_pair, prepare_landsat_operation
 from geochange.landsat_ndvi import compute_landsat_ndvi_product, verify_landsat_ndvi_product
+from geochange.ndvi_validation import capture_ndvi_inputs
 
 
 def main() -> int:
@@ -29,6 +30,18 @@ def main() -> int:
     )
     product = compute_landsat_ndvi_product(prepared, artifact_dir=artifact_dir)
     verification = verify_landsat_ndvi_product(product, prepared, artifact_root=artifact_dir)
+    capture_dir = os.environ.get("TASKPILOT_NDVI_CAPTURE_DIR")
+    capture_manifest = (
+        capture_ndvi_inputs(
+            prepared,
+            product,
+            capture_dir,
+            artifact_root=artifact_dir,
+            aoi_hash=load_trusted_aoi().source_hash,
+        )
+        if capture_dir
+        else None
+    )
     print(
         json.dumps(
             {
@@ -39,6 +52,7 @@ def main() -> int:
                 "metrics": product.metrics,
                 "verification": verification,
                 "artifacts": product.artifacts,
+                "capture": capture_manifest,
             },
             indent=2,
             sort_keys=True,

@@ -146,7 +146,7 @@ The approved Product path persists a Task and TaskRun, dispatches the existing r
 
 The supported portfolio mode is `CACHED_REAL_SENTINEL2_RASTER`: deterministic NumPy code reads two small, checksum-verified real Sentinel-2 B04/B08 crops from `data/geochange-fixtures/real-sentinel2-v1/`. Live STAC metadata is optional, but it must bind to those cached scene and asset identities; no remote raster is downloaded or processed per run. Batch C adds evaluation evidence and presentation documentation only. It does not add worker infrastructure, production-scale GIS, live remote COG processing, or broader AOI/provider coverage. A quality failure can consume the existing single replan budget; exhaustion is terminal.
 
-## V0.4 Implementation A — Execution Progress Observability (COMPLETE / APPROVED)
+## V0.4 Implementation A — Execution Progress Observability (COMPLETE / APPROVED / COMMITTED)
 
 Implementation A adds an additive progress projection to the existing tenant-
 scoped TaskRun GET route and a compact React progress panel. Real Jianghan
@@ -164,6 +164,15 @@ can remain stale after a failed reset publication. Terminal progress therefore
 fails closed to `null`; TaskRun terminal status and verified results remain
 authoritative and are projected independently.
 The required PostgreSQL concurrency validation executes against a disposable
-PostgreSQL 16 database. Implementation A is COMPLETE / APPROVED after
-independent Strong Review. Implementation B remains unstarted, and the V0.4
-Final Audit remains pending.
+PostgreSQL 16 database. Implementation A is COMPLETE / APPROVED / COMMITTED
+after independent Strong Review. Implementation B is COMPLETE / STRONG REVIEW
+APPROVED and remains uncommitted. B1 projects quality claims only from the
+tenant-scoped published dynamic-evidence sidecar. B2 is an offline numerical
+consistency check for one captured prepared-input/output package: PASS means
+internal integrity and independent NDVI/mask agreement within frozen
+tolerances; it does not authenticate a persisted TaskRun or external
+remote-sensing accuracy. The retained genuine Jianghan capture passed the
+numerical validator; no fresh capture passed after the later provider HTTP 429.
+The full dynamic TaskRun-to-React path remains unexecuted, and the unrelated
+NDBI fixture failures remain baseline debt. V0.4 Final Audit: NOT STARTED.
+V0.4 PR / merge: NOT STARTED.

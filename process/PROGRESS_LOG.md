@@ -1,3 +1,31 @@
+## 2026-10-13 — TaskPilot V0.4 Implementation B final approval status synchronization
+
+Independent final focused Strong Review B returned APPROVED. The final
+binary-mask blocker is closed: the offline validator rejects non-binary raw
+uint8 values in each of the three mask artifacts before boolean conversion.
+The unchanged retained genuine Jianghan capture remains numerical PASS with
+26,107 compared pixels and zero mask mismatch. The later fresh provider
+attempt received HTTP 429; no fresh capture PASS is claimed.
+
+Current status: Implementation A **COMPLETE / APPROVED / COMMITTED**;
+Implementation B **COMPLETE / STRONG REVIEW APPROVED**, awaiting owner-managed
+GitHub Desktop commit/push. V0.4 Final Audit **NOT STARTED**; V0.4 PR / merge
+**NOT STARTED**. The B2 standalone PASS remains an internal package-integrity
+and numerical-consistency result, not authenticated TaskRun provenance or
+external remote-sensing accuracy. Full dynamic TaskRun-to-React end-to-end
+acceptance remains unexecuted. The unrelated NDBI fixture failures remain
+baseline debt; V0.4 B PostgreSQL API suites were skipped when
+`TASKPILOT_TEST_DATABASE_URL` was unset. Earlier NOT APPROVED findings and
+corrective chronology below are preserved. This entry changes documentation
+only.
+
+Verification for this status sync: `git status --short`, `git diff --check`,
+and a V0.4 status scan of the three updated documents plus `ROADMAP.md` and
+`TASK_BACKLOG.md`; no implementation tests were rerun. Learner focus: Strong
+Review approval closes B's review gate, while the separate Final Audit and
+PR/merge remain pending. Suggested next action: owner-managed GitHub Desktop
+commit/push.
+
 ### 2026-10-11 — TaskPilot V0.4 Implementation A final status synchronization
 
 Independent Strong Review approved Implementation A after the A1 terminal
@@ -6632,3 +6660,99 @@ promotion-race regressions. PostgreSQL progress/promotion/cancellation tests,
 lifecycle tests, and authenticated TaskRun API tests ran against an isolated
 PostgreSQL 16 database. The three NDBI runtime PostgreSQL failures reproduced
 identically on an unchanged HEAD archive and remain frozen baseline defects.
+
+## 2026-10-11 — V0.4 Implementation B (B1/B2) ready for Strong Review
+
+Added a verifier-bound Landsat NDVI quality report projection to the existing map response and a compact React quality panel. Reports include AOI raster denominator, requested/actual scene evidence, grid/provider metadata, 70/60/50 valid-data gates, common-mask means, verifier status, and explicit scientific limitations; incomplete or non-passed evidence returns unavailable/integrity failure and East Lake remains on its legacy path.
+
+Added `scripts/validate_ndvi_science.py` and `src/geochange/ndvi_validation.py`. An explicitly selected probe execution can capture the exact float32 prepared Red/NIR arrays, masks, provenance, fingerprints, and production numeric GeoTIFFs. The independent reference reconstructs masks and computes `(NIR-Red)/(NIR+Red)` without production NDVI helpers, then reports PASS/FAIL/NOT_COMPARABLE/ERROR with zero-relative tolerances and bounded fingerprints.
+
+Validation: focused B tests pass (`20 passed, 1 skipped` including existing Landsat tests), web tests pass (3), Vite production build/typecheck pass, Ruff pass, Python compile pass. Real-provider capture was not run in this environment; no synthetic result is presented as real-data acceptance. No commit or push was performed.
+
+Learner notes: coverage is a denominator-based data-quality measure, while numerical agreement is a separate computation check. Read `src/geochange/quality.py`, `src/geochange/ndvi_validation.py`, `src/service/task_api.py`, and `web/src/main.tsx`. Exercise: create a one-pixel artifact corruption and observe the validator return FAIL without changing the production raster. Do not treat either report as external accuracy or ecological significance.
+
+Next: independent Strong Review B.
+
+## 2026-10-11 — Strong Review B outcome
+
+Independent Strong Review B and focused re-review returned NOT APPROVED. The reviewer confirmed the explicit artifact-root fix, frontend build, and digest/count checks, but identified remaining substantive evidence-binding gaps in the independent validator (canonical AOI/period/scene/band identity, trusted grid/NoData/output binding) and quality report (canonical scene/grid binding and complete QA warning projection). No reviewer-side files or Git state were changed. Further work requires a minimum blocker-fix implementation session followed by focused re-review.
+
+## 2026-10-11 — Evidence-binding blocker closure attempt
+
+Strengthened B1 canonical checks with AOI hash, metrics digest, count/coverage consistency, target-grid binding, and explicit QA policy/warning availability. The report now exposes QA policy and warning values without fabricating an empty collection. Strengthened B2 capture/validation with AOI and preparation provenance, period identity, artifact identity/fingerprints, grid CRS/dimensions/affine, numeric and mask NoData rules, invalid-region NoData checks, and artifact validation before NOT_COMPARABLE.
+
+Focused tests: 5 passed; frontend build/typecheck, Ruff, Pyrefly, lock and diff checks passed. Real Jianghan validation remains unavailable because provider execution was not run in this environment. No commit or push.
+
+Next gate: focused Strong Review B.
+
+## 2026-10-11 — Evidence-binding closure ready for focused review
+
+Added explicit capture manifest bindings for trusted AOI hash, requested periods, selected scene IDs/dates, Landsat B4/B5 roles, preparation contract, artifact identities/fingerprints, grid dimensions/CRS/affine, and NoData policy. Validation rejects incomplete or altered bindings, validates artifacts before NOT_COMPARABLE, rejects finite invalid-region output pixels, and preserves independent scalar NDVI arithmetic and frozen tolerances.
+
+Quality reports now require AOI hash, canonical scene provenance, metrics digest, target-grid/scene binding, finite metrics, count/coverage consistency, and expose QA policy/warnings with availability semantics. Focused B tests pass (5), frontend build/typecheck, Ruff, Pyrefly, lock and diff checks pass. The probe passes the trusted Jianghan AOI hash explicitly; no real provider run was attempted here, so real-data evidence remains unavailable. No commit or push.
+
+Next gate: focused Strong Review B; this entry does not self-approve Implementation B.
+
+## 2026-10-12 — V0.4 Implementation B Round 6 contract consistency closure
+
+Closed the remaining validation-contract gaps in the shared evidence boundary.
+B1 QA policy and warnings now come only from canonical period records; missing
+fields remain unavailable, top-level warnings cannot fill them, differing
+period policies retain their period identity, and the API/UI expose per-period
+status. Quality projection now requires the approved CRS/resolution, complete
+affine, metrics digest and mandatory numeric/mask artifact checksum evidence.
+
+B2 validation now enforces strict UTC periods, Landsat scene/date bindings,
+complete period preparation provenance, approved calibration/resampling and
+composite policies, source identity hashes, complete grid resolution/affine,
+float32 numeric rasters and exact artifact fingerprint sets. The unchanged
+genuine Jianghan capture still passes: 26,107 compared pixels, zero mask
+mismatch, period MaxAE 1.1921e-07 and delta MaxAE 2.3842e-07. Standalone PASS
+remains an internal numerical-consistency result, not TaskRun authentication or
+external accuracy. No commit or push was performed.
+
+Focused B tests: 35 passed. Independent Strong Review B remains required; this
+entry does not self-approve Implementation B or V0.4.
+
+## 2026-10-12 — V0.4 Implementation B focused mask-domain fix
+
+Closed the confirmed B2 mask-domain defect with the smallest local change:
+`_read_raster(mask=True)` now validates raw uint8 pixels are exactly 0 or 1
+before converting them to boolean. Parametrized disposable-capture tests cover
+all three mask artifacts, updated-hash mutations, and stale-hash tampering.
+The retained genuine Jianghan capture remains PASS with 26,107 compared
+pixels and zero mask mismatch. Focused validator/regression tests and affected
+static checks pass; Implementation B remains unapproved and awaits independent
+focused Strong Review.
+
+## 2026-10-11 — Focused Blocker Closure Round 2
+
+Fixed Rasterio affine comparison by normalizing dataset transforms to six affine coefficients. Persisted TaskRun result metadata now retains the server-owned canonical dynamic evidence binder; quality projection requires binder equality for periods, metrics, provenance, selected scenes and artifact references. Quality checks now bind canonical scene provenance, AOI hash, dimensions/grid and nested QA warning evidence, distinguishing verified empty warnings from unavailable evidence. B2 capture manifests include explicit scene and B4/B5 role bindings, and validation rejects incomplete identity, changed NoData, affine/CRS mismatches and finite invalid-region outputs before NOT_COMPARABLE.
+
+Focused B tests: 6 passed; affected runtime/Landsat regression: 20 passed, 1 skipped; frontend build, Ruff, Pyrefly, lock and diff checks pass. Real Jianghan official capture was not accessible in this environment; no synthetic result is reported as real acceptance. No commit or push.
+
+Status: ready for independent focused Strong Review B; not self-approved.
+
+## 2026-10-11 — Implementation B Round 3 evidence authority and integration closure
+
+Repaired the canonical evidence path by removing the incompatible result_metadata binder field and projecting dynamic quality reports only from the tenant-scoped run's published `.dynamic_evidence.json` loaded through the current attempt authority. Metadata claims must equal the independently loaded canonical binder; missing/stale sidecars fail closed. Per-period scene provenance now supplies acquisition dates, QA policy and warning availability semantics.
+
+The B2 validator now normalizes Rasterio affine transforms and performs semantic CRS comparison, including EPSG:32649 versus equivalent WKT under environments without `proj.db`. The previously retained real Jianghan capture now passes the official validator: 26,107 compared pixels, mask mismatch 0, period A/B/delta MAE/RMSE/MaxAE within frozen tolerances, exit code 0. This proves numerical agreement for that capture and does not claim external accuracy.
+
+Focused B tests: 6 passed; affected runtime/Landsat tests previously 20 passed / 1 skipped; web tests 3 passed; build, Ruff, Pyrefly, lock and diff checks pass. No commit or push. Independent focused Strong Review remains the next gate.
+
+## 2026-10-11 — V0.4 Implementation B Round 4 final focused closure
+
+Recorded the authorized B2 scope decision: the standalone CLI PASS is limited to internal captured-package integrity and independent NDVI/mask numerical agreement. It does not authenticate persisted TaskRun provenance, protect against coordinated replacement of the complete local package, or establish external remote-sensing accuracy. The server-owned published dynamic-evidence sidecar remains the only authenticated production provenance path.
+
+B1 quality projection now binds canonical acquisition dates as well as scene IDs, preserves per-period QA policy/warning availability, and reports verified, partial, or unavailable QA status. The React panel no longer interprets an empty warning list as verified absence when evidence is unavailable. B2 official validation against the retained genuine Jianghan capture remains PASS: 26,107 pixels, zero mask mismatch, period/delta errors below frozen tolerances, exit code 0.
+
+Focused B tests: 6 passed; frontend tests/build, Ruff, Pyrefly, lock and diff checks pass. PostgreSQL API suites were skipped because TASKPILOT_TEST_DATABASE_URL is unset. Implementation B is not approved; next gate is one independent focused Strong Review.
+
+## 2026-10-12 — V0.4 Implementation B Round 5 focused validation invariant closure
+
+B1 now evaluates QA policy and warning availability per canonical period. Missing nested warning evidence is not replaced by top-level empty warnings; verified, partial and unavailable states remain distinct, legitimate period-specific policies are preserved, and acquisition dates require strict ISO date values matching canonical scene provenance. Quality projection now requires canonical provider/sensor, AOI hash, complete affine, metrics and artifact bindings, and exposes the full affine transform.
+
+B2 capture validation now requires a 64-character SHA-256 AOI hash, typed and ordered UTC periods, valid scene IDs/dates, SR_B4/SR_B5 roles with the approved calibration policy, complete preparation provenance, and required grid/artifact identity fields. The standalone scope decision remains unchanged: numerical PASS is not production TaskRun authentication or external accuracy.
+
+Focused B tests: 15 QA/validation tests pass; retained genuine Jianghan official validator remains PASS with 26,107 compared pixels and zero mask mismatch. Frontend build, Ruff, Pyrefly, lock and diff checks pass. PostgreSQL suites remain skipped because TASKPILOT_TEST_DATABASE_URL is unset. Implementation B remains awaiting independent focused Strong Review.

@@ -684,3 +684,13 @@ NDVI-valid data coverage `>=60%` per period and common-comparison valid-data
 coverage `>=50%`; they are not vegetation coverage or FVC. Historical
 provisional and NOT APPROVED records remain unchanged. PR / merge main remain
 pending.
+
+## 2026-10-11 — V0.4 B2 standalone numerical-consistency scope decision
+
+This current-state decision records the approved Round 4 interpretation of B2. The offline validator operates on one captured set of prepared Red/NIR inputs and associated production numeric outputs. PASS means the supplied package passes bounded internal integrity/raster identity checks and the independent NDVI/mask reconstruction agrees within the frozen tolerances. PASS does not authenticate origin from a persisted TaskRun/attempt, protect against coordinated replacement of the entire locally supplied package, or establish external remote-sensing accuracy. Any authenticated TaskRun provenance remains the responsibility of the server-owned published dynamic-evidence sidecar and tenant-scoped API path.
+
+At the time of this scope decision, Implementation B was awaiting independent focused Strong Review. Historical V0.4 review findings and NOT APPROVED records remain unchanged.
+
+## 2026-10-13 — V0.4 Implementation B final approval status synchronization
+
+The independent final focused Strong Review B returned APPROVED after verifying the binary-mask domain fix for all three mask artifacts. Implementation A is COMPLETE / APPROVED / COMMITTED; Implementation B is COMPLETE / STRONG REVIEW APPROVED and is eligible for owner-managed commit/push. V0.4 Final Audit: NOT STARTED. V0.4 PR / merge: NOT STARTED. This is an administrative status update and does not change the standalone B2 scope decision above or claim external accuracy, authenticated TaskRun provenance for the offline validator, fresh provider capture success after HTTP 429, or full dynamic TaskRun-to-React acceptance.
