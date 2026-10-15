@@ -114,7 +114,10 @@ async def test_attempt_leases_pin_late_callbacks_to_the_superseded_identity():
     assert store.events[-1]["attempt_id"] != second_attempt_id
 
     await reporter.reset_attempt(reset_reason="replan", retry_count=1, replan_count=1)
-    assert reporter.current_attempt() is None
+    third = reporter.current_attempt()
+    assert third is not None
+    assert getattr(third, "attempt_id") != second_attempt_id
+    assert third.artifact_dir() != second.artifact_dir()
     assert len(store.events) == 1
 
 

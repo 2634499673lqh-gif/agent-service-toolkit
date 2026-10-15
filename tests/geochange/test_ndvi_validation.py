@@ -219,3 +219,140 @@ def test_validator_rejects_mask_mutation_without_hash_update(tmp_path: Path):
     )
     assert result.returncode != 0
     assert json.loads(result.stdout)["status"] == "ERROR"
+
+
+@pytest.fixture
+def genuine_capture_copy(tmp_path: Path):
+    source = Path(
+        r"C:\Users\Lin\AppData\Local\Temp\taskpilot-review-f9cd0b4eb4ab414696fb3fc515ffeca1\capture"
+    )
+    if not (source / "manifest.json").is_file():
+        pytest.skip("retained real capture unavailable")
+    capture = tmp_path / "capture"
+    shutil.copytree(source, capture)
+    return capture
+
+
+@pytest.mark.parametrize(
+    "artifact,domain,mutation,expected",
+    [
+        ("ndvi_before_raster", "a_only", "offset", "FAIL"),
+        ("ndvi_after_raster", "b_only", "offset", "FAIL"),
+        ("ndvi_before_raster", "a_only", "nan", "ERROR"),
+        ("ndvi_after_raster", "b_only", "nan", "ERROR"),
+        ("ndvi_before_raster", "a_only", "inf", "ERROR"),
+        ("ndvi_after_raster", "b_only", "inf", "ERROR"),
+        ("ndvi_before_raster", "common", "offset", "FAIL"),
+        ("ndvi_after_raster", "common", "offset", "FAIL"),
+        ("ndvi_change_raster", "common", "offset", "FAIL"),
+    ],
+)
+def test_numerical_validation_domains(genuine_capture_copy, artifact, domain, mutation, expected):
+    import rasterio
+
+    capture = genuine_capture_copy
+    with np.load(capture / "inputs.npz", allow_pickle=False) as inputs:
+        _, valid_a = _reference(inputs["red_a"], inputs["nir_a"], inputs["prep_a"], inputs["aoi_a"])
+        _, valid_b = _reference(inputs["red_b"], inputs["nir_b"], inputs["prep_b"], inputs["aoi_b"])
+    selected = {
+        "a_only": valid_a & ~valid_b,
+        "b_only": valid_b & ~valid_a,
+        "common": valid_a & valid_b,
+    }[domain]
+    locations = np.argwhere(selected)
+    assert len(locations), "genuine capture must exercise this comparison domain"
+    row, column = locations[0]
+    raster_path = capture / f"{artifact}.tif"
+    with rasterio.open(raster_path, "r+") as dataset:
+        values = dataset.read(1)
+        values[row, column] = (
+            values[row, column] + 0.25
+            if mutation == "offset"
+            else np.nan
+            if mutation == "nan"
+            else np.inf
+        )
+        dataset.write(values, 1)
+    manifest_path = capture / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifact_sha256"][artifact] = hashlib.sha256(raster_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_ndvi_science.py", str(capture)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    report = json.loads(result.stdout)
+    assert result.returncode == 2, result.stderr
+    assert report["status"] == expected
+    if expected == "FAIL":
+        key = {
+            "ndvi_before_raster": "period_a",
+            "ndvi_after_raster": "period_b",
+            "ndvi_change_raster": "delta",
+        }[artifact]
+        assert report[key]["maxae"] > 0.24
+        assert report["mask_mismatch_count"] == 0
+    else:
+        assert "valid-region pixels must be finite" in report["error"]
+    print(
+        json.dumps(
+            {
+                "artifact": artifact,
+                "domain": domain,
+                "mutation": mutation,
+                "status": report["status"],
+                "exit": result.returncode,
+            }
+        )
+    )
+
+
+def test_genuine_unchanged_capture_passes(genuine_capture_copy):
+    report = validate_capture(genuine_capture_copy)
+    assert report["status"] == "PASS"
+    assert report["compared_pixels"] == 26107
+    assert report["mask_mismatch_count"] == 0
+    assert all(
+        report[key]["maxae"] <= report[key]["tolerance"]
+        for key in ("period_a", "period_b", "delta")
+    )
+
+
+def test_empty_common_capture_remains_not_comparable(genuine_capture_copy):
+    import rasterio
+
+    capture = genuine_capture_copy
+    input_path = capture / "inputs.npz"
+    with np.load(input_path, allow_pickle=False) as bundle:
+        arrays = {key: bundle[key] for key in bundle.files}
+    arrays["prep_b"][:] = False
+    np.savez_compressed(input_path, **arrays)
+    manifest_path = capture / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["input_sha256"] = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    for name, value in (
+        ("ndvi_after_raster", np.nan),
+        ("ndvi_change_raster", np.nan),
+        ("ndvi_valid_after", 0),
+        ("ndvi_common_comparison", 0),
+    ):
+        path = capture / f"{name}.tif"
+        with rasterio.open(path, "r+") as dataset:
+            values = dataset.read(1)
+            values[:] = value
+            dataset.write(values, 1)
+        manifest["artifact_sha256"][name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "scripts/validate_ndvi_science.py", str(capture)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    report = json.loads(result.stdout)
+    assert report["status"] == "NOT_COMPARABLE", report
+    assert result.returncode == 2
+    assert report["compared_pixels"] == 0
+    assert report["mask_mismatch_count"] == 0

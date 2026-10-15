@@ -30,8 +30,8 @@ def _metadata():
         "verifier_status": "passed",
         "execution_mode": "real_stac_landsat_local",
         "analysis_periods": {
-            "period_a": "2023-07-01/2023-08-01",
-            "period_b": "2024-07-01/2024-08-01",
+            "period_a": "2023-07-01/2023-07-31",
+            "period_b": "2024-07-01/2024-07-31",
         },
         "metrics": metrics,
         "selected_scene_evidence": {
@@ -61,6 +61,9 @@ def _metadata():
         },
     }
     artifact_names = {
+        "ndvi_before": "ndvi_before",
+        "ndvi_after": "ndvi_after",
+        "ndvi_change": "ndvi_change",
         "ndvi_before_raster": "ndvi_before_raster",
         "ndvi_after_raster": "ndvi_after_raster",
         "ndvi_change_raster": "ndvi_change_raster",
@@ -200,4 +203,42 @@ def test_quality_report_rejects_malformed_warning_values():
     metadata["provenance"]["scene_provenance"]["period_a"]["best_effort_warnings"] = [1]
     metadata["canonical_evidence"]["provenance"] = metadata["provenance"]
     with pytest.raises(ValueError):
+        build_landsat_quality_report(metadata, canonical_evidence=metadata["canonical_evidence"])
+
+
+@pytest.mark.parametrize(
+    "day,accepted",
+    [
+        ("2023-07-01", True),
+        ("2023-07-31", True),
+        ("2023-06-30", False),
+        ("2023-08-01", False),
+        ("2023-07-32", False),
+        ("2023-7-1", False),
+    ],
+)
+def test_quality_uses_inclusive_canonical_period_end(day, accepted):
+    metadata = _metadata()
+    metadata["analysis_periods"]["period_a"] = "2023-07-01/2023-07-31"
+    metadata["selected_scene_evidence"]["period_a_date"] = day
+    metadata["provenance"]["scene_provenance"]["period_a"]["acquisition_dates"] = [day]
+    if accepted:
+        assert (
+            build_landsat_quality_report(
+                metadata, canonical_evidence=metadata["canonical_evidence"]
+            )["status"]
+            == "available"
+        )
+    else:
+        with pytest.raises(ValueError, match="scene acquisition date"):
+            build_landsat_quality_report(
+                metadata, canonical_evidence=metadata["canonical_evidence"]
+            )
+
+
+@pytest.mark.parametrize("artifact", list(_metadata()["artifact_references"]))
+def test_quality_rejects_missing_preview_or_scientific_artifact(artifact):
+    metadata = _metadata()
+    del metadata["artifact_references"][artifact]
+    with pytest.raises(ValueError, match="artifact references"):
         build_landsat_quality_report(metadata, canonical_evidence=metadata["canonical_evidence"])

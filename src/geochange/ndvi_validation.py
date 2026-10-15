@@ -477,6 +477,12 @@ def validate_capture(root: str | Path) -> dict[str, Any]:
         or np.any(np.isfinite(actual_delta) & ~common)
     ):
         raise ValueError("invalid-region pixels must be NoData")
+    if (
+        np.any(~np.isfinite(actual_a[valid_a]))
+        or np.any(~np.isfinite(actual_b[valid_b]))
+        or np.any(~np.isfinite(actual_delta[common]))
+    ):
+        raise ValueError("valid-region pixels must be finite")
     if not np.any(common):
         return {
             "status": "NOT_COMPARABLE",
@@ -498,8 +504,10 @@ def validate_capture(root: str | Path) -> dict[str, Any]:
         + np.count_nonzero(actual_common != common)
     )
 
-    def stats(actual: np.ndarray, expected: np.ndarray, tolerance: float) -> dict[str, float]:
-        diff = np.abs(actual[common].astype(np.float64) - expected[common].astype(np.float64))
+    def stats(
+        actual: np.ndarray, expected: np.ndarray, domain: np.ndarray, tolerance: float
+    ) -> dict[str, float]:
+        diff = np.abs(actual[domain].astype(np.float64) - expected[domain].astype(np.float64))
         return {
             "mae": float(np.mean(diff)),
             "rmse": float(np.sqrt(np.mean(diff * diff))),
@@ -507,9 +515,12 @@ def validate_capture(root: str | Path) -> dict[str, Any]:
             "tolerance": tolerance,
         }
 
-    a_stats, b_stats = stats(actual_a, ndvi_a, 1e-6), stats(actual_b, ndvi_b, 1e-6)
+    a_stats, b_stats = (
+        stats(actual_a, ndvi_a, valid_a, 1e-6),
+        stats(actual_b, ndvi_b, valid_b, 1e-6),
+    )
     expected_delta = ndvi_b - ndvi_a
-    d_stats = stats(actual_delta, expected_delta, 2e-6)
+    d_stats = stats(actual_delta, expected_delta, common, 2e-6)
     passed = mask_mismatch == 0 and all(
         item[key] <= item["tolerance"]
         for item in (a_stats, b_stats, d_stats)

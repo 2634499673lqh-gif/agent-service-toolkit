@@ -23,6 +23,14 @@ from geochange.artifacts import (
     publish_attempt_pointer,
     write_dynamic_evidence,
 )
+from geochange.landsat_ndvi import (
+    MASK_ARTIFACTS,
+    MAX_DISPLAY_ARTIFACT_BYTES,
+    MAX_NUMERIC_ARTIFACT_BYTES,
+    NDVI_ARTIFACTS,
+    PNG_ARTIFACTS,
+    artifact_sha256,
+)
 from persistence.models import TaskRun, TaskRunStatus, TaskStatus
 from persistence.repositories import TaskRepository, TaskRunRepository
 from runtime.progress import ProgressPhase, ProgressResetReason, RuntimeProgressSink
@@ -391,17 +399,26 @@ class TaskRunProgressStore:
         except OSError:
             return False
         artifacts = canonical_evidence.get("artifacts")
-        if not isinstance(artifacts, dict) or not artifacts:
+        required = set(NDVI_ARTIFACTS + MASK_ARTIFACTS + PNG_ARTIFACTS)
+        provenance = canonical_evidence.get("provenance")
+        checksums = provenance.get("artifact_checksums") if isinstance(provenance, dict) else None
+        if (
+            not isinstance(artifacts, dict)
+            or set(artifacts) != required
+            or not isinstance(checksums, dict)
+            or set(checksums) != required
+        ):
             return False
-        for name, filename in artifacts.items():
-            if (
-                not isinstance(name, str)
-                or name not in ALLOWED_ARTIFACTS
-                or filename != CANONICAL_ARTIFACT_FILENAMES.get(name)
-            ):
+        for name, artifact_id in artifacts.items():
+            if not isinstance(name, str) or name not in ALLOWED_ARTIFACTS or artifact_id != name:
                 return False
-            path = (expected_dir / filename).resolve()
+            path = (expected_dir / CANONICAL_ARTIFACT_FILENAMES[name]).resolve()
             if expected_dir not in path.parents or not path.is_file():
+                return False
+            limit = (
+                MAX_DISPLAY_ARTIFACT_BYTES if name in PNG_ARTIFACTS else MAX_NUMERIC_ARTIFACT_BYTES
+            )
+            if not 0 < path.stat().st_size <= limit or artifact_sha256(path) != checksums[name]:
                 return False
         async with self.session_factory() as session:
             try:
@@ -592,6 +609,12 @@ class TaskRunProgressReporter:
             raise
         except Exception:
             self._log_failure("attempt.reset")
+        # Even when optional snapshot persistence fails, execution must retain
+        # a private output directory. Publication still checks the durable
+        # generation and snapshot, and therefore fails closed if unavailable.
+        # Returning None here would enable the legacy shared-directory writer.
+        if self._current_attempt is None:
+            self._current_attempt = _TaskRunProgressAttempt(self, attempt_id)
 
     def current_attempt(self) -> RuntimeProgressSink | None:
         """Return a phase callback whose attempt identity cannot later change."""

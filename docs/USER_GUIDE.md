@@ -17,6 +17,24 @@ A session is checked again while the Product view loads. Expiry, revocation, dea
 
 ## Tasks
 
+The current local validation instance remains at
+`http://127.0.0.1:25174` (backend `127.0.0.1:28081`, PostgreSQL 58205).
+It has its own validation account/database; the original account and history
+on 5173 are unchanged. The earlier P0 instance used 25173/28080.
+The local validation instance uses a deterministic Planner;
+it does not demonstrate a live LLM. On 2026-10-14, the actual fresh Landsat
+workflow succeeded after fixing repeated model-SDK initialization in Windows
+raster subprocesses. The run completed in about 108 seconds with Verifier passed,
+map 200 and all three map layers rendered. Open the latest completed Jianghan
+NDVI history result, or submit the Jianghan July 2023 versus July 2024 request.
+Live imagery still depends on provider/network availability.
+
+The existing Wuhan East Lake NDVI result remains a fallback. Its
+`cached_real_sentinel2_fixture` label means real, pinned historical Sentinel-2
+data, not a newly fetched Landsat analysis. The small cache window does not
+represent the whole lake. Earlier failed Landsat runs remain in history;
+they have not been relabeled as successful.
+
 After sign-in, the Product view can:
 
 - create a task with a required title and optional description;
@@ -62,7 +80,7 @@ Trace and approval data are observational evidence. They are not a substitute fo
 
 ## Current limitations
 
-- No public runtime execution endpoint or background worker is wired to Product run creation.
+- Product run creation dispatches the process-local runtime bridge; there is no durable background worker.
 - No WebSocket progress push or TaskStep persistence/view is provided; run progress comes from server events and older runs may show it as unavailable. No fake progress or result is provided.
 - No uploads, admin console, registration, SSO, refresh-token flow, or external side-effect workflow is exposed by this UI.
 - The legacy chat view remains available for the upstream LangGraph experience and has separate caller-supplied thread behavior; it is not the TaskPilot identity boundary.

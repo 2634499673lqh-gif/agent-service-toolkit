@@ -1,6 +1,7 @@
 """PostgreSQL locking evidence for progress updates versus Task lifecycle transitions."""
 
 import asyncio
+import hashlib
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -17,10 +18,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import service.task_run_progress as progress_module
 from geochange.artifacts import (
+    CANONICAL_ARTIFACT_FILENAMES,
     artifact_path,
     attempt_artifact_root,
     load_dynamic_evidence,
 )
+from geochange.landsat_ndvi import MASK_ARTIFACTS, NDVI_ARTIFACTS, PNG_ARTIFACTS
 from persistence.engine import create_async_engine
 from persistence.models import Organization, Task, TaskRun, TaskRunStatus, TaskStatus, User
 from persistence.repositories import TaskRepository
@@ -34,6 +37,20 @@ from service.task_run_progress import (
 )
 
 pytestmark = pytest.mark.postgres
+
+
+def _artifact_evidence(root: Path, contents: bytes):
+    """Complete internal publication fixture; science is tested by runtime integration."""
+    root.mkdir(parents=True, exist_ok=True)
+    names = NDVI_ARTIFACTS + MASK_ARTIFACTS + PNG_ARTIFACTS
+    for name in names:
+        (root / CANONICAL_ARTIFACT_FILENAMES[name]).write_bytes(contents)
+    return {
+        "artifacts": {name: name for name in names},
+        "provenance": {
+            "artifact_checksums": {name: hashlib.sha256(contents).hexdigest() for name in names}
+        },
+    }
 
 
 def _base_url() -> str:
@@ -620,9 +637,7 @@ async def test_only_current_attempt_can_publish_artifacts(running_pair):
         replan_count=0,
     )
     first_root = attempt_artifact_root(task_id, run_id, first)
-    first_root.mkdir(parents=True, exist_ok=True)
-    (first_root / "ndvi_before.png").write_bytes(b"attempt-a")
-    evidence = {"artifacts": {"ndvi_before": "ndvi_before.png"}, "attempt": "a"}
+    evidence = _artifact_evidence(first_root, b"attempt-a")
     assert await store.publish_attempt_artifacts(
         organization_id=org_id,
         task_id=task_id,
@@ -644,9 +659,7 @@ async def test_only_current_attempt_can_publish_artifacts(running_pair):
         replan_count=1,
     )
     second_root = attempt_artifact_root(task_id, run_id, second)
-    second_root.mkdir(parents=True, exist_ok=True)
-    (second_root / "ndvi_before.png").write_bytes(b"attempt-b")
-    second_evidence = {"artifacts": {"ndvi_before": "ndvi_before.png"}, "attempt": "b"}
+    second_evidence = _artifact_evidence(second_root, b"attempt-b")
     current_publish, stale_publish = await asyncio.gather(
         store.publish_attempt_artifacts(
             organization_id=org_id,
@@ -669,3 +682,146 @@ async def test_only_current_attempt_can_publish_artifacts(running_pair):
     assert stale_publish is False
     assert artifact_path(str(task_id), str(run_id), "ndvi_before").read_bytes() == b"attempt-b"
     assert load_dynamic_evidence(str(task_id), str(run_id)) == second_evidence
+
+
+@pytest.mark.asyncio
+async def test_reset_snapshot_failure_keeps_capability_outputs_private(running_pair, monkeypatch):
+    """A real committed generation must never permit shared fallback writes."""
+    import runpy
+
+    import geochange.artifacts as artifacts
+    from geochange import runtime_caps
+    from geochange.models import GeoChangeTask
+    from runtime.context import ContextBuilder
+    from runtime.planner import PlannerTaskInput
+    from schema.planner import PlanStep
+    from service.task_run_progress import TaskRunProgressReporter
+
+    store = running_pair["store"]
+    org_id, task_id, run_id = (
+        running_pair["organization_id"],
+        running_pair["task_id"],
+        running_pair["task_run_id"],
+    )
+    reporter = TaskRunProgressReporter(
+        store, organization_id=org_id, task_id=task_id, task_run_id=run_id
+    )
+    await reporter.reset_attempt(reset_reason="start", retry_count=0, replan_count=0)
+    old = reporter.current_attempt()
+    old_root = old.artifact_dir()
+    old_file = old_root / "ndvi_before.png"
+    evidence = _artifact_evidence(old_root, b"previous verified attempt")
+    assert await old.publish_artifacts(old_root, evidence)
+    old_binder = (old_root / ".dynamic_evidence.json").read_bytes()
+
+    def fail_tombstone(_path):
+        raise OSError("injected snapshot reset failure")
+
+    write_unavailable = TaskRunProgressStore._write_unavailable
+    monkeypatch.setattr(TaskRunProgressStore, "_write_unavailable", staticmethod(fail_tombstone))
+    await reporter.reset_attempt(reset_reason="retry", retry_count=1, replan_count=0)
+    new = reporter.current_attempt()
+    assert new is not None and new.artifact_dir() != old_root
+    pair = runpy.run_path("tests/geochange/test_landsat_ndvi.py")["_gated_pair"]()
+    for key, dataset in (("a", pair.period_a), ("b", pair.period_b)):
+        year = 2023 if key == "a" else 2024
+        dataset.provenance.update(
+            {
+                "scene_ids": [f"LC08_L2SP_123039_{year}0727_02_T1"],
+                "acquisition_dates": [f"{year}-07-27"],
+            }
+        )
+    monkeypatch.setattr(runtime_caps, "prepare_landsat_periods", lambda *_: pair)
+    context = (
+        ContextBuilder()
+        .build(
+            PlannerTaskInput(title="Jianghan NDVI", description="Landsat"),
+            PlanStep(position=1, instruction="summarize_change"),
+            runtime_task_id=str(task_id),
+            runtime_task_run_id=str(run_id),
+            geochange_task=GeoChangeTask(
+                period_a={"start": "2023-07-01", "end": "2023-07-31"},
+                period_b={"start": "2024-07-01", "end": "2024-07-31"},
+                aoi_key="jianghan_district_420103",
+                data_mode="real_stac_landsat_local",
+            ),
+        )
+        .model_copy(update={"progress_sink": new})
+    )
+    result = await runtime_caps.SummarizeChangeRuntimeCapability().execute(
+        PlanStep(position=1, instruction="summarize_change"), context
+    )
+    assert not result.success and result.error_code == "stale_attempt_artifacts"
+    assert old_file.read_bytes() == b"previous verified attempt"
+    assert (old_root / ".dynamic_evidence.json").read_bytes() == old_binder
+    assert artifacts.current_attempt_id(str(task_id), str(run_id)) == old.attempt_id
+    assert not (old_root.parent.parent / "ndvi_before_raster.tif").exists()
+    assert not new.artifact_dir().exists()
+    async with running_pair["factory"]() as session:
+        run = await session.get_one(TaskRun, run_id)
+        assert project_progress(task_id, run_id, run) is None
+
+    # Recover to a third generation, then interleave both revoked publishers.
+    monkeypatch.setattr(TaskRunProgressStore, "_write_unavailable", staticmethod(write_unavailable))
+    await reporter.reset_attempt(reset_reason="replan", retry_count=1, replan_count=1)
+    current = reporter.current_attempt()
+    current_evidence = _artifact_evidence(current.artifact_dir(), b"new current attempt")
+    assert await current.publish_artifacts(current.artifact_dir(), current_evidence)
+    late_evidence = _artifact_evidence(new.artifact_dir(), b"late failed attempt")
+    assert await asyncio.gather(
+        old.publish_artifacts(old_root, evidence),
+        new.publish_artifacts(new.artifact_dir(), late_evidence),
+    ) == [False, False]
+    assert artifacts.current_attempt_id(str(task_id), str(run_id)) == current.attempt_id
+    assert artifacts.load_dynamic_evidence(str(task_id), str(run_id)) == current_evidence
+    assert (old_root / ".dynamic_evidence.json").read_bytes() == old_binder
+    assert old_file.read_bytes() == b"previous verified attempt"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mutation",
+    ["missing_file", "missing_id", "filename", "path", "checksum", "substitution", "other_attempt"],
+)
+async def test_attempt_publication_rejects_invalid_artifacts(running_pair, mutation):
+    from geochange.artifacts import current_attempt_id
+
+    task_id, run_id = running_pair["task_id"], running_pair["task_run_id"]
+    attempt = uuid4()
+    store = running_pair["store"]
+    assert await store.begin_attempt(
+        organization_id=running_pair["organization_id"],
+        task_id=task_id,
+        task_run_id=run_id,
+        attempt_id=attempt,
+        reset_reason="start",
+        retry_count=0,
+        replan_count=0,
+    )
+    root = attempt_artifact_root(task_id, run_id, attempt)
+    evidence = _artifact_evidence(root, b"verified bytes")
+    if mutation == "missing_file":
+        (root / "ndvi_before.png").unlink()
+    elif mutation == "missing_id":
+        evidence["artifacts"].pop("ndvi_before")
+    elif mutation == "filename":
+        evidence["artifacts"]["ndvi_before"] = "ndvi_before.png"
+    elif mutation == "path":
+        evidence["artifacts"]["ndvi_before"] = "../ndvi_before.png"
+    elif mutation == "checksum":
+        evidence["provenance"]["artifact_checksums"]["ndvi_before"] = "0" * 64
+    elif mutation == "substitution":
+        (root / "ndvi_before.png").write_bytes(b"substituted after verification")
+    else:
+        root = attempt_artifact_root(task_id, run_id, uuid4())
+        _artifact_evidence(root, b"verified bytes")
+    assert not await store.publish_attempt_artifacts(
+        organization_id=running_pair["organization_id"],
+        task_id=task_id,
+        task_run_id=run_id,
+        attempt_id=attempt,
+        source_dir=root,
+        canonical_evidence=evidence,
+    )
+    assert current_attempt_id(str(task_id), str(run_id)) is None
+    assert load_dynamic_evidence(str(task_id), str(run_id)) is None

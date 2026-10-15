@@ -9,7 +9,13 @@ import re
 from datetime import date
 from typing import Any
 
-from .landsat_ndvi import FINAL_COMMON_COVERAGE_GATE, FINAL_NDVI_COVERAGE_GATE
+from .landsat_ndvi import (
+    FINAL_COMMON_COVERAGE_GATE,
+    FINAL_NDVI_COVERAGE_GATE,
+    MASK_ARTIFACTS,
+    NDVI_ARTIFACTS,
+    PNG_ARTIFACTS,
+)
 
 
 def build_landsat_quality_report(
@@ -169,7 +175,7 @@ def build_landsat_quality_report(
                 if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
                     raise ValueError
                 acquisition_date = date.fromisoformat(value)
-                if not period_windows[key][0] <= acquisition_date < period_windows[key][1]:
+                if not period_windows[key][0] <= acquisition_date <= period_windows[key][1]:
                     raise ValueError
             except (TypeError, ValueError):
                 raise ValueError("scene acquisition date is invalid") from None
@@ -219,14 +225,7 @@ def build_landsat_quality_report(
     sensor = provenance.get("sensor")
     if not isinstance(provider, str) or not provider or not isinstance(sensor, str) or not sensor:
         raise ValueError("quality provider/sensor evidence is unavailable")
-    required_artifacts = {
-        "ndvi_before_raster",
-        "ndvi_after_raster",
-        "ndvi_change_raster",
-        "ndvi_valid_before",
-        "ndvi_valid_after",
-        "ndvi_common_comparison",
-    }
+    required_artifacts = set(NDVI_ARTIFACTS + MASK_ARTIFACTS + PNG_ARTIFACTS)
     artifact_references = metadata.get("artifact_references")
     if (
         not isinstance(artifact_references, dict)

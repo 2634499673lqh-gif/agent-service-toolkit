@@ -23,8 +23,8 @@ async def test_dispatch_uses_a_fresh_session_and_tracks_completion(monkeypatch):
             return Session()
 
     class Runtime:
-        def __init__(self, _checkpointer):
-            pass
+        def __init__(self, _checkpointer, *, session_factory):
+            assert callable(session_factory)
 
         async def execute_run(self, session, **kwargs):
             calls.append((session, kwargs))
@@ -54,8 +54,8 @@ async def test_duplicate_dispatch_only_starts_one_runtime(monkeypatch):
             return None
 
     class Runtime:
-        def __init__(self, _checkpointer):
-            pass
+        def __init__(self, _checkpointer, *, session_factory):
+            assert callable(session_factory)
 
         async def execute_run(self, _session, **_kwargs):
             nonlocal executions
@@ -71,7 +71,7 @@ async def test_duplicate_dispatch_only_starts_one_runtime(monkeypatch):
     run_id = uuid4()
     dispatcher.dispatch(organization_id=uuid4(), task_id=uuid4(), task_run_id=run_id)
     dispatcher.dispatch(organization_id=uuid4(), task_id=uuid4(), task_run_id=run_id)
-    await started.wait()
+    await asyncio.wait_for(started.wait(), timeout=2)
     assert executions == 1
     release.set()
     await dispatcher.close()
@@ -80,6 +80,7 @@ async def test_duplicate_dispatch_only_starts_one_runtime(monkeypatch):
 @pytest.mark.asyncio
 async def test_owned_dispatch_exception_recovers_running_run(monkeypatch):
     failures = []
+    executions = []
 
     class Session:
         async def __aenter__(self):
@@ -89,10 +90,11 @@ async def test_owned_dispatch_exception_recovers_running_run(monkeypatch):
             return None
 
     class Runtime:
-        def __init__(self, _checkpointer):
-            pass
+        def __init__(self, _checkpointer, *, session_factory):
+            assert callable(session_factory)
 
         async def execute_run(self, _session, **_kwargs):
+            executions.append(True)
             raise RuntimeError("runtime failed")
 
     class Runs:
@@ -121,4 +123,5 @@ async def test_owned_dispatch_exception_recovers_running_run(monkeypatch):
     dispatcher.dispatch(organization_id=uuid4(), task_id=uuid4(), task_run_id=uuid4())
     await asyncio.sleep(0)
     await dispatcher.close()
+    assert executions == [True]
     assert len(failures) == 1

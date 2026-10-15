@@ -165,14 +165,26 @@ fails closed to `null`; TaskRun terminal status and verified results remain
 authoritative and are projected independently.
 The required PostgreSQL concurrency validation executes against a disposable
 PostgreSQL 16 database. Implementation A is COMPLETE / APPROVED / COMMITTED
-after independent Strong Review. Implementation B is COMPLETE / STRONG REVIEW
-APPROVED and remains uncommitted. B1 projects quality claims only from the
-tenant-scoped published dynamic-evidence sidecar. B2 is an offline numerical
-consistency check for one captured prepared-input/output package: PASS means
-internal integrity and independent NDVI/mask agreement within frozen
-tolerances; it does not authenticate a persisted TaskRun or external
-remote-sensing accuracy. The retained genuine Jianghan capture passed the
-numerical validator; no fresh capture passed after the later provider HTTP 429.
-The full dynamic TaskRun-to-React path remains unexecuted, and the unrelated
-NDBI fixture failures remain baseline debt. V0.4 Final Audit: NOT STARTED.
-V0.4 PR / merge: NOT STARTED.
+after independent Strong Review. Implementation B is COMPLETE / APPROVED /
+COMMITTED. B1 projects quality claims only from the tenant-scoped published
+dynamic-evidence sidecar. B2 is an offline numerical consistency check for one
+captured prepared-input/output package: PASS means internal integrity and
+independent NDVI/mask agreement within frozen tolerances; it does not
+authenticate a persisted TaskRun or establish external observational accuracy.
+
+V0.4 is COMPLETE / FINAL AUDIT APPROVED. The independent focused Final Audit
+re-review dated 2026-10-14 APPROVED HEAD
+`6578c1dba19d8a997a48a4f5d97857954efdf6b5` plus the 13 reviewed uncommitted
+files. All six original Final Audit blockers are VERIFIED CLOSED; the Windows
+subprocess performance repair is independently verified. Final correction
+commit/push: PENDING. PR / merge main: PENDING. Substantive code changes require
+reassessment of affected approval evidence.
+
+The verified fresh Landsat execution used a deterministic Planner, persisted
+SUCCEEDED, returned authenticated map 200 and rendered A/B/change in React;
+real online LLM Planner E2E remains unverified. Independent full regression:
+1264 passed, 13 failed, 4 skipped. Existing baseline/configuration-sensitive
+failures remain documented; this is not full production readiness. The audit's
+disposable PostgreSQL container cleanup remains pending because the Docker
+engine became unavailable. Historical NOT APPROVED findings and chronology
+remain in the audit reports and dated process records.

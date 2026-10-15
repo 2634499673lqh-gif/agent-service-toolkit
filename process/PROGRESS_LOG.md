@@ -1,3 +1,252 @@
+## 2026-10-15 — V0.4 Final Audit approval status synchronization
+
+Authority: `TASKPILOT_V04_INDEPENDENT_FOCUSED_FINAL_AUDIT_REREVIEW_20261014.md`
+in `D:/codex/agent项目/`; independent verdict APPROVED on 2026-10-14 for HEAD
+`6578c1dba19d8a997a48a4f5d97857954efdf6b5` plus 13 reviewed uncommitted files.
+All 13 file fingerprints matched the audit record before this documentation sync.
+
+Current status (supersedes earlier dated status assertions without rewriting them):
+- V0.4 Implementation A: COMPLETE / APPROVED / COMMITTED.
+- V0.4 Implementation B: COMPLETE / APPROVED / COMMITTED.
+- Six original Final Audit blockers: VERIFIED CLOSED.
+- Independent V0.4 Final Audit: APPROVED.
+- Windows subprocess performance repair: independently verified.
+- V0.4: COMPLETE / FINAL AUDIT APPROVED.
+- Final correction commit/push: PENDING. PR / merge main: PENDING.
+
+Independent review evidence retained: full regression 1264 passed, 13 failed,
+4 skipped; 12 established baseline failures and one configuration-sensitive
+failure remain documented. Verified fresh Landsat execution used a deterministic
+Planner; real online LLM Planner E2E remains unverified. B2 PASS establishes
+standalone numerical consistency, not authenticated TaskRun provenance or
+external observational accuracy. No complete production-readiness claim.
+Audit container `taskpilot-v04-rereview-pg-20261014-876ad844` cleanup remains
+pending because the Docker engine became unavailable; this sync touches no
+Docker resources, captures, accounts or history.
+
+Only `docs/ARCHITECTURE.md`, `process/DECISION_LOG.md` and this log changed in
+this sync. The other requested documents were inspected and have no relevant
+stale V0.4 current-state assertions. Historical findings, decisions, limitations
+and the existing USER_GUIDE changes remain intact. No implementation or audit
+rerun; no production/test/dependency/schema/migration changes or Git state actions.
+Verification: git status --short, git diff --check, git remote -v, documentation
+consistency checks and before/after tracked non-Markdown SHA-256 comparison.
+Result: status synchronized; final GitHub Desktop commit/push is ready for the
+owner. Next: owner commit/push, then normal PR/CI/merge checks; substantive code
+changes require reassessment of affected approval evidence.
+Learner: read ARCHITECTURE, DECISION_LOG and this entry; approval and publication
+are separate states. Exercise: compare this entry with the independent verdict
+and pending Git steps. No new runtime infrastructure is needed for this sync.
+
+## 2026-10-14 — Real Landsat runtime recovery: Windows spawn entrypoint imports
+
+Baseline: branch `codex/taskpilot-v04-observability-validation`, HEAD `6578c1d`;
+11 pre-existing six-blocker/P0 changed files preserved. Latest prior failed Run
+`513e445d-91f9-443a-8900-1d06d444d0c5` is durably FAILED with checkpoint
+`landsat_preparation_failed / timeout at asset_read`, preparation failed after
+180 seconds. Docker and local services were stopped at inspection; restarted
+the existing Docker engine/container and the same 25174/28081 services without
+creating a new database/account or changing historical records.
+
+Root cause: each Windows raster spawn reimports `src/run_service.py` as
+`__mp_main__`. Its top-level `core` import loaded all model SDKs for every asset
+worker. A measured baseline reimport took 12.328 seconds; guarded entrypoint
+reimport takes 0.094 seconds. Ten asset reads accumulated roughly two minutes
+of unnecessary application initialization within the shared 180-second budget.
+Independent real raster preparation completed in 115.735 seconds without those
+service imports. This is a proven internal overhead defect, not evidence that
+all earlier timeouts were provider failures.
+
+Minimal fix: move uvicorn/dotenv/core initialization under the existing
+`if __name__ == "__main__"` guard; preserve normal parent startup ordering,
+Windows event-loop setup, provider/scientific contracts, all security and the
+180-second limit. Add a clean subprocess regression that executes the actual
+entrypoint as `__mp_main__` and rejects service/model SDK imports. It fails on
+the old code and passes with the fix.
+
+Files changed this turn: `src/run_service.py`,
+`tests/geochange/test_landsat_provider_limits.py`, `docs/USER_GUIDE.md`, this log.
+Total working-tree changed files relative to HEAD: 13; no dependency/schema/
+migration changes. No Git state changes, commit, push, PR or merge.
+
+Validation:
+- Focused provider-limit + dispatcher: 45 passed.
+- Affected Landsat/provider/runtime/progress/PostgreSQL: 124 passed, 3 explicitly
+  deselected established NDBI PostgreSQL baseline failures (`-k 'not ndbi'`).
+  No skipped tests counted as passing. Earlier full-regression failures remain
+  recorded in the six-blocker closure entry below; no full-green claim.
+- Ruff check/format for both new changed Python files PASS; Pyrefly 0 errors
+  (23 suppressed); `uv lock --check` and `git diff --check` PASS.
+- Actual authenticated browser workflow used unchanged local account and a fresh
+  real provider request, with deterministic Planner (no live LLM claim). Task
+  `ab16db16-5b44-4e96-8d57-40cb67fd6cf8`, Run
+  `5aeb103f-8bae-44a8-9d28-6b96a8580a29`: created 11:02:50 and SUCCEEDED
+  11:04:38 Asia/Shanghai, 107.77 seconds. Verifier passed; execution mode
+  `real_stac_landsat_local`; authenticated map 200, quality available, nine
+  disk artifact checksums verified, common pixels 26,107. Browser A/B/change
+  rendered and screenshots inspected. Unauthenticated map remains 401.
+- Same-browser Sentinel-2 cache Run `d7a3aea7-a4c9-42ce-b2b1-616a2603b426`
+  also SUCCEEDED and rendered all three layers.
+
+Evidence under `D:\codex\agent项目`: `taskpilot-entrypoint-import-benchmark-20261014.log`,
+`taskpilot-runtime-profile-20261014.log`, `taskpilot-v04-runtime-repair-regression-20261014.log`,
+`taskpilot-v04-runtime-repair-browser-20261014.log` / `.json`,
+`taskpilot-v04-runtime-repair-integrity-20261014.log`,
+and `taskpilot-v04-runtime-repair-live-layer-0.png` / `-1.png` / `-2.png`.
+
+Result: real Landsat imagery → runtime → persisted SUCCEEDED → quality/map →
+React display verified after fix. Provider availability remains external; QA
+availability is accurately reported as partial rather than fabricated complete.
+This does not claim independent external accuracy, live LLM execution or Final
+Audit approval. Ready for independent focused re-review of this additional fix.
+Learner: read `run_service.py`, `landsat.py`, and `test_landsat_provider_limits.py`;
+learn that Windows spawn re-executes entrypoint code. Exercise: open the newest
+completed Jianghan NDVI history, inspect its quality report and switch A/B/change.
+No need to add a provider, retry framework or longer deadline. Next: independent
+review, including this spawn regression and fresh runtime/browser evidence.
+
+## 2026-10-13 — V0.4 Final Audit six-blocker closure (implementation)
+
+Baseline: branch `codex/taskpilot-v04-observability-validation`, HEAD
+`6578c1dba19d8a997a48a4f5d97857954efdf6b5`. Continued the nine existing P0
+working-tree changes; no unrelated edits were overwritten. Read both independent
+Final Audit reports, ADR-014 and the frozen DECISION_LOG scope/scientific decisions.
+
+- FA-01: canonical IDs resolve through the existing filename allowlist. Publication
+  now reuses producer NDVI/MASK/PNG constants, requires all nine files/checksums,
+  enforces existing size limits and rejects substituted bytes or another attempt's
+  directory. No output rename or alternate publication system.
+- FA-02: retain private attempt lease after progress reset failure; no shared legacy
+  fallback after the failed reset. Original PostgreSQL fault is reproduced after
+  durable generation commit. Actual capability computation cannot corrupt old files
+  or binder. After a third attempt publishes, both revoked leases concurrently fail.
+- FA-03: quality uses the same existing nine producer artifact IDs; canonical equality,
+  all checksums and tenant/auth boundaries remain strict.
+- FA-04: independent period A/B comparisons use reconstructed valid_a/valid_b;
+  delta uses common. Non-finite valid-region outputs are ERROR/exit 2. Period-only
+  0.25 errors are FAIL/exit 2. Independent arithmetic, masks, invalid-region rules,
+  empty-common NOT_COMPARABLE and frozen MAE/RMSE/MaxAE tolerances remain unchanged.
+- FA-05: strict ISO scene dates use the serialized inclusive endpoint. First/final
+  days pass; before/after dates, malformed dates and mismatched evidence fail.
+- FA-06: approved session_factory interface is reflected in all three doubles,
+  started wait is bounded at two seconds and recovery asserts execute_run was entered.
+
+Checkpoint A: **42 passed, 39 deselected**, no skips/failures. Actual opaque HTTP
+login → natural-language request → proposal confirmation → TaskRun POST → production
+dispatcher/runtime/compute/verifiers → fresh-session PostgreSQL result → map 200.
+Day 27 and 31 both publish nine files bound to snapshot/current attempt. 401/404,
+tampered-file/binder 409 and stale publication rejection pass. Only provider preparation
+and test-database factory routing are injected, not principal/repository/verifier.
+Evidence recorded separately in `D:\codex\agent项目\TASKPILOT_V04_CLOSURE_CHECKPOINT_A_20261013.md`.
+
+Checkpoint B: **69 passed**, no skips/failures. Official CLI mutation tests run on
+temporary genuine-capture copies. Unchanged retained Jianghan capture remains PASS:
+26,107 common pixels, zero mask mismatch; A/B MaxAE 1.1920928955e-07, delta MaxAE
+2.3841857910e-07. PASS is standalone package consistency, not external accuracy or
+authenticated production provenance.
+
+Full regression: **1,262 passed, 14 failed, 4 skipped**, none deselected. Twelve
+failures match recorded baseline defects (including the four PostgreSQL failures).
+The default-settings assertion conflicts with the command's explicit fake environment;
+the first Streamlit case hit its unchanged three-second cold-start timeout. Those
+two pass in a targeted rerun without forced model settings; their source was not edited.
+All 152 PostgreSQL tests were included in full regression; only the established four
+DB baseline failures remain. Changed-file Ruff, all 269 format checks, Pyrefly
+(0 errors/23 suppressed), uv lock and diff checks pass. Full Ruff retains only the
+known unchanged `src/geochange/__init__.py` I001. Frontend: 3 tests, build and
+TypeScript typecheck pass.
+
+Commands/evidence: `uv run --frozen pytest -q -s` with the A/B focused selections;
+`uv run --frozen pytest -q --tb=short` with deterministic model configuration,
+Rasterio PROJ_DATA and disposable PostgreSQL URL; official `scripts/validate_ndvi_science.py`;
+Ruff check/format, Pyrefly, `uv lock --check`, `git diff --check`, and frontend pnpm
+test/build/typecheck. Detailed commands, live/browser result and limitations are in
+`D:\codex\agent项目\TASKPILOT_V04_FINAL_AUDIT_SIX_BLOCKER_CLOSURE_REPORT_20261013.md`.
+
+Changed files (11 total relative to HEAD): the three production files above;
+`tests/geochange/test_ndvi_validation.py`, `tests/geochange/test_quality_report.py`,
+`tests/runtime/test_task_runtime_postgres.py`, `tests/service/test_runtime_dispatch.py`,
+`tests/service/test_task_run_progress.py`, `tests/service/test_task_run_progress_postgres.py`,
+`docs/USER_GUIDE.md`, this log. No dependency, schema, migration, provider or frozen
+scientific model change. Original databases, accounts, history and Docker applications
+were not replaced. New validation stack uses local 25174/28081/58205.
+
+Actual browser check: live Landsat Run `8a49ecce-33f5-4b2b-97e9-68709c6ea6b4`
+was created via the requested Chinese workflow but FAILED after 180 seconds:
+`TERMINAL / landsat_preparation_failed / timeout at provider`. No HTTP 429 was
+observed in this run and the underlying cause of provider-budget exhaustion is
+not established. Cached Sentinel-2 Run `8db1ae0d-4bb9-4886-8fc2-fe098b1d2ca6`
+then SUCCEEDED in the same browser; A/B/change all rendered and screenshots were
+inspected. Fresh Landsat E2E is not PASS; deterministic PostgreSQL integration is
+PASS. The closure validation stack has its own local account; original accounts
+and P0 history remain untouched.
+
+Result: all six confirmed blocker fixes are implemented and ready for **INDEPENDENT
+FOCUSED FINAL AUDIT RE-REVIEW**. This is not self-approval: V0.4 Final Audit remains
+NOT APPROVED until independently reviewed. No commit/push/PR/merge or COMPLETE sync.
+
+Learner: read `task_run_progress.py`, `quality.py`, `ndvi_validation.py` and the
+PostgreSQL runtime integration test. Learn that canonical IDs, physical files,
+attempt authority and numerical comparison domains are distinct contracts. Exercise:
+run the official validator on an unchanged capture, then on a temporary period-only
+mutation copy. Do not modify the original capture; do not add workers/retry frameworks
+or new scientific features. Next task: independent focused Final Audit re-review.
+
+## 2026-10-13 — P0 Emergency Demo Recovery (implementation; awaiting review)
+
+- Baseline: `agent-service-toolkit-v03-b`, branch
+  `codex/taskpilot-v04-observability-validation`, HEAD `6578c1d`; initially clean.
+  Read both independent Final Audit reports. Existing Docker deployments use
+  other source directories and do not run this worktree. No existing deployment,
+  history, schema, dependency or Git state was replaced.
+- FA-01: accept canonical artifact IDs and resolve filenames through the existing
+  allowlist at publication. FA-02: retain a private attempt lease after optional
+  reset failure; publication remains generation/snapshot fenced and fails closed.
+  FA-03/05: require all nine canonical artifacts/checksums and accept the serialized
+  inclusive month end. FA-06: adapt dispatcher doubles and bound their event wait.
+  FA-04 remains deferred and blocking for Final Audit.
+- Files: `src/service/task_run_progress.py`, `src/geochange/quality.py`,
+  `tests/service/test_runtime_dispatch.py`, `tests/service/test_task_run_progress.py`,
+  `tests/service/test_task_run_progress_postgres.py`,
+  `tests/runtime/test_task_runtime_postgres.py`,
+  `tests/geochange/test_quality_report.py`, `docs/USER_GUIDE.md`, this log.
+- Validation: new real PostgreSQL/runtime/opaque-login/map regressions pass for
+  July 27 and 31; map 200, unauthenticated 401, foreign tenant 404, tampered PNG
+  and mismatched binder 409. Eight PostgreSQL progress tests pass, including a
+  real committed reset failure followed by actual capability computation without
+  old binder/file mutation. Affected regression: 320 passed, 10 known NDBI
+  baseline failures. Full regression: 1,233 passed, 14 failed, 4 skipped;
+  13 failures match the audit's recorded baseline failures, including the four
+  PostgreSQL baseline failures. The additional proposal test took the ambient
+  live-LLM path (`llm_unavailable`); explicitly deterministic focused rerun passes
+  (41 passed). Full regression is not reported as green. Before/after HEAD quality
+  replay on the same real PostgreSQL/login path reproduces both original 409
+  reasons and returns 200 with the repaired reader.
+  Changed-file Ruff, full format, Pyrefly (0 errors), lock check, frontend
+  tests/build/typecheck and diff check pass. Existing baseline failures are not fixed.
+- Real execution evidence: an independent fresh provider/compute probe passed
+  (26,107 common pixels), but browser-created Run
+  `562af921-e2a8-42c0-b107-0791dfb56a97` failed with checkpoint evidence
+  `TERMINAL / landsat_preparation_failed / timeout at asset_read` after 180 seconds.
+  The earlier website Run `f9832abe-e046-4227-9dac-73708fb38639` has the same
+  asset-read failure in its durable trace, before publication. No fresh Landsat
+  runtime/browser success is claimed.
+- Stable demo: isolated PostgreSQL container `taskpilot-p0-postgres-20261013`,
+  local backend 28080 and React 25173 run this worktree. Real browser login,
+  proposal/confirmation, cached NDVI runtime success, history reopen and all three
+  rendered map layers verified. Successful cache Run
+  `1af90cfd-f89f-4d09-bdf4-291d1870ff65` remains available. Deterministic Planner
+  and cached imagery are explicitly disclosed. No historical Landsat success was
+  manufactured or inserted to simulate runtime execution.
+- Limitations: progress reset I/O failure now rejects publication safely and may
+  fail a run; live imagery remains network dependent. FA-04 and independent
+  focused Final Audit re-review remain required. V0.4 is still NOT APPROVED.
+- Learner: artifact IDs differ from disk filenames; progress availability must
+  not control artifact isolation; cached browser success differs from fresh
+  provider/runtime success. Read the two changed source files and their runtime
+  and PostgreSQL tests. Exercise: reopen the cache history and switch A/B/change;
+  identify the data-mode label. Next: focused review, then a separate FA-04 fix.
+
 ## 2026-10-13 — TaskPilot V0.4 Implementation B final approval status synchronization
 
 Independent final focused Strong Review B returned APPROVED. The final

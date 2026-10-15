@@ -2262,3 +2262,181 @@ async def test_postgres_langgraph_tables_are_not_taskpilot_migrations(seeded_tas
         public_checkpoint = await session.scalar(text("SELECT to_regclass('public.checkpoints')"))
     assert "checkpoints" not in taskpilot_tables
     assert public_checkpoint == "checkpoints"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("day", ["27", "31"])
+async def test_postgres_landsat_runtime_publication_and_authenticated_quality(
+    seeded_task, monkeypatch, tmp_path, day
+):
+    """Real compute/runtime/DB/login; only provider preparation is deterministic."""
+    import runpy
+
+    import httpx
+
+    import geochange.artifacts as artifacts
+    from persistence.passwords import hash_password
+    from service.auth_dependency import get_session_factory
+    from service.service import app
+
+    factory, saver, org_id, task_id, user_id = seeded_task
+    pair = runpy.run_path("tests/geochange/test_landsat_ndvi.py")["_gated_pair"]()
+    import numpy as np
+
+    from geochange.aoi import load_trusted_aoi
+    from geochange.landsat import DiscoveryLimits, _target_grid
+
+    grid = _target_grid(load_trusted_aoi(), "EPSG:32649", DiscoveryLimits())
+    shape = (grid.height, grid.width)
+    valid = np.ones(shape, dtype=bool)
+    object.__setattr__(pair, "pair_grid", grid)
+    object.__setattr__(pair, "common_preparation_valid_mask", valid)
+    for key, dataset in (("a", pair.period_a), ("b", pair.period_b)):
+        object.__setattr__(dataset, "target_grid", grid)
+        object.__setattr__(dataset, "aoi_mask", valid)
+        object.__setattr__(dataset, "preparation_valid_mask", valid)
+        object.__setattr__(dataset, "red_reflectance", np.full(shape, 0.2, dtype=np.float32))
+        object.__setattr__(dataset, "nir_reflectance", np.full(shape, 0.6, dtype=np.float32))
+        object.__setattr__(dataset, "source_scene_index", np.zeros(shape, dtype=np.int16))
+        year = 2023 if key == "a" else 2024
+        dataset.provenance.update(
+            {
+                "asset_identity_hashes": {"red": "a" * 64, "nir": "b" * 64},
+                "scene_ids": [f"LC08_L2SP_123039_{year}07{day}_02_T1"],
+                "acquisition_dates": [f"{year}-07-{day}"],
+                "qa_policy": "qa_pixel_and_qa_radsat_v1",
+                "best_effort_warnings": [],
+            }
+        )
+    monkeypatch.setattr(runtime_caps, "prepare_landsat_periods", lambda *_: pair)
+    monkeypatch.setattr(runtime_caps, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr("service.task_run_progress.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(settings, "GEOCHANGE_LIVE_LLM", False)
+    monkeypatch.setattr(settings, "USE_FAKE_MODEL", True)
+    foreign_org, foreign_user = uuid4(), uuid4()
+    password = "Local-P0-Test-Only-Password"
+    async with factory() as session, session.begin():
+        user = await session.get_one(User, user_id)
+        user.password_hash = hash_password(password)
+        session.add(Organization(id=foreign_org, name="P0 foreign"))
+        session.add(
+            User(
+                id=foreign_user,
+                email=f"{foreign_user.hex}@example.com",
+                password_hash=hash_password(password),
+            )
+        )
+        await session.flush()
+        session.add(Membership(user_id=foreign_user, organization_id=foreign_org, role=Role.OWNER))
+        task = await session.get_one(Task, task_id)
+        task.confirmed_intent = {
+            "analysis_type": "vegetation_change",
+            "indicator": "NDVI",
+            "analysis_area": "jianghan_district_420103",
+            "period_a": {"start": "2023-07-01", "end": "2023-07-31"},
+            "period_b": {"start": "2024-07-01", "end": "2024-07-31"},
+            "parameters": {"source": "Landsat-8/9"},
+        }
+    from service.runtime_dispatch import RuntimeDispatchService
+    from service.task_run_progress import load_progress_snapshot
+
+    dispatcher = RuntimeDispatchService(saver)
+    monkeypatch.setattr("service.runtime_dispatch.get_business_session_factory", lambda: factory)
+    monkeypatch.setattr(app.state, "runtime_dispatcher", dispatcher, raising=False)
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://closure.test"
+        ) as client:
+            headers = []
+            for identity in (user_id, foreign_user):
+                login = await client.post(
+                    "/api/v1/auth/login",
+                    json={"email": f"{identity.hex}@example.com", "password": password},
+                )
+                assert login.status_code == 200
+                headers.append({"Authorization": f"Bearer {login.json()['access_token']}"})
+            proposal = await client.post(
+                "/api/v1/conversation",
+                headers=headers[0],
+                json={"message": "帮我比较武汉市江汉区 2023 年 7 月和 2024 年 7 月的 NDVI 变化。"},
+            )
+            assert proposal.status_code == 200, proposal.text
+            confirmed = await client.post(
+                "/api/v1/conversation/confirm",
+                headers=headers[0],
+                json={"proposal": proposal.json()["proposal"]},
+            )
+            assert confirmed.status_code == 201, confirmed.text
+            task_id = UUID(confirmed.json()["result"]["task_id"])
+            started = await client.post(f"/api/v1/tasks/{task_id}/runs", headers=headers[0])
+            assert started.status_code == 201
+            run_id = UUID(started.json()["id"])
+            await asyncio.wait_for(asyncio.gather(*tuple(dispatcher._tasks)), timeout=10)
+            async with factory() as session:
+                run = await session.get_one(TaskRun, run_id)
+                assert run.status is TaskRunStatus.SUCCEEDED, run.result_metadata
+                metadata = run.result_metadata
+                canonical = artifacts.load_dynamic_evidence(str(task_id), str(run_id))
+                assert canonical is not None
+                assert all(
+                    metadata[key] == canonical[key]
+                    for key in (
+                        "analysis_periods",
+                        "metrics",
+                        "provenance",
+                        "selected_scene_evidence",
+                    )
+                )
+                assert metadata["artifact_references"] == canonical["artifacts"]
+                assert len(metadata["artifact_references"]) == 9
+                snapshot = load_progress_snapshot(task_id, run_id)
+                assert snapshot is not None
+                assert (
+                    artifacts.current_attempt_id(str(task_id), str(run_id)) == snapshot.attempt_id
+                )
+            path = f"/api/v1/tasks/{task_id}/runs/{run_id}"
+            assert (await client.get(path, headers=headers[0])).json()["status"] == "succeeded"
+            owner_map = await client.get(f"{path}/map", headers=headers[0])
+            assert owner_map.status_code == 200, owner_map.text
+            quality = owner_map.json()["quality_report"]
+            assert quality["metrics_digest"] == metadata["provenance"]["metrics_sha256"]
+            assert quality["artifact_integrity"] == metadata["provenance"]["artifact_checksums"]
+            assert len(quality["artifact_integrity"]) == 9
+            assert (await client.get(f"{path}/map")).status_code == 401
+            assert (await client.get(f"{path}/map", headers=headers[1])).status_code == 404
+            for name in ("ndvi_before", "ndvi_after", "ndvi_change"):
+                assert (
+                    await client.get(f"{path}/artifacts/{name}", headers=headers[0])
+                ).status_code == 200
+            preview = artifacts.artifact_path(str(task_id), str(run_id), "ndvi_before")
+            original = preview.read_bytes()
+            preview.write_bytes(original + b"tampered")
+            assert (await client.get(f"{path}/map", headers=headers[0])).status_code == 409
+            preview.write_bytes(original)
+            mismatched = dict(canonical, metrics={"forged": 1})
+            artifacts.write_dynamic_evidence(str(task_id), str(run_id), mismatched)
+            assert (await client.get(f"{path}/map", headers=headers[0])).status_code == 409
+            print(
+                json.dumps(
+                    {
+                        "checkpoint": "A",
+                        "day": day,
+                        "runtime": "succeeded",
+                        "proposal": 200,
+                        "confirmation": 201,
+                        "run_creation": 201,
+                        "map": 200,
+                        "artifacts": 9,
+                        "noauth": 401,
+                        "foreign": 404,
+                        "tampered": 409,
+                        "binder_mismatch": 409,
+                        "provider": "deterministic preparation, real compute and verifiers",
+                    }
+                )
+            )
+    finally:
+        await dispatcher.close()
+        app.dependency_overrides.pop(get_session_factory, None)
