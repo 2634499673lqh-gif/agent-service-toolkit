@@ -246,7 +246,9 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
             "created_at",
             "updated_at",
             "result_metadata",
+            "progress",
         }
+        assert body["progress"] is None
         run_id = body["id"]
 
         inspected = await client.get(
@@ -261,6 +263,7 @@ async def test_task_run_start_and_inspect_are_tenant_scoped(api_context) -> None
             headers=_headers(tokens["member"]),
         )
         assert populated.status_code == 200
+        assert populated.json()["progress"] is None
         assert populated.json()["result_metadata"]["schema_version"] == "taskpilot.runtime.v1"
         assert populated.json()["result_metadata"]["runtime_profile"] == {
             "provider": "fake",

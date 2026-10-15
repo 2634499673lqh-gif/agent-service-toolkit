@@ -38,6 +38,18 @@ def _metadata(name: str = "inspect") -> CapabilityMetadata:
     )
 
 
+def test_capability_identity_check_requires_the_exact_server_class() -> None:
+    class DerivedCapability(FakeCapability):
+        pass
+
+    capability = FakeCapability(_metadata(), object())
+    dispatcher = CapabilityDispatcher({"inspect": capability})
+
+    assert dispatcher.is_exact_capability("inspect", FakeCapability)
+    assert not dispatcher.is_exact_capability("inspect", DerivedCapability)
+    assert not dispatcher.is_exact_capability("missing", FakeCapability)
+
+
 @pytest.mark.asyncio
 async def test_dispatches_explicit_capability_with_validated_step_and_context() -> None:
     context = object()

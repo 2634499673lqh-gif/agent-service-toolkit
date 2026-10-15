@@ -991,3 +991,32 @@ def test_asset_timeout_runs_supervised_child_cleanup(monkeypatch) -> None:
         )
     assert process.actions == ["terminate", "join", "kill", "join"]
     assert parent.closed
+
+
+def test_raster_spawn_does_not_reload_application_sdks():
+    """Windows spawn reimports the entrypoint once per remote raster asset."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib.abc
+import runpy
+import sys
+sys.path.insert(0, 'src')
+class RejectApplicationImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {'core', 'uvicorn', 'dotenv'}:
+            raise AssertionError('Raster child loaded application dependency: ' + fullname)
+sys.meta_path.insert(0, RejectApplicationImports())
+runpy.run_path('src/run_service.py', run_name='__mp_main__')
+""",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr

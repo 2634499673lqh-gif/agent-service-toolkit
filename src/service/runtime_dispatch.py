@@ -36,7 +36,7 @@ class RuntimeDispatchService:
         try:
             factory = get_business_session_factory()
             async with factory() as session:
-                await TaskRuntimeService(self.checkpointer).execute_run(
+                await TaskRuntimeService(self.checkpointer, session_factory=factory).execute_run(
                     session,
                     organization_id=organization_id,
                     task_id=task_id,

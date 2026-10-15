@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
@@ -19,7 +20,7 @@ from runtime.executor import (
 from schema.planner import PlanStep
 
 from .aoi import TrustedAOI, resolve_aoi
-from .artifacts import ARTIFACT_ROOT, write_dynamic_evidence
+from .artifacts import ARTIFACT_ROOT, discard_attempt_artifacts, write_dynamic_evidence
 from .fixture import EXECUTION_MODE, compute_cached_change, scene_evidence
 from .landsat import MonthlyPeriod, PeriodPair, prepare_landsat_periods
 from .landsat_ndvi import (
@@ -327,11 +328,12 @@ class SummarizeChangeRuntimeCapability(_Base):
 
     async def execute(self, step: PlanStep, context: Any) -> ExecutionResult:
         task = _task(context)
-        artifact_root = (
+        run_artifact_root = (
             ARTIFACT_ROOT
             / str(context.runtime_task_id or "runtime")
             / str(context.runtime_task_run_id or "current")
         )
+        artifact_root = run_artifact_root
         scene_evidence = dict(getattr(context, "geochange_evidence", {}) or {})
         if task.data_mode == LANDSAT_EXECUTION_MODE:
             if task.aoi_key != "jianghan_district_420103" or task.indicator != "NDVI":
@@ -341,6 +343,21 @@ class SummarizeChangeRuntimeCapability(_Base):
                     error_code="invalid_landsat_intent",
                     error_message="Landsat mode requires the trusted Jianghan NDVI intent",
                 )
+            progress_sink = (
+                getattr(context, "progress_sink", None)
+                if type(self) is SummarizeChangeRuntimeCapability
+                and task.aoi_key == "jianghan_district_420103"
+                and task.indicator == "NDVI"
+                and context.runtime_task_id
+                and context.runtime_task_run_id
+                else None
+            )
+            artifact_root = (
+                progress_sink.artifact_dir()
+                if progress_sink is not None
+                and callable(getattr(progress_sink, "artifact_dir", None))
+                else run_artifact_root
+            )
             try:
                 from .aoi import resolve_aoi
 
@@ -366,20 +383,19 @@ class SummarizeChangeRuntimeCapability(_Base):
                         end_utc=end,
                     )
 
+                period_pair = PeriodPair(
+                    period_a=month(task.period_a, "a"), period_b=month(task.period_b, "b")
+                )
+                if progress_sink is not None:
+                    await progress_sink.start_phase("preparation")
                 pair = await asyncio.to_thread(
                     prepare_landsat_periods,
                     aoi,
-                    PeriodPair(
-                        period_a=month(task.period_a, "a"), period_b=month(task.period_b, "b")
-                    ),
+                    period_pair,
                 )
-                product = compute_landsat_ndvi_product(pair, artifact_dir=artifact_root)
-                verification = verify_landsat_ndvi_product(
-                    product, pair, artifact_root=artifact_root
-                )
-                if verification["status"] != "passed":
-                    raise ValueError("landsat verifier failed")
             except Exception as error:
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("preparation")
                 error_text = str(error)
                 error_code = (
                     "insufficient_ndvi_coverage"
@@ -394,6 +410,39 @@ class SummarizeChangeRuntimeCapability(_Base):
                     error_code=error_code,
                     error_message=error_text[:200],
                 )
+            if progress_sink is not None:
+                await progress_sink.complete_phase("preparation")
+                await progress_sink.start_phase("computation")
+            try:
+                product = await asyncio.to_thread(
+                    compute_landsat_ndvi_product,
+                    pair,
+                    artifact_dir=artifact_root,
+                )
+            except Exception as error:
+                if progress_sink is not None and callable(
+                    getattr(progress_sink, "artifact_dir", None)
+                ):
+                    await asyncio.to_thread(discard_attempt_artifacts, artifact_root)
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("computation")
+                error_text = str(error)
+                error_code = (
+                    "insufficient_ndvi_coverage"
+                    if "insufficient_ndvi_coverage" in error_text
+                    else "insufficient_comparison_coverage"
+                    if "insufficient_comparison_coverage" in error_text
+                    else "landsat_preparation_failed"
+                )
+                return ExecutionResult(
+                    step_position=step.position,
+                    success=False,
+                    error_code=error_code,
+                    error_message=error_text[:200],
+                )
+            if progress_sink is not None:
+                await progress_sink.complete_phase("computation")
+                await progress_sink.start_phase("validation")
             metrics = product.metrics
             period_provenance = {
                 "period_a": pair.period_a.provenance,
@@ -410,6 +459,8 @@ class SummarizeChangeRuntimeCapability(_Base):
                     "scene_provenance": period_provenance,
                     "target_crs": pair.pair_grid.crs,
                     "target_dimensions": [pair.pair_grid.height, pair.pair_grid.width],
+                    "provider": "microsoft-planetary-computer",
+                    "sensor": "Landsat 8/9 Collection 2 Level 2",
                 }
             )
             product.metrics["aoi_area_m2"] = float(aoi.area_m2)
@@ -418,26 +469,44 @@ class SummarizeChangeRuntimeCapability(_Base):
                     product.metrics, sort_keys=True, separators=(",", ":"), allow_nan=False
                 ).encode()
             ).hexdigest()
-            metadata_verification = verify_landsat_ndvi_metadata(
-                product,
-                pair,
-                expected_aoi={
-                    "aoi_id": aoi.aoi_id,
-                    "source_hash": aoi.source_hash,
-                    "source_version": aoi.source_version,
-                    "source_url": aoi.source_url,
-                    "area_m2": aoi.area_m2,
-                },
-                expected_periods={
-                    "period_a": pair.period_a.requested_period.model_dump(mode="json"),
-                    "period_b": pair.period_b.requested_period.model_dump(mode="json"),
-                },
-                artifact_root=artifact_root,
-            )
-            if metadata_verification["status"] != "passed":
-                raise ValueError(
-                    f"landsat verifier failed: {metadata_verification.get('code', 'metadata')}"
+            try:
+                verification = await asyncio.to_thread(
+                    verify_landsat_ndvi_product,
+                    product,
+                    pair,
+                    artifact_root=artifact_root,
                 )
+                if verification["status"] != "passed":
+                    raise ValueError("landsat verifier failed")
+                metadata_verification = await asyncio.to_thread(
+                    verify_landsat_ndvi_metadata,
+                    product,
+                    pair,
+                    expected_aoi={
+                        "aoi_id": aoi.aoi_id,
+                        "source_hash": aoi.source_hash,
+                        "source_version": aoi.source_version,
+                        "source_url": aoi.source_url,
+                        "area_m2": aoi.area_m2,
+                    },
+                    expected_periods={
+                        "period_a": pair.period_a.requested_period.model_dump(mode="json"),
+                        "period_b": pair.period_b.requested_period.model_dump(mode="json"),
+                    },
+                    artifact_root=artifact_root,
+                )
+                if metadata_verification["status"] != "passed":
+                    raise ValueError(
+                        f"landsat verifier failed: {metadata_verification.get('code', 'metadata')}"
+                    )
+            except Exception:
+                if progress_sink is not None and callable(
+                    getattr(progress_sink, "artifact_dir", None)
+                ):
+                    await asyncio.to_thread(discard_attempt_artifacts, artifact_root)
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("validation")
+                raise
             payload = {
                 "schema_version": "geochange.v1",
                 "analysis_type": "vegetation_change",
@@ -492,24 +561,56 @@ class SummarizeChangeRuntimeCapability(_Base):
                     ),
                 },
             }
-            projection_verification = verify_landsat_terminal_projection(payload, product, pair)
+            projection_verification = await asyncio.to_thread(
+                verify_landsat_terminal_projection, payload, product, pair
+            )
             if projection_verification["status"] != "passed":
+                if progress_sink is not None and callable(
+                    getattr(progress_sink, "artifact_dir", None)
+                ):
+                    await asyncio.to_thread(discard_attempt_artifacts, artifact_root)
+                if progress_sink is not None:
+                    await progress_sink.fail_phase("validation")
                 raise ValueError(
                     f"landsat verifier failed: {projection_verification.get('code', 'projection')}"
                 )
             canonical_evidence = build_landsat_terminal_projection(product, pair)
             if not context.runtime_task_id or not context.runtime_task_run_id:
+                if progress_sink is not None and callable(
+                    getattr(progress_sink, "artifact_dir", None)
+                ):
+                    await asyncio.to_thread(discard_attempt_artifacts, artifact_root)
                 return ExecutionResult(
                     step_position=step.position,
                     success=False,
                     error_code="dynamic_runtime_identity_missing",
                     error_message="Dynamic terminal run identity is unavailable",
                 )
-            write_dynamic_evidence(
-                str(context.runtime_task_id),
-                str(context.runtime_task_run_id),
-                canonical_evidence,
+            publish = cast(
+                Callable[[Any, dict[str, Any]], Awaitable[bool]] | None,
+                getattr(progress_sink, "publish_artifacts", None)
+                if progress_sink is not None
+                else None,
             )
+            if callable(publish):
+                published = await publish(artifact_root, canonical_evidence)
+                if not published:
+                    if callable(getattr(progress_sink, "artifact_dir", None)):
+                        await asyncio.to_thread(discard_attempt_artifacts, artifact_root)
+                    if progress_sink is not None:
+                        await progress_sink.fail_phase("validation")
+                    return ExecutionResult(
+                        step_position=step.position,
+                        success=False,
+                        error_code="stale_attempt_artifacts",
+                        error_message="Landsat artifacts belong to a superseded attempt",
+                    )
+            else:
+                write_dynamic_evidence(
+                    str(context.runtime_task_id),
+                    str(context.runtime_task_run_id),
+                    canonical_evidence,
+                )
             return self._trusted_dynamic_result(step, payload, canonical_evidence)
         if task.analysis_type == "water_change":
             try:

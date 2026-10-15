@@ -2,14 +2,16 @@ import asyncio
 import logging
 import sys
 
-import uvicorn
-from dotenv import load_dotenv
-
-from core import settings
-
-load_dotenv()
-
 if __name__ == "__main__":
+    # Windows raster workers reimport this file as __mp_main__. Keep service
+    # and model SDK initialization out of those bounded child processes.
+    import uvicorn
+    from dotenv import load_dotenv
+
+    from core import settings
+
+    load_dotenv()
+
     root_logger = logging.getLogger()
     if root_logger.handlers:
         print(

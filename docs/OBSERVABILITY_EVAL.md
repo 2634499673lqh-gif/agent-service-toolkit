@@ -203,3 +203,66 @@ The default CI job runs the provider-free smoke subset
 requires no provider, network, or Evaluation database and uploads the bounded
 JSON artifact. The command exits non-zero for runner `error`/`partial`, failed
 cases, incomparable comparison, or an oversized report.
+
+## V0.4 TaskRun execution progress (Implementation A; COMPLETE / APPROVED)
+
+Execution progress is a bounded observation for real Jianghan Landsat runs,
+with the phases `planning`, `preparation`, `computation`, `validation`, and
+`finalization`. Events are emitted around actual planner, preparation, NDVI
+computation, product/metadata/projection verification, and terminal verifier
+work. Placeholder search/compute capabilities do not mark real work complete.
+Only the exact server-wired Landsat summarization capability receives the
+in-process progress callback; the callback is excluded from context
+serialization and checkpoint state.
+
+The per-run `.execution_progress.json` snapshot is capped at 8 KiB and written
+atomically beside, but separately from, `.dynamic_evidence.json`. Each retry,
+replan, or resume starts a new attempt identity. Under the existing Task then
+TaskRun lock, the reset first commits a strictly newer `TaskRun.updated_at`
+generation. Snapshot publication then writes a bounded unavailable tombstone
+and the replacement. A newer TaskRun generation, corrupt or missing snapshot,
+wrong identity, or oversized file makes progress unavailable; this remains true
+when tombstone or replacement publication fails and after process restart.
+Phase callback leases capture the attempt identity, and short progress
+transactions use the same lock order, matching the existing lifecycle order.
+Late callbacks from an old attempt or terminal run are rejected. No provider
+work runs while these row locks are held; Landsat preparation and computation
+run in worker threads without sharing an `AsyncSession`.
+
+Progress never authorizes work, verifies a result, or decides lifecycle
+success. Finalization remains running until the TaskRun success transaction is
+committed. The existing schema does not durably bind a terminal transition to
+its fenced attempt, so every terminal snapshot is projected as unavailable;
+the committed TaskRun status and verified result metadata remain authoritative
+and are returned independently. SQL, checkpoint, artifact, and progress files
+are separate stores without a cross-system atomicity guarantee; progress-write
+failure therefore degrades to unavailable observation rather than changing
+execution outcome. A durable attempt-fence failure establishes no new attempt
+and is propagated to the runtime boundary for fail-closed recovery. No worker
+liveness or time-remaining inference is exposed.
+
+## V0.4 Implementation A blocker closure (2026-10-09)
+
+Progress reset fencing now commits a strictly newer `TaskRun.updated_at`
+generation before writing a bounded unavailable tombstone and the new snapshot.
+If tombstone or replacement persistence fails, any previous snapshot has a
+stale generation and cannot be projected after process restart. Repeated failed
+resets remain unavailable, while a later successful reset can replace the old
+or corrupt file and establish a fresh attempt. A database fence failure does
+not establish a new attempt; the caller retains the previously committed
+attempt authority and no new progress lease is granted.
+Real Landsat work uses server-issued attempt directories under `attempts/`.
+Preparation and computation write only to that isolated directory. A short
+Task/TaskRun-ordered transaction verifies the active attempt before atomically
+publishing the current-attempt pointer and dynamic evidence binder. Late or
+cancelled workers remain isolated and cannot overwrite a newer attempt.
+Resume copies only the previously published, verified attempt directory into a
+new attempt before reactivating it under the same fence. SQL, checkpoint,
+progress, and artifact stores remain separately persisted without a
+cross-system atomicity claim.
+
+The duplicate progress test module basename was removed by renaming the runtime
+module to `tests/runtime/test_task_run_progress_runtime.py`; default pytest
+collection now succeeds. PostgreSQL progress, promotion, cancellation,
+tenant, lifecycle, and authenticated API regressions execute against a
+disposable PostgreSQL 16 database.

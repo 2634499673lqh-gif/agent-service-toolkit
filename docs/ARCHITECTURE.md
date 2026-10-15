@@ -145,3 +145,46 @@ The historical Phase 9 Product UI plan kept Streamlit and the legacy AgentClient
 The approved Product path persists a Task and TaskRun, dispatches the existing runtime, and exposes bounded GeoChange result metadata, tenant-authorized PNG references, and trace events. The current vertical is the Wuhan East Lake vegetation-change workflow with four capabilities: `resolve_aoi`, `search_sentinel2`, `compute_vegetation_change`, and `summarize_change`. The LLM may interpret the request, produce bounded structured planning, and write an explanation; deterministic server code remains authoritative for tenant authorization, lifecycle, AOI/STAC validation, NDVI/statistics, verification, and artifact access.
 
 The supported portfolio mode is `CACHED_REAL_SENTINEL2_RASTER`: deterministic NumPy code reads two small, checksum-verified real Sentinel-2 B04/B08 crops from `data/geochange-fixtures/real-sentinel2-v1/`. Live STAC metadata is optional, but it must bind to those cached scene and asset identities; no remote raster is downloaded or processed per run. Batch C adds evaluation evidence and presentation documentation only. It does not add worker infrastructure, production-scale GIS, live remote COG processing, or broader AOI/provider coverage. A quality failure can consume the existing single replan budget; exhaustion is terminal.
+
+## V0.4 Implementation A — Execution Progress Observability (COMPLETE / APPROVED / COMMITTED)
+
+Implementation A adds an additive progress projection to the existing tenant-
+scoped TaskRun GET route and a compact React progress panel. Real Jianghan
+Landsat phase events follow actual server operations. A separate bounded
+progress snapshot is observational, attempt-scoped, and cannot authorize work
+or determine success; committed TaskRun state and existing validation facts
+remain authoritative. No schema migration, queue, WebSocket, or East Lake
+workflow change was introduced. Before a reset publishes a file, it commits a
+strictly newer `TaskRun.updated_at` generation under the existing Task then
+TaskRun lock. Snapshot reads and callbacks require that generation to match, so
+an old file remains unavailable after a failed reset write or process restart.
+The existing schema has no durable terminal-attempt binding: terminal
+`updated_at` is changed by the lifecycle transition, and an artifact pointer
+can remain stale after a failed reset publication. Terminal progress therefore
+fails closed to `null`; TaskRun terminal status and verified results remain
+authoritative and are projected independently.
+The required PostgreSQL concurrency validation executes against a disposable
+PostgreSQL 16 database. Implementation A is COMPLETE / APPROVED / COMMITTED
+after independent Strong Review. Implementation B is COMPLETE / APPROVED /
+COMMITTED. B1 projects quality claims only from the tenant-scoped published
+dynamic-evidence sidecar. B2 is an offline numerical consistency check for one
+captured prepared-input/output package: PASS means internal integrity and
+independent NDVI/mask agreement within frozen tolerances; it does not
+authenticate a persisted TaskRun or establish external observational accuracy.
+
+V0.4 is COMPLETE / FINAL AUDIT APPROVED. The independent focused Final Audit
+re-review dated 2026-10-14 APPROVED HEAD
+`6578c1dba19d8a997a48a4f5d97857954efdf6b5` plus the 13 reviewed uncommitted
+files. All six original Final Audit blockers are VERIFIED CLOSED; the Windows
+subprocess performance repair is independently verified. Final correction
+commit/push: PENDING. PR / merge main: PENDING. Substantive code changes require
+reassessment of affected approval evidence.
+
+The verified fresh Landsat execution used a deterministic Planner, persisted
+SUCCEEDED, returned authenticated map 200 and rendered A/B/change in React;
+real online LLM Planner E2E remains unverified. Independent full regression:
+1264 passed, 13 failed, 4 skipped. Existing baseline/configuration-sensitive
+failures remain documented; this is not full production readiness. The audit's
+disposable PostgreSQL container cleanup remains pending because the Docker
+engine became unavailable. Historical NOT APPROVED findings and chronology
+remain in the audit reports and dated process records.

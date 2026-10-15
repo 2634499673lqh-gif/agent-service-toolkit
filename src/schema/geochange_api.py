@@ -45,3 +45,4 @@ class GeoChangeMapResponse(BaseModel):
     artifacts: dict[str, str] = {}
     artifact_urls: dict[str, str] = {}
     scientific_limit: str
+    quality_report: dict[str, Any] | None = None

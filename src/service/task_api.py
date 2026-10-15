@@ -28,6 +28,7 @@ from service.task_lifecycle import (
     TaskLifecycleInconsistentStateError,
     TaskNotFoundError,
 )
+from service.task_run_progress import project_progress
 from service.task_run_service import TaskRunService
 from service.task_service import TaskService
 from service.trace_service import TraceService
@@ -246,7 +247,8 @@ async def get_task_run(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=RESOURCE_NOT_FOUND_DETAIL,
         )
-    return TaskRunResponse.model_validate(task_run)
+    response = TaskRunResponse.model_validate(task_run)
+    return response.model_copy(update={"progress": project_progress(task_id, run_id, task_run)})
 
 
 @task_router.get("/{task_id}/runs/{run_id}/map", response_model=GeoChangeMapResponse)
@@ -278,7 +280,22 @@ async def get_task_run_map(
     ):
         raise HTTPException(status_code=422, detail="分析结果缺少可信时段")
     dynamic = metadata.get("execution_mode") == "real_stac_landsat_local"
-    trusted = trusted_landsat_map_metadata(metadata) if dynamic else trusted_map_metadata(indicator)
+    try:
+        trusted = (
+            trusted_landsat_map_metadata(metadata) if dynamic else trusted_map_metadata(indicator)
+        )
+    except (TypeError, ValueError, KeyError) as error:
+        raise HTTPException(status_code=409, detail="分析结果证据不可用") from error
+    quality_report = None
+    if dynamic and indicator == "NDVI":
+        try:
+            from geochange.artifacts import load_dynamic_evidence
+            from geochange.quality import build_landsat_quality_report
+
+            canonical = load_dynamic_evidence(str(task_id), str(run_id))
+            quality_report = build_landsat_quality_report(metadata, canonical_evidence=canonical)
+        except (TypeError, ValueError, KeyError) as error:
+            raise HTTPException(status_code=409, detail="分析质量证据不可用") from error
     artifacts = metadata.get("artifact_references")
     safe_artifacts = artifacts if isinstance(artifacts, dict) else {}
     allowed_artifacts = {
@@ -360,6 +377,7 @@ async def get_task_run_map(
             else _SCIENTIFIC_LIMITS[indicator]
             + "；统计仅针对缓存窗口中的有效像元，不代表整个东湖研究区。"
         ),
+        quality_report=quality_report,
     )
 
 
