@@ -7154,3 +7154,28 @@ native nonzero exit codes require explicit checks. Read the command file,
 focused tests and runbook. Exercise: run the mocked timeout scenario and verify
 the trace contains no old Web start. Do not worry about V0.5 or a new deployment
 framework. Suggested next task: independent focused re-review of B1 and B2.
+## 2026-11-07 — Repository branch/worktree cleanup and V0.5 cutover-review baseline
+
+清理了已经合入 `main` 的本地与 `origin` 历史分支：V0.2、V0.3、V0.4
+以及 Phase 1–14 分支均已确认没有独有提交后删除。保留 `upstream/*` 远程跟踪引用，
+因为它们属于上游仓库。移除了 3 个干净的 detached worktree；原始主 worktree
+从旧的 `codex/taskpilot-v03-a` 切换到新的 `codex/taskpilot-v05-cutover-review`。
+
+主站部署准备改动已提交为 `491427f`（`ops: add main-site backup and cutover preparation`），
+并推送到 `main` 和 `codex/taskpilot-v05-cutover-review`。新增主站备份、恢复预检、候选构建和
+切换脚本的 47 个测试全部通过；Ruff、格式检查、Pyrefly、`git diff --check` 通过。
+
+两个含未提交内容的临时 worktree 没有直接丢弃：`_taskpilot_v03_browser` 的补丁和状态、
+`_taskpilot_v03_b_fix/compose.smoke.yaml` 已归档到
+`D:\\codex\\agent项目\\git-archive\\taskpilot-v03-cleanup-20261107` 后再移除。
+主线已包含其中的代码和测试；归档用于恢复历史文档差异，不作为新的产品实现来源。
+
+当前限制：主站真实切换仍需独立复审、历史地图缺失/待处理任务的处置、维护窗口、写入方隔离、
+最终备份和明确的切换授权；本次未执行真实 cutover。下一步是对部署准备做独立 Strong Review，
+然后只在所有切换门槛满足后执行候选站切换。
+
+Learner notes: 分支清理前要先证明提交已合入目标分支；含未提交文件的 worktree 必须先归档，
+不能用删除分支代替备份。建议阅读 `docs/DEPLOYMENT_RUNBOOK.md`、`scripts/main_site_cutover.ps1`
+和 `scripts/main_site_recovery.py`。练习：用 `git branch --merged main` 和 `git worktree list`
+解释为什么一个已合入的分支仍可能因为 worktree 占用而不能删除。暂时不必处理分布式 worker
+或新的 AOI/provider。
