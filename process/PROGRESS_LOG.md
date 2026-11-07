@@ -7179,3 +7179,17 @@ Learner notes: 分支清理前要先证明提交已合入目标分支；含未�
 和 `scripts/main_site_recovery.py`。练习：用 `git branch --merged main` 和 `git worktree list`
 解释为什么一个已合入的分支仍可能因为 worktree 占用而不能删除。暂时不必处理分布式 worker
 或新的 AOI/provider。
+## 2026-11-07 — V0.5 reproducible frontend dependency baseline
+
+将 `web/package.json` 中的 `latest` 依赖锁定为当前经过 lockfile 验证的确切版本：
+`@vitejs/plugin-react 6.1.1`、`maplibre-gl 6.11.2`、`react/react-dom 19.3.0`、
+`typescript 7.0.2`、`vite 8.3.2`，并同步更新 `web/pnpm-lock.yaml` 的 specifier。
+这样后续候选镜像重建不会因 registry 的 `latest` 漂移而得到不同的前端依赖集合。
+
+验证：`pnpm --dir web install --frozen-lockfile`、`pnpm --dir web test`（3 passed）、
+`pnpm --dir web run typecheck`、`pnpm --dir web run build` 和 `git diff --check` 通过。
+提交为 `dae9541`，已同步到 `main` 与 `codex/taskpilot-v05-cutover-review`。
+
+Learner notes: `package.json` 的版本范围和 lockfile 中解析出的版本是两层不同的约束；
+生产构建要同时保证 specifier 和 lockfile 一致。练习：修改一个前端依赖后运行 frozen install，
+观察 pnpm 如何在依赖声明与 lockfile 不一致时拒绝安装。暂时不必处理代码分包优化。
