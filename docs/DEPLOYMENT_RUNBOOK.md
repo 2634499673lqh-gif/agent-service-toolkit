@@ -159,9 +159,10 @@ and output digests. Failure to match an existing pin blocks the build.
 The API image adds only the deployment preflight. OCI labels record the approved
 revision and preflight/Compose hashes; `candidate-source.json` records immutable
 image IDs. Use those IDs, not mutable tags, for cutover. Capture the resulting
-image archive and frontend package-lock as build evidence; approved frontend
-dependencies use `latest`, so a later rebuild may produce different image IDs.
-Use the verified image archive to reproduce this exact deployment.
+image archive and frontend lockfile as build evidence. Frontend dependencies are
+pinned in `web/package.json` and `web/pnpm-lock.yaml`, but a later rebuild can
+still produce different image IDs through base-image or toolchain changes. Use
+the verified image archive to reproduce this exact deployment.
 
 `compose.main-site.yaml` is standalone and defines only API/web. It requires an
 existing external network, existing bind directories, pinned image IDs, protected
