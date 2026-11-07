@@ -998,6 +998,7 @@ class TaskRun(Base):
     __tablename__ = "task_runs"
     __table_args__ = (
         CheckConstraint("run_number >= 1", name="task_run_number_positive"),
+        CheckConstraint("worker_attempts >= 0", name="task_run_worker_attempts_nonnegative"),
         CheckConstraint(
             "status IN ('pending', 'running', 'succeeded', 'failed', 'cancelled')",
             name="task_run_status_valid",
@@ -1009,6 +1010,13 @@ class TaskRun(Base):
             "uq_task_runs_one_active_per_task",
             "task_id",
             unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
+        Index(
+            "ix_task_runs_worker_lease",
+            "status",
+            "worker_lease_expires_at",
+            "created_at",
             postgresql_where=text("status IN ('pending', 'running')"),
         ),
     )
@@ -1044,6 +1052,13 @@ class TaskRun(Base):
         default=utc_now,
         onupdate=utc_now,
         server_default=text("CURRENT_TIMESTAMP"),
+    )
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    worker_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    worker_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     result_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 

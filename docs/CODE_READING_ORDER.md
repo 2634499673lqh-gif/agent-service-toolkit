@@ -18,4 +18,8 @@ Use this sequence to learn the current repository. Read the cited tests beside e
 
 While reading, ask who calls each module, what it receives, what it returns or persists, and which trust boundary applies. Keep these concepts separate: legacy LangGraph conversation checkpoints, authenticated TaskPilot identity, persisted Task/TaskRun state, approval records, runtime evidence, and Product UI snapshots.
 
-Deferred or deliberately absent systems include a public runtime execution API, TaskStep persistence/view, background worker, Redis/distributed lock, and generic exactly-once guarantee. Do not infer them from the runtime modules or from the legacy chat UI.
+Deferred or deliberately absent systems include a public runtime execution API,
+TaskStep persistence/view, Redis/distributed lock, and generic exactly-once
+guarantee. The PostgreSQL durable worker is implemented in
+`src/service/runtime_worker.py` under ADR-015; do not confuse its database lease
+with exactly-once execution.

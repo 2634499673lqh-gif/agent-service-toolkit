@@ -157,6 +157,10 @@ class Settings(BaseSettings):
     POSTGRES_POOL_CHECKOUT_TIMEOUT: float = Field(default=5.0, gt=0)
     POSTGRES_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=0)
     RUNTIME_MAX_CONCURRENT: int = Field(default=2, ge=1)
+    TASKPILOT_WORKER_ENABLED: bool = False
+    TASKPILOT_WORKER_POLL_INTERVAL: float = Field(default=1.0, gt=0)
+    TASKPILOT_WORKER_LEASE_SECONDS: float = Field(default=30.0, gt=1)
+    TASKPILOT_WORKER_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=10)
     READINESS_DATABASE_TIMEOUT: float = Field(default=2.0, gt=0)
 
     # MongoDB Configuration
@@ -302,6 +306,8 @@ class Settings(BaseSettings):
 
     def _validate_database_config(self) -> None:
         """Validate only the selected persistence backend's configuration."""
+        if self.TASKPILOT_WORKER_ENABLED and self.DATABASE_TYPE != DatabaseType.POSTGRES:
+            raise ValueError("TASKPILOT_WORKER_ENABLED requires DATABASE_TYPE=postgres")
         if self.DATABASE_TYPE == DatabaseType.SQLITE:
             return
 

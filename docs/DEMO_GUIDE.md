@@ -14,7 +14,7 @@ Use the Docker/local path in [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md), then run 
    title such as `Compare Wuhan East Lake vegetation change` and a description
    containing the July 2023 and July 2024 periods.
 4. Open the task and choose **Start run**. The API creates the tenant-scoped
-   TaskRun and dispatches the bounded process-local runtime. Refresh while it is
+   TaskRun; the PostgreSQL Compose worker claims the durable run. Refresh while it is
    active; the UI stops automatic refresh after its finite budget and exposes a
    truthful manual refresh.
 5. Read the result in this order: interpreted parameters and stage status;

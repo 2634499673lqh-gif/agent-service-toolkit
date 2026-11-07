@@ -50,8 +50,9 @@ Run the API and Streamlit commands in separate terminals. The API exposes `GET /
 
 For the portfolio flow, open `http://localhost:8501`, sign in with the owner
 created above, create a task describing the supported Wuhan East Lake July 2023
-versus July 2024 comparison, and choose **Start run**. The API dispatches the
-tenant-scoped TaskRun to the bounded process-local runtime. See
+versus July 2024 comparison, and choose **Start run**. In the PostgreSQL Compose
+path the API persists the TaskRun and the durable worker claims it; the UI then
+polls the persisted run state. See
 `docs/DEMO_GUIDE.md` for the result-reading order and the cached-raster/live-
 metadata distinction.
 

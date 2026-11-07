@@ -105,6 +105,13 @@ def test_settings_use_fake_model():
         assert settings.AVAILABLE_MODELS == set(FakeModelName)
 
 
+def test_worker_requires_postgres_business_persistence():
+    with pytest.raises(
+        ValueError, match="TASKPILOT_WORKER_ENABLED requires DATABASE_TYPE=postgres"
+    ):
+        Settings(_env_file=None, USE_FAKE_MODEL=True, TASKPILOT_WORKER_ENABLED=True)
+
+
 def test_settings_use_fake_model_wins_over_ambient_real_keys():
     # USE_FAKE_MODEL must win the default even when real provider keys are present.
     with patch.dict(

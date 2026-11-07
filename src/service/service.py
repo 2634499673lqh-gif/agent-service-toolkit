@@ -55,6 +55,7 @@ from service.geochange_api import geochange_router
 from service.logging import configure_logging, reset_request_id, set_request_id
 from service.runtime_capacity import RuntimeCapacityFull, runtime_capacity
 from service.runtime_dispatch import RuntimeDispatchService
+from service.runtime_worker import TaskRunWorker
 from service.task_api import task_router
 from service.threads import list_user_threads
 from service.utils import (
@@ -101,6 +102,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.langgraph_persistence_configured = database_type == "postgres"
     app.state.langgraph_persistence = None
     app.state.runtime_dispatcher = None
+    app.state.runtime_worker = None
     try:
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
@@ -112,8 +114,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 await store.setup()
             if app.state.langgraph_persistence_configured:
                 app.state.langgraph_persistence = (saver, store)
-            app.state.runtime_dispatcher = RuntimeDispatchService(saver)
-
             if not settings.AUTH_SECRET:
                 logger.warning(
                     "AUTH_SECRET is not configured — all API endpoints are unauthenticated. "
@@ -135,6 +135,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
+            if settings.TASKPILOT_WORKER_ENABLED:
+                worker = TaskRunWorker(
+                    saver,
+                    poll_interval=settings.TASKPILOT_WORKER_POLL_INTERVAL,
+                    lease_seconds=settings.TASKPILOT_WORKER_LEASE_SECONDS,
+                    max_attempts=settings.TASKPILOT_WORKER_MAX_ATTEMPTS,
+                )
+                await worker.start()
+                app.state.runtime_worker = worker
+            else:
+                app.state.runtime_dispatcher = RuntimeDispatchService(saver)
             app.state.startup_complete = True
             yield
     except Exception as e:
@@ -147,6 +158,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if dispatcher is not None:
             await dispatcher.close()
         app.state.runtime_dispatcher = None
+        worker = getattr(app.state, "runtime_worker", None)
+        if worker is not None:
+            await worker.close()
+        app.state.runtime_worker = None
         await dispose_business_engine()
 
 

@@ -75,10 +75,16 @@ uv run pyrefly check
 
 ## Limitations
 
-The current portfolio path uses process-local runtime dispatch, has no distributed worker or production exactly-once guarantee, supports one controlled AOI/use case, and does not provide production-scale GIS features. `CACHED_REAL_SENTINEL2_RASTER` reads the repository's cached real pixels; optional live STAC checks provide metadata only and do not download or process remote raster/COG pixels per run.
+The PostgreSQL Compose path uses a durable TaskRun worker with bounded leases,
+stale-run recovery, and checkpoint-based resume. SQLite/local development keeps
+the process-local dispatch fallback. The project has no distributed worker or
+production exactly-once guarantee, supports one controlled AOI/use case, and
+does not provide production-scale GIS features. `CACHED_REAL_SENTINEL2_RASTER`
+reads the repository's cached real pixels; optional live STAC checks provide
+metadata only and do not download or process remote raster/COG pixels per run.
 
 ## Deferred roadmap
 
-Future work may add durable worker execution, broader validated AOI coverage, and live raster pipelines after their contracts and security boundaries are designed.
+Future work may add broader validated AOI coverage and live raster pipelines after their contracts and security boundaries are designed. Durable PostgreSQL worker execution is now part of the Compose path; distributed queues and exactly-once external effects remain out of scope.
 
 The upstream reference README remains available as [README_UPSTREAM.md](README_UPSTREAM.md).

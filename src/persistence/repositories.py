@@ -1,11 +1,11 @@
 """Small repositories for TaskPilot business models."""
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy import Integer, String, delete, func, literal, select
+from sqlalchemy import Integer, String, delete, exists, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,12 +14,14 @@ from persistence.identity import canonicalize_email
 from persistence.models import (
     AgentRun,
     Approval,
+    ApprovalStatus,
     AuthSession,
     Membership,
     Organization,
     Task,
     TaskRun,
     TaskRunStatus,
+    TaskStatus,
     ToolCall,
     User,
 )
@@ -247,7 +249,7 @@ class TaskRunRepository:
             )
             .execution_options(populate_existing=True)
         )
-        result = await self.session.execute(statement)
+        result = cast(CursorResult, await self.session.execute(statement))
         row = result.one_or_none()
         return None if row is None else (row[0], row[1])
 
@@ -326,6 +328,96 @@ class TaskRunRepository:
         )
         result = await self.session.scalars(statement)
         return list(result)
+
+    async def claim_next_for_worker(
+        self,
+        worker_id: str,
+        *,
+        lease_seconds: float,
+        now: datetime | None = None,
+    ) -> tuple[Task, TaskRun] | None:
+        """Claim one queued or expired run using PostgreSQL row locking.
+
+        The lease is coordination state only. Task/TaskRun lifecycle transitions
+        remain owned by ``TaskLifecycleService`` and terminal winner checks.
+        Pending approvals are excluded until their decision is durable.
+        """
+
+        if not worker_id or len(worker_id) > 128:
+            raise ValueError("worker_id must be a bounded non-empty string")
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        pending_approval = exists(
+            select(Approval.id).where(
+                Approval.task_run_id == TaskRun.id,
+                Approval.status == ApprovalStatus.PENDING,
+            )
+        )
+        statement = (
+            select(Task, TaskRun)
+            .join(TaskRun, TaskRun.task_id == Task.id)
+            .where(
+                TaskRun.status.in_((TaskRunStatus.PENDING, TaskRunStatus.RUNNING)),
+                Task.status.in_(
+                    (TaskStatus.QUEUED, TaskStatus.RUNNING),
+                ),
+                ~pending_approval,
+                or_(
+                    TaskRun.worker_id.is_(None),
+                    TaskRun.worker_lease_expires_at.is_(None),
+                    TaskRun.worker_lease_expires_at <= current,
+                ),
+            )
+            .order_by(TaskRun.created_at, TaskRun.id)
+            .with_for_update(skip_locked=True, of=TaskRun)
+            .limit(1)
+        )
+        row = (await self.session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        task, run = row
+        run.worker_id = worker_id
+        run.worker_lease_expires_at = current + timedelta(seconds=lease_seconds)
+        run.worker_attempts += 1
+        await self.session.flush()
+        return task, run
+
+    async def renew_worker_lease(
+        self,
+        task_run_id: UUID,
+        worker_id: str,
+        *,
+        lease_seconds: float,
+        now: datetime | None = None,
+    ) -> bool:
+        """Extend a lease only when this worker still owns the active run."""
+
+        current = (now or datetime.now(UTC)).astimezone(UTC)
+        statement = (
+            update(TaskRun)
+            .where(
+                TaskRun.id == task_run_id,
+                TaskRun.worker_id == worker_id,
+                TaskRun.status.in_((TaskRunStatus.PENDING, TaskRunStatus.RUNNING)),
+            )
+            .values(worker_lease_expires_at=current + timedelta(seconds=lease_seconds))
+        )
+        result = cast(CursorResult, await self.session.execute(statement))
+        await self.session.flush()
+        return bool(result.rowcount)
+
+    async def release_worker_lease(self, task_run_id: UUID, worker_id: str) -> bool:
+        """Release a worker lease conditionally; terminal rows are also cleared."""
+
+        statement = (
+            update(TaskRun)
+            .where(TaskRun.id == task_run_id, TaskRun.worker_id == worker_id)
+            .values(worker_id=None, worker_lease_expires_at=None)
+        )
+        result = cast(CursorResult, await self.session.execute(statement))
+        await self.session.flush()
+        return bool(result.rowcount)
 
 
 class AgentRunRepository:

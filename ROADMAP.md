@@ -309,3 +309,13 @@ declare the overall project finished. See ADR-013 and cards T138–T145.
 Implementation 1, Implementation 2, Implementation 3A, Implementation 3B, and Implementation 3C are each **Implementation COMPLETE / Independent Strong Review APPROVED**. The Phase 14 Final Audit is **APPROVED**; Phase 14 is **COMPLETE / FINAL AUDIT APPROVED** after Round 5 confirmed the final indicator-local NULL-intent blocker fix. Final commit, push, PR and merge remain pending.
 
 The 3B and 3C addendums approve limited exploratory NDWI/NDBI index execution. Confirmed water-area classification, confirmed built-up classification, and confirmed expansion claims remain deferred. Phase 14 does not declare the overall TaskPilot project production-ready.
+
+## Phase 15 — Durable worker and recovery (implementation in progress)
+
+T122 is reopened under ADR-015. The current implementation adds a PostgreSQL
+durable TaskRun worker with leases, heartbeats, stale-run recovery and bounded
+attempts while preserving checkpoint identity and terminal lifecycle authority.
+The Compose path enables it; SQLite/local development keeps the process-local
+fallback. PostgreSQL concurrency/migration evidence, restart recovery and
+independent Strong Review are the remaining gates before Phase 15 can be marked
+complete.

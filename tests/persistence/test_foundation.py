@@ -338,6 +338,7 @@ def test_task_run_metadata_declares_task_fk_and_active_run_index() -> None:
     assert {constraint.name for constraint in table.constraints if constraint.name} == {
         "ck_task_runs_task_run_number_positive",
         "ck_task_runs_task_run_status_valid",
+        "ck_task_runs_task_run_worker_attempts_nonnegative",
         "pk_task_runs",
         "uq_task_runs_task_run_number",
         "fk_task_runs_task_id_tasks",
@@ -356,6 +357,7 @@ def test_task_run_metadata_declares_task_fk_and_active_run_index() -> None:
     assert set(indexes) == {
         "ix_task_runs_task_id",
         "ix_task_runs_status",
+        "ix_task_runs_worker_lease",
         "uq_task_runs_one_active_per_task",
     }
     assert indexes["uq_task_runs_one_active_per_task"].unique is True

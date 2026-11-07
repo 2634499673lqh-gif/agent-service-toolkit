@@ -25,6 +25,17 @@ class TaskLifecycleInconsistentStateError(TaskLifecycleError):
     """Persisted Task and TaskRun state violates a frozen invariant."""
 
 
+def worker_failure_metadata(reason: str) -> dict[str, object]:
+    """Return the bounded terminal projection used when a worker exhausts attempts."""
+
+    return {
+        "schema_version": "taskpilot.runtime.v1",
+        "summary": f"任务执行 worker 已耗尽有限恢复次数（{reason[:64]}）。",
+        "metrics": {},
+        "verifier_status": "not_run",
+    }
+
+
 class TaskLifecycleService:
     """Coordinate legal Task and TaskRun transitions in service transactions.
 
@@ -149,10 +160,7 @@ class TaskLifecycleService:
                 await self.session.rollback()
                 return False
             run.status = TaskRunStatus.FAILED
-            run.result_metadata = {
-                "error_code": reason,
-                "verifier_status": "not_run",
-            }
+            run.result_metadata = worker_failure_metadata(reason)
             task.status = TaskStatus.FAILED
             await self.session.commit()
             return True
@@ -257,4 +265,5 @@ __all__ = [
     "TaskLifecycleInconsistentStateError",
     "TaskLifecycleService",
     "TaskNotFoundError",
+    "worker_failure_metadata",
 ]

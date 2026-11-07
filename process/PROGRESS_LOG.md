@@ -7193,3 +7193,34 @@ Learner notes: 分支清理前要先证明提交已合入目标分支；含未�
 Learner notes: `package.json` 的版本范围和 lockfile 中解析出的版本是两层不同的约束；
 生产构建要同时保证 specifier 和 lockfile 一致。练习：修改一个前端依赖后运行 frozen install，
 观察 pnpm 如何在依赖声明与 lockfile 不一致时拒绝安装。暂时不必处理代码分包优化。
+## 2026-11-07 — T122 durable PostgreSQL worker implementation baseline
+
+T122 reopened under ADR-015. Added a PostgreSQL-backed TaskRun worker that uses
+`FOR UPDATE SKIP LOCKED` claims, bounded worker leases, heartbeat renewal, stale
+pending/running reclaim, pending-approval exclusion, checkpoint-based resume,
+bounded worker attempts and fail-closed exhaustion metadata. The API persists a
+pending run and returns; PostgreSQL Compose starts the worker. SQLite/local paths
+retain the existing process-local dispatch fallback.
+
+Added migration `t038_task_run_worker` with `worker_id`,
+`worker_lease_expires_at`, `worker_attempts` and the worker-lease index; added
+ADR-015, T122 reopening status, settings/env/Compose wiring and worker unit plus
+PostgreSQL concurrency/reclaim tests. No Redis, Kafka, distributed lock or
+exactly-once external-effect claim was introduced.
+
+Validation: worker/lifecycle/service/settings/foundation regression passed `74`;
+PostgreSQL worker tests are present but skipped because Docker Desktop has no
+running Linux engine and `TASKPILOT_TEST_DATABASE_URL` is unset. Pyrefly passed;
+new-file Ruff/format checks and `git diff --check` passed. The broader runtime
+regression passed `104` with one known pre-existing NDBI presentation-fixture
+failure (`urban_change-NDBI` confirmed-intent validation). Full migration,
+`SKIP LOCKED` race, restart recovery and browser worker evidence remain pending
+until PostgreSQL/Docker is available.
+
+Learner notes: a durable queue can be a database table when claim, lease and
+terminal-winner rules are explicit; the in-memory loop is only a poller. Read
+`process/ADR-015.md`, `src/service/runtime_worker.py`,
+`src/persistence/repositories.py`, and migration `t038_task_run_worker`.
+Exercise: let a lease expire in a disposable PostgreSQL database and verify a
+second worker increments `worker_attempts` before resuming the same checkpoint.
+Do not worry yet about autoscaling or exactly-once external providers.

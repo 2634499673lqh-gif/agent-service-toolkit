@@ -193,3 +193,12 @@ DAG: `T138 → (T139, T141); T139 → T140; T141 → T142; (T140, T142) → T143
 ## Phase 14 — Productization current state
 
 Implementation 1, Implementation 2, Implementation 3A, Implementation 3B and Implementation 3C are **Implementation COMPLETE / Independent Strong Review APPROVED**. Phase 14 Final Audit is **APPROVED**; Phase 14 is **COMPLETE / FINAL AUDIT APPROVED** after Round 5 confirmed the final indicator-local NULL-intent blocker fix. The 3B/3C addendums approve limited exploratory NDWI/NDBI execution; confirmed water-area, built-up-area and expansion claims remain deferred. Final commit, push, PR and merge are pending.
+
+## Phase 15 — Durable worker and recovery (implementation in progress)
+
+T122 is reopened under ADR-015. Implementation adds the PostgreSQL TaskRun
+worker, bounded leases/heartbeats, stale-run reclaim, pending-approval exclusion,
+checkpoint resume and bounded worker-attempt exhaustion. The Compose path enables
+the worker; SQLite/local development keeps the process-local fallback. PostgreSQL
+claim/reclaim evidence, migration evidence, restart/browser validation and
+independent Strong Review remain pending.

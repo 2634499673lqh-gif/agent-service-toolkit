@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core import settings
 from geochange.artifacts import artifact_path
 from geochange.landsat_ndvi import artifact_sha256
 from geochange.provenance import trusted_landsat_map_metadata, trusted_map_metadata
@@ -210,7 +211,7 @@ async def start_task_run(
             detail=TASK_LIFECYCLE_CONFLICT_DETAIL,
         ) from None
     dispatcher = getattr(request.app.state, "runtime_dispatcher", None)
-    if dispatcher is not None:
+    if dispatcher is not None and not settings.TASKPILOT_WORKER_ENABLED:
         dispatcher.dispatch(
             organization_id=principal.organization_id,
             task_id=task_id,

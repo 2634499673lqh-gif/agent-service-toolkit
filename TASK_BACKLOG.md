@@ -419,3 +419,12 @@ A=`T139+T140` (COMPLETE / APPROVED), B=`T141+T142` (COMPLETE / APPROVED), C=`T14
 | Implementation 3C | Exploratory NDBI workflow | COMPLETE | APPROVED |
 
 Phase 14 Final Audit: **APPROVED**; Phase 14 is **COMPLETE / FINAL AUDIT APPROVED** after Round 5 confirmed the final indicator-local NULL-intent blocker fix. The 3B/3C addendums authorize limited exploratory NDWI/NDBI index execution only; confirmed water-area classification, built-up classification, and expansion claims remain deferred. Final commit, push, PR and merge are pending.
+
+## V0.5 — Durable worker and recovery (implementation in progress)
+
+T122 is reopened under ADR-015. The PostgreSQL Compose path now has the
+implementation baseline for a durable TaskRun worker: `SKIP LOCKED` claim,
+bounded lease/heartbeat, stale pending/running reclaim, pending-approval exclusion,
+checkpoint resume, and bounded worker-attempt exhaustion. SQLite/local development
+retains the process-local fallback. Independent Strong Review, PostgreSQL race
+evidence, migration evidence, and browser restart recovery evidence remain pending.
