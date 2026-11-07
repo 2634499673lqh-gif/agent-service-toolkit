@@ -1,0 +1,55 @@
+# Standalone file: never combine with compose.yaml (which includes migrations).
+# External network and existing PostgreSQL are mandatory; this file cannot create a DB.
+services:
+  api:
+    image: ${TASKPILOT_API_IMAGE:?Pin the verified API image ID}
+    env_file:
+      - path: ${TASKPILOT_RUNTIME_ENV:?Protected runtime environment file required}
+        format: raw
+    command: ["sh", "-c", "python -B scripts/main_site_preflight.py && exec python run_service.py"]
+    ports:
+      - "127.0.0.1:${TASKPILOT_API_PORT:?Explicit API port required}:8080"
+    volumes:
+      - type: bind
+        source: ${TASKPILOT_CREDENTIAL_ROOT:?Existing credential directory required}
+        target: /privatecredentials
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TASKPILOT_ARTIFACT_ROOT:?Verified Artifact directory required}
+        target: /app/data/geochange-artifacts
+        bind:
+          create_host_path: false
+    networks:
+      existing:
+        aliases:
+          - taskpilot_main_api
+          - agent_service
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8080/health/ready', timeout=3).read()"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+  web:
+    image: ${TASKPILOT_WEB_IMAGE:?Pin the verified frontend image ID}
+    environment:
+      VITE_BACKEND: http://taskpilot_main_api:8080
+    ports:
+      - "127.0.0.1:${TASKPILOT_WEB_PORT:?Explicit frontend port required}:5173"
+    networks:
+      - existing
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+networks:
+  existing:
+    external: true
+    name: ${TASKPILOT_NETWORK:?Explicit pre-existing PostgreSQL network required}

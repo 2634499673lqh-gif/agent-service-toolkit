@@ -7005,3 +7005,152 @@ B1 now evaluates QA policy and warning availability per canonical period. Missin
 B2 capture validation now requires a 64-character SHA-256 AOI hash, typed and ordered UTC periods, valid scene IDs/dates, SR_B4/SR_B5 roles with the approved calibration policy, complete preparation provenance, and required grid/artifact identity fields. The standalone scope decision remains unchanged: numerical PASS is not production TaskRun authentication or external accuracy.
 
 Focused B tests: 15 QA/validation tests pass; retained genuine Jianghan official validator remains PASS with 26,107 compared pixels and zero mask mismatch. Frontend build, Ruff, Pyrefly, lock and diff checks pass. PostgreSQL suites remain skipped because TASKPILOT_TEST_DATABASE_URL is unset. Implementation B remains awaiting independent focused Strong Review.
+
+## 2026-10-16 — V0.4 original 5173 main-site recovery and upgrade preparation
+
+Status: READY FOR REVIEW for deployment preparation only. No live cutover,
+original-container restart/recreation, original database migration/restore,
+original Artifact write, commit, push, or branch operation was performed.
+The approved application baseline is main / 5e174e0cc38a8ff26e66406423b646c74e3c6b4f;
+the repository was initially clean. Existing historical review entries above
+remain historical records and are not reopened by this deployment task.
+
+Revalidated the original Docker API/web/PostgreSQL deployment, original
+agent-service-toolkit_postgres_data volume, t037_proposal_identity schema,
+7 users / 46 tasks / 48 runs (32 succeeded, 13 failed, 3 pending, 0 running).
+The runtime remains V0.3-era code from _taskpilot_v03_browser. A repeatable-read
+exported PostgreSQL snapshot backed both the logical dump and reference/count
+inventory. Restricted backups, verified Artifact copies/archives, encrypted
+container definitions/environment, original image archive, and rollback metadata
+are outside Git at D:\codex\agent项目\backups\taskpilot-main-20261016-125845.
+An execution of the repository backup script also produced
+taskpilot-main-20261016-script-verified. Both dumps restored successfully into
+isolated databases, preserving all nine business-table counts and schema head.
+
+Read-only Artifact searches covered seven project Artifact roots, all known
+container Artifact mounts, named-volume destination metadata, and known backup
+archives. Classification is 33 PRESENT, 21 FOUND_UNVERIFIED, 60 NOT_FOUND.
+All 27 present dynamic references matched authoritative database SHA-256 values;
+the 21 alternate files have no authoritative digest and must not be restored
+automatically. There are zero missing FOUND_VERIFIED entries. The deterministic
+dry-run checks UUID/attempt authority, traversal, links, file bounds, source
+mutation and collisions; it has no live-write command. No historical data was
+fabricated or recomputed.
+
+Added standalone API/web Compose using existing network/storage, immutable image
+IDs, preserved credential mount, explicit ports, and a read-only database identity
+guard. It defines no PostgreSQL creation or Alembic service. The approved-source
+builder isolates Git checkout newline settings and materializes only JSON LF/CRLF
+serialization necessary to match unchanged code-owned fixture digests. Binary
+rasters, scientific values, integrity pins, B2 contracts, production code, and
+repository fixture files were not changed. Image labels and evidence record the
+approved revision plus deployment guard/Compose hashes. Exact candidate images
+are archived and all 43 content-addressed archive blobs were verified.
+
+Candidate testing used taskpilot_main_restore_20261016, its own network and copied
+Artifacts, ports 35173/38080/35432, fake model, disabled live LLM/STAC, and no live
+data volume. Authenticated GET smoke covered all 48 runs, 48 unauthenticated
+rejections, 48 cross-tenant 404s, six successful Artifact GETs, progress/quality
+OpenAPI fields, and both UI components served by Vite. Temporary authentication
+sessions were created and removed only in the clone; all nine original row
+counts were preserved there. Old-image rollback and return to V0.4 were rehearsed
+on the clone. The isolated services are stopped after evidence capture; this is
+not another permanent main site.
+
+Validation: new backup/build/recovery/preflight tests 30 passed; affected approved
+application regression 383 passed / 0 skipped; real PostgreSQL authorization,
+progress/fencing, recovery and quality integration 59 passed / 0 skipped; frontend
+tests 3 passed; TypeScript and Vite build passed. New-file Ruff/format and Pyrefly,
+full-project Pyrefly, runbook Markdown lint and git diff --check passed. Full Ruff
+reports one existing I001 in src/geochange/__init__.py; that file matches the
+approved Git baseline and was not changed. Initial Windows regression had eight
+fixture-EOL failures, and initial PostgreSQL regression had six EOL/PROJ-path
+failures; final verification passed with trusted-digest packaging and a
+process-local correct PROJ_DATA/PROJ_LIB. One image-build download interruption
+and a PowerShell child-module-path issue were corrected without changing the
+original environment. Incomplete backup attempts are not accepted backup sets.
+
+Cutover blockers/limitations remain explicit: same-clone old images returned
+5/32 historical maps, while V0.4 returned 2/32. The three additional 409s are old
+Landsat runs whose quality evidence does not satisfy the approved V0.4 contract;
+13 existing 422s and other missing-file 409s also remain. Do not weaken fail-closed
+behavior or synthesize sidecars. Live cutover requires independent review,
+explicit owner acceptance/disposition of historical result limitations and the
+three pending runs, a maintenance window, exclusion of every writer, a fresh
+quiescent backup, final consistency checks, and explicit interruption/switch
+authorization. No real Landsat task, live LLM call or owner-password login was
+performed. UI component/source checks do not replace a full authenticated browser
+acceptance. Backups are local and DPAPI is bound to this Windows user/profile.
+
+Files: compose.main-site.yaml; scripts/backup_main_site.py, build_main_site.py,
+main_site_recovery.py, main_site_preflight.py; tests/test_main_site_backup.py,
+test_main_site_build.py, test_main_site_recovery.py, test_main_site_preflight.py;
+docs/DEPLOYMENT_RUNBOOK.md; process/PROGRESS_LOG.md. Scope is deployment preparation,
+backup/recovery evidence and tests only. Original container IDs/images/start
+times/mounts, original Artifact inventories and all nine database table counts
+were independently rechecked unchanged; original frontend/readiness remain 200.
+
+Learner notes: database history and Artifact files are separate persistence
+resources; a file hash detects mutation but does not establish historical
+identity without an authoritative pin. Read the standalone Compose, backup
+script, recovery planner, preflight and deployment runbook. Exercise: run the
+recorded recovery dry-run and explain why 21 found files are not auto-restored.
+Do not worry about V0.5, distributed workers or recomputing historical outputs.
+Suggested next task: independent Strong Review of this preparation, followed by
+an explicit historical-result disposition before any live cutover request.
+
+## 2026-10-16 — Main-site cutover focused blocker fix B1/B2
+
+Status: READY FOR FOCUSED RE-REVIEW. Independent Strong Review identified
+deployment/data-backup directory confusion and unreliable native PowerShell
+failure handling. This entry records only their implementation corrections;
+it does not approve the preparation or authorize live cutover.
+
+B1: runbook now distinguishes deployment evidence/configuration, the existing
+verified data backup, and a fresh final data backup. The backup script does not
+generate live-runtime.env.dpapi, live-compose.env or live-guard.json. Added a
+single scoped PowerShell command file which validates required deployment files,
+image IDs/labels, Compose/preflight hashes, runtime guard/path references,
+original identities/mounts and actual backup output integrity before downtime.
+Rollback uses the existing verified backup if the final backup is incomplete.
+Configuration is always resolved from the deployment directory.
+
+B2: executable Docker calls check LASTEXITCODE immediately. Failed stop,
+configuration validation, up or old API start aborts dependent operations.
+Rollback verifies every new-project container is identified and fully stopped
+before old API start, then checks old API identity and container-local readiness
+within a bounded timeout before starting old Web. Both healthy checks target
+immutable container IDs, rather than accepting a host-port response from a
+surviving new service. Partial-up rollback is tested separately and never
+replays tasks or restores the original database.
+
+Files changed in this focused fix: docs/DEPLOYMENT_RUNBOOK.md,
+scripts/main_site_cutover.ps1, tests/test_main_site_cutover.py,
+process/PROGRESS_LOG.md. The nine pre-existing deployment implementation/test
+files remain byte-identical to the frozen preparation inventory; existing
+deployment configuration and candidate image evidence are unchanged. No live
+environment was decrypted and no real Docker change was executed.
+
+Validation: `python -m pytest -q tests/test_main_site_cutover.py
+tests/test_main_site_backup.py tests/test_main_site_build.py
+tests/test_main_site_preflight.py tests/test_main_site_recovery.py` — 47 passed
+(17 focused native PowerShell mock scenarios plus 30 existing tool regressions).
+Tests execute the actual PowerShell functions through a native docker.cmd
+substitute, guarded against calling real Docker. Test data backups are generated
+by the actual backup_main_site.main with mocked I/O, preserving its real output
+structure rather than inventing missing deployment files. Covered stop/config/up
+failures, old API start failure/readiness timeout, incomplete stops, wrong image
+and changed readiness identity, missing/misreferenced configuration, corrupt
+backup, successful cutover/rollback ordering and partial-up rollback. New-test
+Ruff/format, PowerShell AST parsing, runbook Markdown lint and git diff --check
+passed. No new dependencies or application/scientific/schema changes.
+
+Remaining gates: independent focused re-review, historical-map limitations and
+pending-run disposition, maintenance writer exclusion, final backup and explicit
+live authorization. No original service, PostgreSQL, Artifact, TaskRun metadata,
+backup or candidate image was modified; no commit, push or Git state change.
+Learner notes: deployment configuration and data backups have different lifecycles;
+native nonzero exit codes require explicit checks. Read the command file,
+focused tests and runbook. Exercise: run the mocked timeout scenario and verify
+the trace contains no old Web start. Do not worry about V0.5 or a new deployment
+framework. Suggested next task: independent focused re-review of B1 and B2.
