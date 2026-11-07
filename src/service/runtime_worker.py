@@ -108,6 +108,14 @@ class TaskRunWorker:
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
             await self._release(claimed.task_run_id)
+            logger.info(
+                "runtime.worker.released",
+                extra={
+                    "worker_id": self.worker_id,
+                    "task_id": str(claimed.task_id),
+                    "task_run_id": str(claimed.task_run_id),
+                },
+            )
         return True
 
     async def _run_loop(self) -> None:
@@ -137,6 +145,16 @@ class TaskRunWorker:
                 return None
             task, run = claimed
             await session.commit()
+            logger.info(
+                "runtime.worker.claimed",
+                extra={
+                    "worker_id": self.worker_id,
+                    "task_id": str(task.id),
+                    "task_run_id": str(run.id),
+                    "worker_attempts": run.worker_attempts,
+                    "task_run_status": run.status.value,
+                },
+            )
             return ClaimedTaskRun(
                 organization_id=task.organization_id,
                 task_id=task.id,
