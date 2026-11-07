@@ -7224,3 +7224,23 @@ terminal-winner rules are explicit; the in-memory loop is only a poller. Read
 Exercise: let a lease expire in a disposable PostgreSQL database and verify a
 second worker increments `worker_attempts` before resuming the same checkpoint.
 Do not worry yet about autoscaling or exactly-once external providers.
+## 2026-11-07 — T122 PostgreSQL and Compose worker evidence closure
+
+Docker Desktop 恢复后，使用当前 `5f82103` 代码重建 Compose API/Web，并执行
+最新 `t038_task_run_worker` migration。真实 PostgreSQL worker suites：
+`tests/service/test_runtime_worker_postgres.py` **2 passed**，覆盖两个独立
+worker 的 `SKIP LOCKED` 竞争领取，以及过期 lease 回收并递增
+`worker_attempts`。
+
+在 Compose 主数据库中创建了一条明确标记的临时 `T122 durable-worker smoke`
+TaskRun。PostgreSQL 记录显示 Task/TaskRun 均 `succeeded`、`worker_attempts=1`、
+`worker_id` 和 `worker_lease_expires_at` 已清空、summary 为
+`Runtime completed successfully`；随后按 foreign-key 顺序删除了 smoke 的
+ToolCall、AgentRun、TaskRun 和 Task，现有业务数据未保留临时记录。重新构建并
+重启 `agent_service` 后，容器内 `TASKPILOT_WORKER_ENABLED=true`、lease=30、
+max_attempts=3，`/health/ready` 返回 200，Web `http://localhost:5173/` 返回 200。
+
+现有 PostgreSQL runtime 回归为 `45 passed, 5 failed`；失败均为既有 NDBI
+manifest/fixture 漂移或 Landsat/NDVI 测试环境问题，不涉及 worker claim、lease、
+migration 或 TaskRun lifecycle。worker 专项证据已通过；完整浏览器登录/重启
+验收仍由用户在 `http://localhost:5173/` 进行。
